@@ -108,6 +108,7 @@ class gladosSTT(Thread):
                         filename = "input.wav"
                         self.glocal.random_greeting()
                         print("ask question")
+                        self.glocal.random_question()
                         with sr.Microphone() as source:
                             recognizer = sr.Recognizer()
                             source.pause_threshold=1
@@ -128,10 +129,12 @@ class gladosLocal(Thread):
         self.greetings = list()
         self.processing = list()
         self.insults = list()
+        self.questions = list()
         self.configp = configparser.ConfigParser()
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
+        self.last_question = None
         if path.isfile(configFile) is True:
             self.configp.read(configFile)
         else:
@@ -139,6 +142,13 @@ class gladosLocal(Thread):
         self.greetings = self.llp(self.configp["LOCALSPEAK"]["greetings"])
         self.processing = self.llp(self.configp["LOCALSPEAK"]["processing"])
         self.insults = self.llp(self.configp["LOCALSPEAK"]["insults"])
+        self.questions = self.llp(self.configp["LOCALSPEAK"]["questions"])
+    
+    def random_question(self):
+        proc = random.choice(self.questions)
+        proc = self.dedupe(proc, self.last_question, self.questions)
+        play_audio(get_audio(proc))
+        self.last_insult = proc
 
     def random_insult(self):
         proc = random.choice(self.insults)
