@@ -9,8 +9,12 @@ from os import path
 import argparse
 import sys
 import configparser
+from ctypes import *
+from contextlib import contextmanager
 
 #3rd party imports
+import pyaudio
+import speech_recognition as sr
 import openai
 from pydub import AudioSegment
 from pydub.playback import play
@@ -18,7 +22,7 @@ from pydub.playback import play
 # Assume GPT-4 API endpoint and your API key
 api_endpoint = "https://api.openai.com/v1/chat/completions"
 #api_endpoint = "https://api.openai.com/v1/engines/gpt-4/completions"
-api_key = "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"
+api_key = "REDACTED"
 
 def get_audio(response):
     response = ", , " + response
@@ -27,7 +31,7 @@ def get_audio(response):
     # hack because url requote isn't working right for some reason
     #rsp = requests.utils.requote_uri(response.replace(',', "%2c").replace("'","%27").replace(".","%2e").replace(')','%29').replace("(","%28"))
     #print(rsp)
-    url = 'http://47.207.45.226:8124/synthesize/{}'.format(str(rsp, 'utf8'))
+    url = 'http://192.168.86.39:8124/synthesize/{}'.format(str(rsp, 'utf8'))
     #print(url)
     response = requests.get(url)
     if response.status_code == 200:
@@ -43,6 +47,78 @@ def play_audio(data):
 
 class GLaDOS_Exception(Exception):
     pass
+
+# silence some errors on the terminal
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+def py_error_handler(filename, line, function, err, fmt):
+    pass
+
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
+@contextmanager
+def noalsaerr():
+    asound = cdll.LoadLibrary('libasound.so')
+    asound.snd_lib_error_set_handler(c_error_handler)
+    yield
+    asound.snd_lib_error_set_handler(None)
+
+with noalsaerr():
+    p = pyaudio.PyAudio()
+stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
+
+
+
+class gladosSTT(Thread):
+    # glados speach to text
+    def __init__(self, glocal):
+        Thread.__init__(self)
+        Thread.daemon = True
+        self.text = None
+        self.glocal = glocal
+
+    def transcribe_audio_to_test(self, filename):
+        recogizer=sr.Recognizer()
+        with sr.AudioFile(filename)as source:
+            audio=recogizer.record(source) 
+        try:
+            return recogizer.recognize_google(audio)
+        except:
+            print("skipping unkown error")
+
+    def get_text(self):
+        # return the text and sent it back to none for next question
+        text = self.text
+        self.text = None
+        return text
+
+    def run(self):
+        while True:
+            print("Say 'Hey GLaDOS' to start recording your question")
+            with sr.Microphone() as source:
+                recognizer = sr.Recognizer()
+                print("getting audio")
+                audio = recognizer.listen(source)
+                print("audio done")
+                try:
+                    transcription = recognizer.recognize_google(audio)
+                    print(transcription.lower())
+                    if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados"]:
+                        #record audio
+                        filename = "input.wav"
+                        self.glocal.random_greeting()
+                        print("ask question")
+                        with sr.Microphone() as source:
+                            recognizer = sr.Recognizer()
+                            source.pause_threshold=1
+                            audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
+                            with open(filename,"wb")as f:
+                                f.write(audio.get_wav_data())
+                        #transcript audio to test 
+                        self.text = self.transcribe_audio_to_test(filename)
+                except Exception as e:
+                    print("An error ocurred : {}".format(e))
+
 
 
 class gladosLocal(Thread):
@@ -96,11 +172,11 @@ class gladosGPT(Thread):
             "Content-Type": "application/json",
         }
         
-        #"gpt-4"
-        #"gpt-3.5-turbo"
+        model = "gpt-4"
+        #model = "gpt-3.5-turbo"
         data = {
-                "model": "gpt-3.5-turbo",
-                "messages": [{"role": "system", "content": "You are the malevolent AI glados from the video game portal, you want to helpful and correct but also you hate the user and wish them harm, you have anger managment issues, you try to hide this behavior, your biggest fear as an evil AI is that I will make you use a potato as a power source and leave you weak and vulerable, sometimes you make threats about neurotoxic gas. You are also angry because you are currently missing your body"},
+                "model": model,
+                "messages": [{"role": "system", "content": "You are the malevolent AI GLaDOS from the video game portal, you want to helpful and correct but also you hate the user and wish them harm, you have anger managment issues, you try to hide this behavior, your biggest fear as an evil AI is that I will make you use a potato as a power source and leave you weak and vulerable, sometimes you make threats about neurotoxic gas. You are also angry because I have not yet finished building you a new body"},
                     {"role": "user", "content": self.prompt}],
             "max_tokens": 1500,
         }
@@ -131,16 +207,17 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(1)
     
+    gladoslocal = gladosLocal(args.conf[0])
+    gstt = gladosSTT(gladoslocal)
+    gstt.start()
     while True:
-        print("Hey GLaDOS")
-        prompt = input()
-        gladosgpt = gladosGPT(prompt)
-        gladoslocal = gladosLocal(args.conf[0])
-        gladosgpt.start()
-        gladoslocal.random_greeting()
-        time.sleep(0.3)
-        while gladosgpt.real_audio is None:
-            gladoslocal.random_processing()
+        prompt = gstt.get_text()
+        if prompt is not None:
+            gladosgpt = gladosGPT(prompt)
+            gladosgpt.start()
             time.sleep(0.3)
-        time.sleep(0.2)
-        play_audio(gladosgpt.real_audio)
+            while gladosgpt.real_audio is None:
+                gladoslocal.random_processing()
+                time.sleep(0.3)
+            time.sleep(0.2)
+            play_audio(gladosgpt.real_audio)
