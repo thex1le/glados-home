@@ -148,7 +148,7 @@ class gladosLocal(Thread):
         proc = random.choice(self.questions)
         proc = self.dedupe(proc, self.last_question, self.questions)
         play_audio(get_audio(proc))
-        self.last_insult = proc
+        self.last_question = proc
 
     def random_insult(self):
         proc = random.choice(self.insults)
