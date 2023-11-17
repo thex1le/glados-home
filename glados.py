@@ -22,7 +22,7 @@ from pydub.playback import play
 # Assume GPT-4 API endpoint and your API key
 api_endpoint = "https://api.openai.com/v1/chat/completions"
 #api_endpoint = "https://api.openai.com/v1/engines/gpt-4/completions"
-api_key = "REDACTED"
+api_key = "removed"
 
 def get_audio(response):
     response = ", , " + response
@@ -129,6 +129,9 @@ class gladosLocal(Thread):
         self.processing = list()
         self.insults = list()
         self.configp = configparser.ConfigParser()
+        self.last_greeting = None
+        self.last_insult = None
+        self.last_process = None
         if path.isfile(configFile) is True:
             self.configp.read(configFile)
         else:
@@ -137,13 +140,28 @@ class gladosLocal(Thread):
         self.processing = self.llp(self.configp["LOCALSPEAK"]["processing"])
         self.insults = self.llp(self.configp["LOCALSPEAK"]["insults"])
 
+    def random_insult(self):
+        proc = random.choice(self.insults)
+        proc = self.dedupe(proc, self.last_insult, self.insults)
+        play_audio(get_audio(proc))
+        self.last_insult = proc
+    
     def random_processing(self):
-        option = [self.processing, self.insults]
-        choice = random.choice(option)
-        play_audio(get_audio(random.choice(choice)))
+        proc = random.choice(self.processing)
+        proc = self.dedupe(proc, self.last_process, self.processing)
+        play_audio(get_audio(proc))
+        self.last_process = proc
+    
+    def dedupe(self, current, last, options):
+        while current == last:
+            current = random.choice(options)
+        return current
 
     def random_greeting(self):
-        play_audio(get_audio(random.choice(self.greetings)))
+        greeting = random.choice(self.greetings)
+        greeting = self.dedupe(greeting, self.last_greeting, self.greetings)
+        play_audio(get_audio(greeting))
+        self.last_greeting = greeting
     
     def llp(self, file):
         if path.isfile(file) is True:
@@ -219,5 +237,7 @@ if __name__ == "__main__":
             while gladosgpt.real_audio is None:
                 gladoslocal.random_processing()
                 time.sleep(0.3)
+                rfunc = random.choice((gladoslocal.random_processing, gladoslocal.random_insult))
+                rfunc()
             time.sleep(0.2)
             play_audio(gladosgpt.real_audio)
