@@ -116,6 +116,7 @@ class gladosSTT(Thread):
                             with open(filename,"wb")as f:
                                 f.write(audio.get_wav_data())
                         #transcript audio to test 
+                        self.glocal.random_question_response()
                         self.text = self.transcribe_audio_to_test(filename)
                 except Exception as e:
                     print("An error ocurred : {}".format(e))
@@ -130,11 +131,13 @@ class gladosLocal(Thread):
         self.processing = list()
         self.insults = list()
         self.questions = list()
+        self.qresponses = list()
         self.configp = configparser.ConfigParser()
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
         self.last_question = None
+        self.last_qresponse = None
         if path.isfile(configFile) is True:
             self.configp.read(configFile)
         else:
@@ -143,36 +146,34 @@ class gladosLocal(Thread):
         self.processing = self.llp(self.configp["LOCALSPEAK"]["processing"])
         self.insults = self.llp(self.configp["LOCALSPEAK"]["insults"])
         self.questions = self.llp(self.configp["LOCALSPEAK"]["questions"])
+        self.qresponse = self.llp(self.configp["LOCALSPEAK"]["qresponses"])
     
-    def random_question(self):
-        proc = random.choice(self.questions)
-        proc = self.dedupe(proc, self.last_question, self.questions)
+
+    def __random_audio(self, choice, last, options_list):
+        proc = self.dedupe(choice, last, options_list)
         play_audio(get_audio(proc))
-        self.last_question = proc
+        last = proc
+
+    def random_question_response(self):
+        self.__random_audio(random.choice(self.qresponse), self.last_qresponse, self.qresponse)
+
+    def random_question(self):
+        self.__random_audio(random.choice(self.questions), self.last_question, self.questions)
 
     def random_insult(self):
-        proc = random.choice(self.insults)
-        proc = self.dedupe(proc, self.last_insult, self.insults)
-        play_audio(get_audio(proc))
-        self.last_insult = proc
+        self.__random_audio(random.choice(self.insults), self.last_insult, self.insults)
     
     def random_processing(self):
-        proc = random.choice(self.processing)
-        proc = self.dedupe(proc, self.last_process, self.processing)
-        play_audio(get_audio(proc))
-        self.last_process = proc
+        self.__random_audio(random.choice(self.processing), self.last_process, self.processing)
+    
+    def random_greeting(self):
+        self.__random_audio(random.choice(self.greetings), self.last_greeting, self.greetings)
     
     def dedupe(self, current, last, options):
         while current == last:
             current = random.choice(options)
         return current
 
-    def random_greeting(self):
-        greeting = random.choice(self.greetings)
-        greeting = self.dedupe(greeting, self.last_greeting, self.greetings)
-        play_audio(get_audio(greeting))
-        self.last_greeting = greeting
-    
     def llp(self, file):
         if path.isfile(file) is True:
             with open(file, 'r') as f:
