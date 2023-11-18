@@ -134,7 +134,6 @@ class gladosLocal(Thread):
         self.questions = list()
         self.qresponses = list()
         self.fuck = list()
-        self.configp = configparser.ConfigParser()
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
@@ -142,10 +141,7 @@ class gladosLocal(Thread):
         self.last_qresponse = None
         self.last_fresponse = None
         self.timers = list()
-        if path.isfile(configFile) is True:
-            self.configp.read(configFile)
-        else:
-            raise GLaDOS_Exception("Unable to load file {}".format(configFile))
+        self.configp = configFile
         self.greetings = self.llp(self.configp["LOCALSPEAK"]["greetings"])
         self.processing = self.llp(self.configp["LOCALSPEAK"]["processing"])
         self.insults = self.llp(self.configp["LOCALSPEAK"]["insults"])
@@ -337,8 +333,12 @@ if __name__ == "__main__":
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
         sys.exit(1)
-    
-    gladoslocal = gladosLocal(args.conf[0])
+    configp = configparser.ConfigParser()
+    if path.isfile(args.conf[0]) is True:
+        configp.read(args.conf[0])
+    else:
+        raise GLaDOS_Exception("Unable to load file {}".format(configFile))
+    gladoslocal = gladosLocal(configp)
     gladoslocal.start()
     gstt = gladosSTT(gladoslocal)
     gstt.start()
