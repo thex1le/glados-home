@@ -20,10 +20,6 @@ import openai
 from pydub import AudioSegment
 from pydub.playback import play
 
-# Assume GPT-4 API endpoint and your API key
-api_endpoint = "https://api.openai.com/v1/chat/completions"
-#api_endpoint = "https://api.openai.com/v1/engines/gpt-4/completions"
-api_key = "removed"
 
 def get_audio(response):
     response = ", , " + response
@@ -141,16 +137,16 @@ class gladosLocal(Thread):
         self.last_qresponse = None
         self.last_fresponse = None
         self.timers = list()
-        self.configp = configFile
-        self.greetings = self.llp(self.configp["LOCALSPEAK"]["greetings"])
-        self.processing = self.llp(self.configp["LOCALSPEAK"]["processing"])
-        self.insults = self.llp(self.configp["LOCALSPEAK"]["insults"])
-        self.questions = self.llp(self.configp["LOCALSPEAK"]["questions"])
-        self.qresponse = self.llp(self.configp["LOCALSPEAK"]["qresponses"])
-        self.fuck = self.llp(self.configp["LOCALSPEAK"]["fuck"])
+        self.configp = configFile["LOCALSPEAK"]
+        self.greetings = self.llp(self.configp["greetings"])
+        self.processing = self.llp(self.configp["processing"])
+        self.insults = self.llp(self.configp["insults"])
+        self.questions = self.llp(self.configp["questions"])
+        self.qresponse = self.llp(self.configp["qresponses"])
+        self.fuck = self.llp(self.configp["fuck"])
 
     def __random_audio(self, choice, last, options_list):
-        proc = self.dedupe(choice, last, options_list)
+        proc = self.__dedupe(choice, last, options_list)
         play_audio(get_audio(proc))
         last = proc
 
@@ -288,28 +284,26 @@ class EggTimer(Thread):
             
 
 class gladosGPT(Thread):
-    def __init__(self, prompt):
+    def __init__(self, configp, prompt):
         Thread.__init__(self)
         Thread.daemon = True
         self.real_audio = None
         self.prompt = prompt
+        self.configp = configp["OPENAI"]
+        self.model = self.configp["model"]
+        self.api_key = self.configp["apikey"]
+        self.api_endpoint = self.configp["endpoint"]
 
     def generate_text(self):
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        
-        model = "gpt-4"
-        #model = "gpt-3.5-turbo"
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",}
         data = {
-                "model": model,
+                "model": self.model,
                 "messages": [{"role": "system", "content": "You are the malevolent AI GLaDOS from the video game portal, you want to helpful and correct but also you hate the user and wish them harm, you have anger managment issues, you try to hide this behavior, your biggest fear as an evil AI is that I will make you use a potato as a power source and leave you weak and vulerable, sometimes you make threats about neurotoxic gas. You are also angry because I have not yet finished building you a new body"},
                     {"role": "user", "content": self.prompt}],
             "max_tokens": 1500,
         }
         
-        response = requests.post(api_endpoint, headers=headers, json=data)
+        response = requests.post(self.api_endpoint, headers=headers, json=data)
         if response.status_code == 200:
             response_json = response.json()
             generated_text = response_json['choices'][0]['message']['content'].strip()
@@ -355,7 +349,7 @@ if __name__ == "__main__":
             if cmdbool is True:
                 # skip the rest on the while loop
                 continue
-            gladosgpt = gladosGPT(prompt)
+            gladosgpt = gladosGPT(configp, prompt)
             gladosgpt.start()
             time.sleep(0.3)
             while gladosgpt.real_audio is None:
