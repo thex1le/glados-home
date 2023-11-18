@@ -103,7 +103,7 @@ class gladosSTT(Thread):
                 try:
                     transcription = recognizer.recognize_google(audio)
                     print(transcription.lower())
-                    if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados"]:
+                    if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados", "play glados"]:
                         #record audio
                         filename = "input.wav"
                         self.glocal.random_greeting()
