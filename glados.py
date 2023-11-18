@@ -141,6 +141,7 @@ class gladosLocal(Thread):
         self.last_question = None
         self.last_qresponse = None
         self.last_fresponse = None
+        self.timers = list()
         if path.isfile(configFile) is True:
             self.configp.read(configFile)
         else:
@@ -193,18 +194,103 @@ class gladosLocal(Thread):
             raise GLaDOS_Exception("Unable to load file {}".format(file))
         # load local phrases
 
+    #def __set_timer
+
     def __check_local_command(self, prompt, command):
-        match = re.search(re.escape(command), prompt)
+        if type(command) != re.Pattern:
+            command = re.escape(command)
+        match = re.search(command, prompt)
         return bool(match)
          
     def fuckyou(self, prompt):
         check = self.__check_local_command(prompt.lower(), "fuck you")
-        print(prompt)
-        print(check)
         if check is True:
             self.random_fuck_response()
         return check
+    
+    def timer(self, prompt):
+        pcommand = ["set timer", "set a timer"]
+        prompt = prompt.lower()
+        for pc in pcommand:
+            check = self.__check_local_command(prompt, pc)
+            if check is True:
+                break
+        # figure amount of time
+        ttype = [{"type":"minutes", "re":re.compile(r'minutes?'), "mul":60}, 
+              {"type":"seconds", "re":re.compile(r'seconds?'), "mul": 1}, 
+              {"type":"hours", "re":re.compile(r'hours?'), "mul": 3600}]
+        for t in ttype:
+            scheck = self.__check_local_command(prompt, t["re"])
+            if scheck is True:
+                ti = re.findall(r'\b\d+\b', prompt)
+                num = int(ti[0])
+                seconds = num * t['mul']
+                egg = EggTimer(seconds)
+                egg.start()
+                self.timers.append(egg)
+                audio = get_audio("I have Set a Timer for {}, {}".format(num, t['type']))
+                play_audio(audio)
+                break
+        #if check is False:
+        #    # note, need to find number of timer...
+        #    pcommand = ["stop timer", "stop a timer"]
+        #    for pc in pcommand:
+        #        check = self.__check_local_command(prompt, pc)
+        #        if check is True:
+        #            break
+        #        # need to fix number there
+        #        self.timmers[0].stop()
+        return check
+
+    def run(self):
+        pass
+
+class EggTimer(Thread):
+    def __init__(self, duration_in_seconds):
+        Thread.__init__(self)
+        Thread.daemon = True
+        self.duration = duration_in_seconds
+        self.start_time = None
+        self.is_running = False
+
+    def tstart(self):
+        if not self.is_running:
+            self.start_time = time.time()
+            self.is_running = True
+            print("Egg timer started for {} seconds.".format(self.duration))
+
+    def stop(self):
+        if self.is_running:
+            elapsed_time = time.time() - self.start_time
+            remaining_time = max(0, self.duration - elapsed_time)
+            self.is_running = False
+            print("Egg timer stopped. Remaining time: {:.2f} seconds.".format(remaining_time))
+
+    def check_remaining_time(self):
+        rtn = {"remain": 0, "complete":False}
+        if self.is_running:
+            elapsed_time = time.time() - self.start_time
+            remaining_time = max(0, self.duration - elapsed_time)
+            rtn["remain"] = remaining_time
+            if remaining_time == 0:
+                rtn["remian"] = 0
+                rtn["complete"] = True
+        else:
+            rtn["remain"] = 0
+            rtn["complete"] = True
+        return rtn
+    
+    def run(self):
+        self.tstart()
+        while True:    
+            r = self.check_remaining_time()
+            print(r)
+            if r["complete"] is True:
+                play_audio(get_audio("Your Timer is complete"))
+                break
+            time.sleep(.2)
             
+
 class gladosGPT(Thread):
     def __init__(self, prompt):
         Thread.__init__(self)
@@ -254,6 +340,7 @@ if __name__ == "__main__":
         sys.exit(1)
     
     gladoslocal = gladosLocal(args.conf[0])
+    gladoslocal.start()
     gstt = gladosSTT(gladoslocal)
     gstt.start()
     while True:
@@ -261,7 +348,7 @@ if __name__ == "__main__":
         if prompt is not None:
             # check for local commands
             # TODO load commands from config?
-            for cmd in [gladoslocal.fuckyou]:
+            for cmd in [gladoslocal.fuckyou, gladoslocal.timer]:
                 cmdbool = cmd(prompt)
                 if cmdbool is True:
                     # break the for loop
