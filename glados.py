@@ -314,7 +314,6 @@ class gladosGPT(Thread):
         }
         
         response = requests.post(api_endpoint, headers=headers, json=data)
-        
         if response.status_code == 200:
             response_json = response.json()
             generated_text = response_json['choices'][0]['message']['content'].strip()
