@@ -11,6 +11,7 @@ import sys
 import configparser
 from ctypes import *
 from contextlib import contextmanager
+import re
 
 #3rd party imports
 import pyaudio
@@ -132,12 +133,14 @@ class gladosLocal(Thread):
         self.insults = list()
         self.questions = list()
         self.qresponses = list()
+        self.fuck = list()
         self.configp = configparser.ConfigParser()
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
         self.last_question = None
         self.last_qresponse = None
+        self.last_fresponse = None
         if path.isfile(configFile) is True:
             self.configp.read(configFile)
         else:
@@ -147,7 +150,7 @@ class gladosLocal(Thread):
         self.insults = self.llp(self.configp["LOCALSPEAK"]["insults"])
         self.questions = self.llp(self.configp["LOCALSPEAK"]["questions"])
         self.qresponse = self.llp(self.configp["LOCALSPEAK"]["qresponses"])
-    
+        self.fuck = self.llp(self.configp["LOCALSPEAK"]["fuck"])
 
     def __random_audio(self, choice, last, options_list):
         proc = self.dedupe(choice, last, options_list)
@@ -165,6 +168,9 @@ class gladosLocal(Thread):
     
     def random_processing(self):
         self.__random_audio(random.choice(self.processing), self.last_process, self.processing)
+    
+    def random_fuck_response(self):
+        self.__random_audio(random.choice(self.fuck), self.last_fresponse, self.fuck)
     
     def random_greeting(self):
         self.__random_audio(random.choice(self.greetings), self.last_greeting, self.greetings)
@@ -185,9 +191,20 @@ class gladosLocal(Thread):
             return clines
         else:
             raise GLaDOS_Exception("Unable to load file {}".format(file))
-        # load local phrases 
+        # load local phrases
 
-
+    def __check_local_command(self, prompt, command):
+        match = re.search(re.escape(command), prompt)
+        return bool(match)
+         
+    def fuckyou(self, prompt):
+        check = self.__check_local_command(prompt.lower(), "fuck you")
+        print(prompt)
+        print(check)
+        if check is True:
+            self.random_fuck_response()
+        return check
+            
 class gladosGPT(Thread):
     def __init__(self, prompt):
         Thread.__init__(self)
@@ -242,6 +259,16 @@ if __name__ == "__main__":
     while True:
         prompt = gstt.get_text()
         if prompt is not None:
+            # check for local commands
+            # TODO load commands from config?
+            for cmd in [gladoslocal.fuckyou]:
+                cmdbool = cmd(prompt)
+                if cmdbool is True:
+                    # break the for loop
+                    break
+            if cmdbool is True:
+                # skip the rest on the while loop
+                continue
             gladosgpt = gladosGPT(prompt)
             gladosgpt.start()
             time.sleep(0.3)
