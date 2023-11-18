@@ -168,7 +168,7 @@ class gladosLocal(Thread):
     def random_greeting(self):
         self.__random_audio(random.choice(self.greetings), self.last_greeting, self.greetings)
     
-    def dedupe(self, current, last, options):
+    def __dedupe(self, current, last, options):
         while current == last:
             current = random.choice(options)
         return current
@@ -185,8 +185,6 @@ class gladosLocal(Thread):
         else:
             raise GLaDOS_Exception("Unable to load file {}".format(file))
         # load local phrases
-
-    #def __set_timer
 
     def __check_local_command(self, prompt, command):
         if type(command) != re.Pattern:
