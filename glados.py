@@ -21,27 +21,6 @@ from pydub import AudioSegment
 from pydub.playback import play
 
 
-def get_audio(response):
-    response = ", , " + response
-    rsp = base64.b64encode(response.encode("utf8"))
-    #rsp = urllib.parse.quote(response)
-    # hack because url requote isn't working right for some reason
-    #rsp = requests.utils.requote_uri(response.replace(',', "%2c").replace("'","%27").replace(".","%2e").replace(')','%29').replace("(","%28"))
-    #print(rsp)
-    url = 'http://192.168.86.39:8124/synthesize/{}'.format(str(rsp, 'utf8'))
-    #print(url)
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.content
-    else:
-        print("Failed to translate text")
-        return -1
-
-def play_audio(data):
-    song = AudioSegment.from_file(io.BytesIO(data))
-    play(song)
-
-
 class GLaDOS_Exception(Exception):
     pass
 
@@ -137,6 +116,7 @@ class gladosLocal(Thread):
         self.last_qresponse = None
         self.last_fresponse = None
         self.timers = list()
+        self.voiceurl = configFile["DEFAULT"]["VoiceUrl"]
         self.configp = configFile["LOCALSPEAK"]
         self.greetings = self.llp(self.configp["greetings"])
         self.processing = self.llp(self.configp["processing"])
@@ -147,7 +127,7 @@ class gladosLocal(Thread):
 
     def __random_audio(self, choice, last, options_list):
         proc = self.__dedupe(choice, last, options_list)
-        play_audio(get_audio(proc))
+        self.speak(proc)
         last = proc
 
     def random_question_response(self):
@@ -215,11 +195,10 @@ class gladosLocal(Thread):
                 ti = re.findall(r'\b\d+\b', prompt)
                 num = int(ti[0])
                 seconds = num * t['mul']
-                egg = EggTimer(seconds)
+                egg = EggTimer(seconds, self.speak)
                 egg.start()
                 self.timers.append(egg)
-                audio = get_audio("I have Set a Timer for {}, {}".format(num, t['type']))
-                play_audio(audio)
+                self.speak("I have Set a Timer for {}, {}".format(num, t['type']))
                 break
         #if check is False:
         #    # note, need to find number of timer...
@@ -235,13 +214,32 @@ class gladosLocal(Thread):
     def run(self):
         pass
 
+    def __get_audio(self, response):
+        response = ", , " + response
+        rsp = base64.b64encode(response.encode("utf8"))
+        url = '{}{}'.format(self.voiceurl, str(rsp, 'utf8'))
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.content
+        else:
+            print("Failed to translate text")
+            return -1
+
+    def __play_audio(self, data):
+        play(AudioSegment.from_file(io.BytesIO(data)))
+
+    def speak(self, text):
+        self.__play_audio(self.__get_audio(text))
+
+
 class EggTimer(Thread):
-    def __init__(self, duration_in_seconds):
+    def __init__(self, duration_in_seconds, speak):
         Thread.__init__(self)
         Thread.daemon = True
         self.duration = duration_in_seconds
         self.start_time = None
         self.is_running = False
+        self.speak = speak
 
     def tstart(self):
         if not self.is_running:
@@ -276,7 +274,7 @@ class EggTimer(Thread):
             r = self.check_remaining_time()
             print(r)
             if r["complete"] is True:
-                play_audio(get_audio("Your Timer is complete"))
+                self.speak("Your Timer is complete")
                 break
             time.sleep(.2)
             
@@ -285,7 +283,7 @@ class gladosGPT(Thread):
     def __init__(self, configp, prompt):
         Thread.__init__(self)
         Thread.daemon = True
-        self.real_audio = None
+        self.real_response = None
         self.prompt = prompt
         self.configp = configp["OPENAI"]
         self.model = self.configp["model"]
@@ -304,8 +302,7 @@ class gladosGPT(Thread):
         response = requests.post(self.api_endpoint, headers=headers, json=data)
         if response.status_code == 200:
             response_json = response.json()
-            generated_text = response_json['choices'][0]['message']['content'].strip()
-            self.real_audio = get_audio(generated_text)
+            self.real_response = response_json['choices'][0]['message']['content'].strip()
             print("done")
         else:
             print(f"Failed to call the API. Status code: {response.status_code}")
@@ -350,10 +347,10 @@ if __name__ == "__main__":
             gladosgpt = gladosGPT(configp, prompt)
             gladosgpt.start()
             time.sleep(0.3)
-            while gladosgpt.real_audio is None:
+            while gladosgpt.real_response is None:
                 gladoslocal.random_processing()
                 time.sleep(0.3)
                 rfunc = random.choice((gladoslocal.random_processing, gladoslocal.random_insult))
                 rfunc()
             time.sleep(0.2)
-            play_audio(gladosgpt.real_audio)
+            gladoslocal.speak(gladosgpt.real_response)
