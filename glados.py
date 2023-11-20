@@ -328,7 +328,6 @@ if __name__ == "__main__":
     else:
         raise GLaDOS_Exception("Unable to load file {}".format(configFile))
     gladoslocal = gladosLocal(configp)
-    gladoslocal.start()
     gstt = gladosSTT(gladoslocal)
     gstt.start()
     while True:
