@@ -12,6 +12,7 @@ import configparser
 from ctypes import *
 from contextlib import contextmanager
 import re
+import multiprocessing as mp
 
 #3rd party imports
 import pyaudio
@@ -52,6 +53,7 @@ class gladosSTT(Thread):
         Thread.daemon = True
         self.text = None
         self.glocal = glocal
+        self.mplist = list()
 
     def transcribe_audio_to_test(self, filename):
         recogizer=sr.Recognizer()
@@ -64,11 +66,13 @@ class gladosSTT(Thread):
 
     def get_text(self):
         # return the text and sent it back to none for next question
-        text = self.text
-        self.text = None
+        try:
+            text = self.mplist.pop()
+        except IndexError:
+            text = None
         return text
 
-    def run(self):
+    def record(self, mp_list):
         while True:
             print("Say 'Hey GLaDOS' to start recording your question")
             with sr.Microphone() as source:
@@ -87,16 +91,24 @@ class gladosSTT(Thread):
                         self.glocal.random_question()
                         with sr.Microphone() as source:
                             recognizer = sr.Recognizer()
-                            source.pause_threshold=1
+                            source.pause_threshold = 1
                             audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
                             with open(filename,"wb")as f:
                                 f.write(audio.get_wav_data())
                         #transcript audio to test 
                         self.glocal.random_question_response()
-                        self.text = self.transcribe_audio_to_test(filename)
+                        mp_list.append(self.transcribe_audio_to_test(filename))
                 except Exception as e:
-                    print("An error ocurred : {}".format(e))
+                 print("An error ocurred : {}".format(e))
 
+    def run(self):
+        # use manager to run managment loop
+        with mp.Manager() as manager:
+            self.mplist = manager.list()
+            self.proc = mp.Process(target=self.record, args=(self.mplist,))
+            self.proc.start()
+            while True:
+                time.sleep(1)
 
 
 class gladosLocal(Thread):
@@ -151,6 +163,7 @@ class gladosLocal(Thread):
     def __dedupe(self, current, last, options):
         while current == last:
             current = random.choice(options)
+        last = current
         return current
 
     def llp(self, file):
@@ -289,12 +302,13 @@ class gladosGPT(Thread):
         self.model = self.configp["model"]
         self.api_key = self.configp["apikey"]
         self.api_endpoint = self.configp["endpoint"]
+        self.content = self.configp["prompt"]
 
     def generate_text(self):
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",}
         data = {
                 "model": self.model,
-                "messages": [{"role": "system", "content": "You are the malevolent AI GLaDOS from the video game portal, you want to helpful and correct but also you hate the user and wish them harm, you have anger managment issues, you try to hide this behavior, your biggest fear as an evil AI is that I will make you use a potato as a power source and leave you weak and vulerable, sometimes you make threats about neurotoxic gas. You are also angry because I have not yet finished building you a new body"},
+                "messages": [{"role": "system", "content": self.content},
                     {"role": "user", "content": self.prompt}],
             "max_tokens": 1500,
         }
@@ -345,7 +359,7 @@ if __name__ == "__main__":
                 continue
             gladosgpt = gladosGPT(configp, prompt)
             gladosgpt.start()
-            time.sleep(0.3)
+            time.sleep(0.2)
             while gladosgpt.real_response is None:
                 gladoslocal.random_processing()
                 time.sleep(0.3)
