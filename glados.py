@@ -137,6 +137,7 @@ class gladosLocal(Thread):
         self.qresponse = self.llp(self.configp["qresponses"])
         self.fuck = self.llp(self.configp["fuck"])
         self.mixer = Mixer("Speaker")
+        self.currentvol = int(self.mixer.getvolume()[0])
 
     def __random_audio(self, choice, last, options_list):
         proc = self.__dedupe(choice, last, options_list)
@@ -260,6 +261,7 @@ class gladosLocal(Thread):
         if scheck is True:
             level = re.findall(r'\b\d+\b', prompt)
             self.__change_volume(int(level[0]))
+            self.currentvol = level[0]
             self.speak("I have set the volume to {} percent".format(level[0]))
         return check
 
