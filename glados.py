@@ -20,7 +20,7 @@ import speech_recognition as sr
 import openai
 from pydub import AudioSegment
 from pydub.playback import play
-
+from alsaaudio import Mixer
 
 class GLaDOS_Exception(Exception):
     pass
@@ -136,6 +136,7 @@ class gladosLocal(Thread):
         self.questions = self.llp(self.configp["questions"])
         self.qresponse = self.llp(self.configp["qresponses"])
         self.fuck = self.llp(self.configp["fuck"])
+        self.mixer = Mixer("Speaker")
 
     def __random_audio(self, choice, last, options_list):
         proc = self.__dedupe(choice, last, options_list)
@@ -244,6 +245,23 @@ class gladosLocal(Thread):
     def speak(self, text):
         self.__play_audio(self.__get_audio(text))
 
+    def __change_volume(self, level):
+        # Set the volume
+        self.mixer.setvolume(int(level)) 
+    
+    def set_volume(self, prompt):
+        pccommand = ["set volume", "change volume"]
+        prompt = prompt.lower()
+        for pc in pccommand:
+            check = self.__check_local_command(prompt, pc)
+            if check is True:
+                break
+        scheck = self.__check_local_command(prompt, re.compile(r'%'))
+        if scheck is True:
+            level = re.findall(r'\b\d+\b', prompt)
+            self.__change_volume(int(level[0]))
+            self.speak("I have set the volume to {} percent".format(level[0]))
+        return check
 
 class EggTimer(Thread):
     def __init__(self, duration_in_seconds, speak):
@@ -341,15 +359,16 @@ if __name__ == "__main__":
         configp.read(args.conf[0])
     else:
         raise GLaDOS_Exception("Unable to load file {}".format(configFile))
-    gladoslocal = gladosLocal(configp)
-    gstt = gladosSTT(gladoslocal)
+    gl = gladosLocal(configp)
+    gstt = gladosSTT(gl)
     gstt.start()
+    local_commands = [gl.fuckyou, gl.timer, gl.set_volume]
     while True:
         prompt = gstt.get_text()
         if prompt is not None:
             # check for local commands
             # TODO load commands from config?
-            for cmd in [gladoslocal.fuckyou, gladoslocal.timer]:
+            for cmd in local_commands:
                 cmdbool = cmd(prompt)
                 if cmdbool is True:
                     # break the for loop
@@ -361,9 +380,10 @@ if __name__ == "__main__":
             gladosgpt.start()
             time.sleep(0.2)
             while gladosgpt.real_response is None:
-                gladoslocal.random_processing()
+                gl.random_processing()
                 time.sleep(0.3)
-                rfunc = random.choice((gladoslocal.random_processing, gladoslocal.random_insult))
+                rfunc = random.choice((gl.random_processing,
+                                       gl.random_insult))
                 rfunc()
             time.sleep(0.2)
-            gladoslocal.speak(gladosgpt.real_response)
+            gl.speak(gladosgpt.real_response)
