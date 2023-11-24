@@ -137,6 +137,7 @@ class gladosLocal(Thread):
         self.qresponse = self.llp(self.configp["qresponses"])
         self.fuck = self.llp(self.configp["fuck"])
         self.mixer = Mixer("Speaker")
+        self.__change_volume(int(configFile["DEFAULT"]["VolumeLevel"]))
         self.currentvol = int(self.mixer.getvolume()[0])
 
     def __random_audio(self, choice, last, options_list):
