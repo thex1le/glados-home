@@ -83,12 +83,12 @@ class gladosSTT(Thread):
                 try:
                     transcription = recognizer.recognize_google(audio)
                     print(transcription.lower())
-                    if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados", "play glados"]:
+                    if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados", "play glados", "big lots"]:
                         #record audio
                         filename = "input.wav"
-                        self.glocal.random_greeting()
-                        print("ask question")
-                        self.glocal.random_question()
+                        greet = self.glocal.random_greeting(True)
+                        rq = self.glocal.random_question(True)
+                        self.glocal.speak(f"{greet}. {rq}")
                         with sr.Microphone() as source:
                             recognizer = sr.Recognizer()
                             source.pause_threshold = 1
@@ -140,28 +140,36 @@ class gladosLocal(Thread):
         self.__change_volume(int(configFile["DEFAULT"]["VolumeLevel"]))
         self.currentvol = int(self.mixer.getvolume()[0])
 
-    def __random_audio(self, choice, last, options_list):
+    def __random_audio(self, choice, last, options_list, just_text = False):
         proc = self.__dedupe(choice, last, options_list)
-        self.speak(proc)
+        if just_text is False:
+            self.speak(proc)
         last = proc
+        return proc
 
-    def random_question_response(self):
-        self.__random_audio(random.choice(self.qresponse), self.last_qresponse, self.qresponse)
+    def random_question_response(self, just_text = False):
+        return self.__random_audio(random.choice(self.qresponse), 
+                                   self.last_qresponse, self.qresponse, just_text)
 
-    def random_question(self):
-        self.__random_audio(random.choice(self.questions), self.last_question, self.questions)
+    def random_question(self, just_text = False):
+        return self.__random_audio(random.choice(self.questions), 
+                                   self.last_question, self.questions, just_text)
 
-    def random_insult(self):
-        self.__random_audio(random.choice(self.insults), self.last_insult, self.insults)
+    def random_insult(self, just_text = False):
+        return self.__random_audio(random.choice(self.insults), 
+                                   self.last_insult, self.insults, just_text)
     
-    def random_processing(self):
-        self.__random_audio(random.choice(self.processing), self.last_process, self.processing)
+    def random_processing(self, just_text = False):
+        return self.__random_audio(random.choice(self.processing), 
+                                   self.last_process, self.processing, just_text)
     
-    def random_fuck_response(self):
-        self.__random_audio(random.choice(self.fuck), self.last_fresponse, self.fuck)
+    def random_fuck_response(self, just_text = False):
+        return self.__random_audio(random.choice(self.fuck), 
+                                   self.last_fresponse, self.fuck, just_text)
     
-    def random_greeting(self):
-        self.__random_audio(random.choice(self.greetings), self.last_greeting, self.greetings)
+    def random_greeting(self, just_text = False):
+        return self.__random_audio(random.choice(self.greetings),
+                                   self.last_greeting, self.greetings, just_text)
     
     def __dedupe(self, current, last, options):
         while current == last:
