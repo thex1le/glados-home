@@ -14,9 +14,85 @@ from ultralytics import YOLO
 import zmq
 import pdb
 import numpy as np
+import cv2
+
 
 class GLaDOS_Server_Exception(Exception):
     pass
+
+
+class __CameraInOut(Thread):
+    def __init__(self, configfile):
+        Thread.__init__(self)
+        Thread.daemon = True
+        self.config = configfile['Default']
+        self.contextrecv = zmq.Context()
+        self.socketrecv = contextrecv.socket(zmq.PULL)
+        zmqlisten = self.config["ZMQListenAddress"]
+        zmqlistenport = self.config["ZMQListenPort"]
+        zmqsend = self.config["ZMQSenderAddress"]
+        zmqsendport = self.config["ZMQSenderPort"]
+        self.socketrecv.bind(f"tcp://{zmqlisten}:{zmqlistenport}")
+        self.results = dict()
+        self.contextsend = zmq.Context()
+        self.socketsend = contextsend.socket(zmq.PUSH)
+        self.socketsend.connect(f"tcp://{zmqsend}:{zmqsendport}")
+        
+    def run(self):
+        while self.stop is False:
+            print("Waiting for image results")
+            self.results = socketrecv.recv()
+            time.sleep(.2)
+        self.socketsend.close()
+        self.socketrecv.close()
+        self.contextrecv.term()
+        self.contextsend.term()
+
+    def get_results(self):
+        return self.results
+    
+    def send_image(self, frame):
+        #context = zmq.Context()
+        #socket = context.socket(zmq.PUSH)  # Create a PUSH socket
+        #socket.connect("tcp://192.168.86.39:5555")  # Connect to the server
+        print("Sending data for yolo...")
+        self.socketsned.send(dumps(frame))  # Send the JSON string
+        #socket.close()
+
+
+class eye(Thread):
+    def __init__(self, configfile):
+        Thread.__init__(self)
+        Thread.daemon = True
+        self.config = configfile['Default']
+        camera = int(self.config["Camera"])
+        self.cap = cv2.VideoCapture(camera)
+        self.cap.set(cv2.CAP_PROP_FOURCC, 1196444237)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.image = None
+        self.stop = False
+        self.results = dict()
+        self.inout = __CameraInOut(configfile)
+        self.inout.start()
+
+    def get_image(self, blocking=True):
+        # blocking call
+        while blocking is True:
+            time.sleep(.1)
+        return self.image
+
+    def run(self):
+        while self.stop is False:
+            ret, frame = self.cap.read()
+            self.image = frame
+            time.sleep(.02)
+
+    def get_results(self):
+        # send an image to yolo, get it processed and get results
+        self.inout.send_image(self.get_image)
+        self.results = self.inout.get_results()
+        return self.results
 
 
 class YoloDetect(Thread):
