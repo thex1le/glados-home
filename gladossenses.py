@@ -50,8 +50,11 @@ class camera(Thread):
             time.sleep(.02)
 
     def get_results(self):
+        print("getting image from camera")
         self.imagesend.send_data(self.get_image(), jsonsend=False)
+        print("sent image to server")
         self.results = json.loads(self.imageget.get_data())
+        print("got results from server")
         return self.results
 
 
