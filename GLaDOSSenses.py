@@ -21,46 +21,7 @@ class GLaDOS_Server_Exception(Exception):
     pass
 
 
-class __CameraInOut(Thread):
-    def __init__(self, configfile):
-        Thread.__init__(self)
-        Thread.daemon = True
-        self.config = configfile['Default']
-        self.contextrecv = zmq.Context()
-        self.socketrecv = contextrecv.socket(zmq.PULL)
-        zmqlisten = self.config["ZMQListenAddress"]
-        zmqlistenport = self.config["ZMQListenPort"]
-        zmqsend = self.config["ZMQSenderAddress"]
-        zmqsendport = self.config["ZMQSenderPort"]
-        self.socketrecv.bind(f"tcp://{zmqlisten}:{zmqlistenport}")
-        self.results = dict()
-        self.contextsend = zmq.Context()
-        self.socketsend = contextsend.socket(zmq.PUSH)
-        self.socketsend.connect(f"tcp://{zmqsend}:{zmqsendport}")
-        
-    def run(self):
-        while self.stop is False:
-            print("Waiting for image results")
-            self.results = socketrecv.recv()
-            time.sleep(.2)
-        self.socketsend.close()
-        self.socketrecv.close()
-        self.contextrecv.term()
-        self.contextsend.term()
-
-    def get_results(self):
-        return self.results
-    
-    def send_image(self, frame):
-        #context = zmq.Context()
-        #socket = context.socket(zmq.PUSH)  # Create a PUSH socket
-        #socket.connect("tcp://192.168.86.39:5555")  # Connect to the server
-        print("Sending data for yolo...")
-        self.socketsned.send(dumps(frame))  # Send the JSON string
-        #socket.close()
-
-
-class eye(Thread):
+class camera(Thread):
     def __init__(self, configfile):
         Thread.__init__(self)
         Thread.daemon = True
@@ -73,11 +34,12 @@ class eye(Thread):
         self.image = None
         self.stop = False
         self.results = dict()
-        self.inout = __CameraInOut(configfile)
-        self.inout.start()
+        self.imageget = DataRecv(configfile)
+        self.imageget.start()
+        self.imagesend = DataSend(configfile)
+        self.imagesend.start()
 
     def get_image(self, blocking=True):
-        # blocking call
         while blocking is True:
             time.sleep(.1)
         return self.image
@@ -89,18 +51,15 @@ class eye(Thread):
             time.sleep(.02)
 
     def get_results(self):
-        # send an image to yolo, get it processed and get results
-        self.inout.send_image(self.get_image)
-        self.results = self.inout.get_results()
+        self.imagesend.send_data(self.get_image, json=False)
+        self.results = json.loads(self.imageget.get_data())
         return self.results
 
 
 class YoloDetect(Thread):
-    #TODO Make this use a configfile for model's and confidence scores
     def __init__(self, configfile):
         Thread.__init__(self)
         Thread.daemon = True
-        #TODO, do we need to thread? maybe thread to pull from zmq?
         self.configfile = configfile
         self.confyolo = configfile["YOLO"]
         self.model = YOLO(self.confyolo["model"])
@@ -120,7 +79,6 @@ class YoloDetect(Thread):
             for cname in jclass:
                 name = cname["name"]
                 if name in list(results_dict.keys()):
-                    #update teh count
                     results_dict[name]["count"] += 1
                     results_dict[name]["objects"].append(cname)
                 else:
@@ -132,15 +90,13 @@ class YoloDetect(Thread):
         return results
 
     def process_image(self, image):
-        # you left off here... it was processing the image, likely need to clean up logic here for other classes?
-        # error in system trying to send zmq mesage back of the object, likely just pickle it again?
         final_image=loads(image) 
         self.sight = self.__yolo_process_image(final_image)
         print("sending back dict")
         self.imagesend.send_data(self.__translate_results(self.sight))
 
     def run(self):
-        while True:  # show streamed images until Ctrl-C
+        while True:
             image = self.imageget.get_data(True) 
             print(f"Got image from sender")
             self.process_image(image)
@@ -155,22 +111,27 @@ class DataSend(Thread):
         ip = self.configfile["ZMQSenderAddress"]
         port = self.configfile["ZMQSenderPort"]
         self.context = zmq.Context()
-        # clientaddress is ip and port
         self.clientaddress = f"tcp://{ip}:{port}"
         self.socketsend = self.context.socket(zmq.PUSH)
         self.socketsend.connect(self.clientaddress)
         self.stop = False
         self.data = list()
 
-    def send_data(self, data):
-        self.data.append(json.dumps(data))
+    def send_data(self, data, jsonsend=True):
+        if jsonsend is True:
+            self.data.append(json.dumps(data))
+        if jsonsend is False:
+            self.data.append(dumps(data))
 
     def run(self):
         print("loop started")
         while self.stop is False: 
             try:
                 data = self.data.pop(0)
-                self.socketsend.send_string(data)
+                if type(data) is str:
+                    self.socketsend.send_string(data)
+                else:
+                    self.socketsend.send(data)
             except IndexError:
                 pass
             time.sleep(.1)
@@ -188,8 +149,6 @@ class DataRecv(Thread):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PULL)  # Create a PULL socket
         self.socket.bind(f"tcp://{ip}:{port}")  # Bind to the TCP port 5555
-        ip_address = self.socket.getpeername()[0]
-        print(ip_address)
         self.data = None
         self.stop = False
 
@@ -232,10 +191,8 @@ if __name__ == "__main__":
     # start the text to speach engine
     #ttsengine = mp.Process(target=engine.main, args=())
     #ttsengine.start()
-    #TODO collapse duplicate camera in and out loops wtf...   
     # loop
-    # you have a few problems, how does eye track which device its processing for?, we need a datasender object for each server wre tracking to return the response, kinda sudo code for now
-    # this is threaded and will just spin up a ton of threads... do we block? sleep? what else would be done in this loop?
+    # do we keep looping hear? what blocks on main?
     while True:
         time.sleep(1)
         
