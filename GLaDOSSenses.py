@@ -232,7 +232,7 @@ if __name__ == "__main__":
     # start the text to speach engine
     #ttsengine = mp.Process(target=engine.main, args=())
     #ttsengine.start()
-    
+    #TODO collapse duplicate camera in and out loops wtf...   
     # loop
     # you have a few problems, how does eye track which device its processing for?, we need a datasender object for each server wre tracking to return the response, kinda sudo code for now
     # this is threaded and will just spin up a ton of threads... do we block? sleep? what else would be done in this loop?
