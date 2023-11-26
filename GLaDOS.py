@@ -22,6 +22,10 @@ from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 
+#glados imports
+from gladossenses import camera as gleyes
+
+
 class GLaDOS_Exception(Exception):
     pass
 
@@ -43,7 +47,6 @@ def noalsaerr():
 with noalsaerr():
     p = pyaudio.PyAudio()
 stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
-
 
 
 class gladosSTT(Thread):
@@ -139,6 +142,10 @@ class gladosLocal(Thread):
         self.mixer = Mixer("Speaker")
         self.__change_volume(int(configFile["DEFAULT"]["VolumeLevel"]))
         self.currentvol = int(self.mixer.getvolume()[0])
+        self.eyes = gleyes(configFile)
+        self.eyes.start()
+        self.sight_results = None
+        self.stop = False
 
     def __random_audio(self, choice, last, options_list, just_text = False):
         proc = self.__dedupe(choice, last, options_list)
@@ -236,8 +243,15 @@ class gladosLocal(Thread):
         return check
 
     def run(self):
+        while self.stop is False:
+            # update results every 10 seconds
+            self.sight_results = self.eyes.get_results()
+            print(self.sight_results)
+            time.sleep(10)
+    
+    def process_sight(self):
         pass
-
+    
     def __get_audio(self, response):
         response = ", , " + response
         rsp = base64.b64encode(response.encode("utf8"))
@@ -332,12 +346,21 @@ class gladosGPT(Thread):
         self.api_key = self.configp["apikey"]
         self.api_endpoint = self.configp["endpoint"]
         self.content = self.configp["prompt"]
+        self.updated_content = None
+
+    def add_prompt(self, content):
+        # allow extra info to be added to the prompt
+        self.updated_content = content
 
     def generate_text(self):
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",}
+        if self.updated_content is None:
+            localcontent = self.content
+        else:
+            localcontent = f"{self.content}. {self.updated_content}"
         data = {
                 "model": self.model,
-                "messages": [{"role": "system", "content": self.content},
+                "messages": [{"role": "system", "content": localcontent},
                     {"role": "user", "content": self.prompt}],
             "max_tokens": 1500,
         }
@@ -371,6 +394,7 @@ if __name__ == "__main__":
     else:
         raise GLaDOS_Exception("Unable to load file {}".format(configFile))
     gl = gladosLocal(configp)
+    gl.start()
     gstt = gladosSTT(gl)
     gstt.start()
     local_commands = [gl.fuckyou, gl.timer, gl.set_volume]
