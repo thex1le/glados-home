@@ -138,6 +138,7 @@ class gladosLocal(Thread):
         self.insults = self.llp(self.configp["insults"])
         self.questions = self.llp(self.configp["questions"])
         self.qresponse = self.llp(self.configp["qresponses"])
+        self.vision_confidence = float(self.configp["VisionConfidence"])
         self.fuck = self.llp(self.configp["fuck"])
         self.mixer = Mixer("Speaker")
         self.__change_volume(int(configFile["DEFAULT"]["VolumeLevel"]))
@@ -146,6 +147,7 @@ class gladosLocal(Thread):
         self.eyes.start()
         self.sight_results = None
         self.stop = False
+        self.seen = None
 
     def __random_audio(self, choice, last, options_list, just_text = False):
         proc = self.__dedupe(choice, last, options_list)
@@ -202,7 +204,10 @@ class gladosLocal(Thread):
             command = re.escape(command)
         match = re.search(command, prompt)
         return bool(match)
-         
+    
+    def get_seen_prompt(self):
+        return self.seen
+
     def fuckyou(self, prompt):
         check = self.__check_local_command(prompt.lower(), "fuck you")
         if check is True:
@@ -246,11 +251,29 @@ class gladosLocal(Thread):
         while self.stop is False:
             # update results every 10 seconds
             self.sight_results = self.eyes.get_results()
-            print(self.sight_results)
-            time.sleep(10)
+            self.seen = self.process_sight(self.sight_results)
+            time.sleep(5)
     
-    def process_sight(self):
-        pass
+    def __adjust_count(self, obj):
+        count = 0
+        for o in obj:
+            #print(o)
+            #print(self.vision_confidence)
+            if o['confidence'] >= self.vision_confidence:
+                count += 1
+        return count
+
+    def process_sight(self, seen):
+        context = ["You can see the following things in the room"]
+        print(seen)
+        #print(seen.keys())
+        for item in seen.keys():
+            #count = self.__adjust_count(seen[item]["objects"])
+            count = seen[item]['count']
+            if count == 0:
+                continue
+            context.append(f"{count} {item}")
+        return ", ".join(context)
     
     def __get_audio(self, response):
         response = ", , " + response
@@ -358,6 +381,7 @@ class gladosGPT(Thread):
             localcontent = self.content
         else:
             localcontent = f"{self.content}. {self.updated_content}"
+        print(localcontent)
         data = {
                 "model": self.model,
                 "messages": [{"role": "system", "content": localcontent},
@@ -412,6 +436,7 @@ if __name__ == "__main__":
                 # skip the rest on the while loop
                 continue
             gladosgpt = gladosGPT(configp, prompt)
+            gladosgpt.add_prompt(gl.get_seen_prompt())
             gladosgpt.start()
             time.sleep(0.2)
             while gladosgpt.real_response is None:

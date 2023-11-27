@@ -28,8 +28,8 @@ class camera(Thread):
         camera = int(self.config["Camera"])
         self.cap = cv2.VideoCapture(camera)
         self.cap.set(cv2.CAP_PROP_FOURCC, 1196444237)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         self.image = None
         self.stop = False
         self.results = dict()
@@ -39,7 +39,7 @@ class camera(Thread):
         self.imagesend.start()
 
     def get_image(self, blocking=True):
-        while blocking is True:
+        while blocking is True and self.image is None:
             time.sleep(.1)
         return self.image
 
@@ -50,11 +50,10 @@ class camera(Thread):
             time.sleep(.02)
 
     def get_results(self):
-        print("getting image from camera")
         self.imagesend.send_data(self.get_image(), jsonsend=False)
-        print("sent image to server")
-        self.results = json.loads(self.imageget.get_data())
-        print("got results from server")
+        data = self.imageget.get_data()
+        if data is not None:
+            self.results = json.loads(data)
         return self.results
 
 
