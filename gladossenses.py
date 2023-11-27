@@ -83,7 +83,8 @@ class YoloDetect(Thread):
                     results_dict[name]["count"] += 1
                     results_dict[name]["objects"].append(cname)
                 else:
-                    results_dict[name] = {"count": 1, "objects": list(), "class_name": name}
+                    results_dict[name] = {"count": 1,
+                            "objects": [cname], "class_name": name}
         return results_dict
 
     def __yolo_process_image(self, image):
