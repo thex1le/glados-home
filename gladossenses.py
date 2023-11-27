@@ -192,11 +192,12 @@ if __name__ == "__main__":
     eyes = YoloDetect(configp)
     eyes.start()
     # start the text to speach engine
+    engine.main()
     #ttsengine = mp.Process(target=engine.main, args=())
     #ttsengine.start()
     # loop
     # do we keep looping hear? what blocks on main?
-    while True:
-        time.sleep(1)
+    #while True:
+    #    time.sleep(1)
         
 
