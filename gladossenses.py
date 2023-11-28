@@ -14,7 +14,7 @@ import zmq
 import pdb
 import numpy as np
 import cv2
-
+from picamera2 import Picamera2
 
 class GLaDOS_Server_Exception(Exception):
     pass
@@ -25,11 +25,17 @@ class camera(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.config = configfile['DEFAULT']
-        camera = int(self.config["Camera"])
-        self.cap = cv2.VideoCapture(camera)
-        self.cap.set(cv2.CAP_PROP_FOURCC, 1196444237)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        self.picam = bool(self.config['picam'])
+        if self.picam is True:
+            self.cap = Picamera2()
+            self.cap.configure(self.cap.create_preview_configuration({"size": (1920, 1080), 'format': 'BGR888'}))
+            self.cap.start()
+        else:
+            camera = int(self.config["Camera"])
+            self.cap = cv2.VideoCapture(camera)
+            self.cap.set(cv2.CAP_PROP_FOURCC, 1196444237)
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         self.image = None
         self.stop = False
         self.results = dict()
@@ -45,7 +51,10 @@ class camera(Thread):
 
     def run(self):
         while self.stop is False:
-            ret, frame = self.cap.read()
+            if self.picam is True:
+                frame = self.cap.capture_array()
+            else:
+                ret, frame = self.cap.read()
             self.image = frame
             time.sleep(.02)
 
