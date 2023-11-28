@@ -80,6 +80,8 @@ class gladosSTT(Thread):
             print("Say 'Hey GLaDOS' to start recording your question")
             with sr.Microphone() as source:
                 recognizer = sr.Recognizer()
+                print("Adjusting for noise")
+                recognizer.adjust_for_ambient_noise(source, .5)
                 print("getting audio")
                 audio = recognizer.listen(source)
                 print("audio done")
@@ -257,19 +259,15 @@ class gladosLocal(Thread):
     def __adjust_count(self, obj):
         count = 0
         for o in obj:
-            #print(o)
-            #print(self.vision_confidence)
             if o['confidence'] >= self.vision_confidence:
                 count += 1
         return count
 
     def process_sight(self, seen):
         context = ["You can see the following things in the room"]
-        print(seen)
-        #print(seen.keys())
         for item in seen.keys():
-            #count = self.__adjust_count(seen[item]["objects"])
-            count = seen[item]['count']
+            count = self.__adjust_count(seen[item]["objects"])
+            #count = seen[item]['count']
             if count == 0:
                 continue
             context.append(f"{count} {item}")
