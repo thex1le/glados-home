@@ -76,6 +76,10 @@ class YoloDetect(Thread):
     def __translate_results(self, results):
         results_dict = {}
         for yclass in results:
+            print(yclass)
+            print(type(yclass))
+            if yclass is None:
+                continue
             jclass = json.loads(yclass.tojson())
             for cname in jclass:
                 name = cname["name"]
@@ -85,6 +89,7 @@ class YoloDetect(Thread):
                 else:
                     results_dict[name] = {"count": 1,
                             "objects": [cname], "class_name": name}
+        print(results_dict)
         return results_dict
 
     def __yolo_process_image(self, image):
