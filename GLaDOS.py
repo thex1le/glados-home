@@ -58,15 +58,6 @@ class gladosSTT(Thread):
         self.glocal = glocal
         self.mplist = list()
 
-    def transcribe_audio_to_test(self, filename):
-        recogizer=sr.Recognizer()
-        with sr.AudioFile(filename)as source:
-            audio=recogizer.record(source) 
-        try:
-            return recogizer.recognize_google(audio)
-        except:
-            print("skipping unkown error")
-
     def get_text(self):
         # return the text and sent it back to none for next question
         try:
@@ -76,6 +67,7 @@ class gladosSTT(Thread):
         return text
 
     def record(self, mp_list):
+    # TODO, how do we keep things local so were not hitting google all the time...
         while True:
             print("Say 'Hey GLaDOS' to start recording your question")
             with sr.Microphone() as source:
@@ -87,22 +79,22 @@ class gladosSTT(Thread):
                 print("audio done")
                 try:
                     transcription = recognizer.recognize_google(audio)
+                    print("transcribe done")
                     print(transcription.lower())
                     if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados", "play glados", "big lots"]:
-                        #record audio
-                        filename = "input.wav"
+                        # here is where we should pause and take a longer recording for the command we need to trigger glados to talk here...
+                        # reconsider how this works with multithreading
                         greet = self.glocal.random_greeting(True)
                         rq = self.glocal.random_question(True)
-                        self.glocal.speak(f"{greet}. {rq}")
+                        self.glocal.speak(data = f"{greet}. {rq}", queue = False)
                         with sr.Microphone() as source:
                             recognizer = sr.Recognizer()
                             source.pause_threshold = 1
                             audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
-                            with open(filename,"wb")as f:
-                                f.write(audio.get_wav_data())
+                        print("good prompt")
                         #transcript audio to test 
-                        self.glocal.random_question_response()
-                        mp_list.append(self.transcribe_audio_to_test(filename))
+                        mp_list.append(transcription)
+                        print("list appended")
                 except Exception as e:
                  print("An error ocurred : {}".format(e))
 
@@ -113,7 +105,7 @@ class gladosSTT(Thread):
             self.proc = mp.Process(target=self.record, args=(self.mplist,))
             self.proc.start()
             while True:
-                time.sleep(1)
+                time.sleep(10)
 
 
 class gladosLocal(Thread):
