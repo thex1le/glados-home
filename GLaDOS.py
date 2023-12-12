@@ -81,7 +81,8 @@ class gladosSTT(Thread):
                     transcription = recognizer.recognize_google(audio)
                     print("transcribe done")
                     print(transcription.lower())
-                    if transcription.lower() in ["hey glados", "hey gladys", "glados", "egg glados", "play glados", "big lots"]:
+                    # use private method in this case to reduce code
+                    if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'glad??')) is True:
                         # here is where we should pause and take a longer recording for the command we need to trigger glados to talk here...
                         # reconsider how this works with multithreading
                         greet = self.glocal.random_greeting(True)
