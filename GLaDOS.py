@@ -86,7 +86,7 @@ class gladosSTT(Thread):
                         # reconsider how this works with multithreading
                         greet = self.glocal.random_greeting(True)
                         rq = self.glocal.random_question(True)
-                        self.glocal.speak(data = f"{greet}. {rq}", queue = False)
+                        self.glocal.speak(f"{greet}. {rq}")
                         with sr.Microphone() as source:
                             recognizer = sr.Recognizer()
                             source.pause_threshold = 1
