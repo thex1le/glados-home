@@ -92,8 +92,15 @@ class gladosSTT(Thread):
                             recognizer = sr.Recognizer()
                             source.pause_threshold = 1
                             audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
+                            transcription = recognizer.recognize_google(audio)
                         print("good prompt")
                         #transcript audio to test 
+                        # check for cancel command
+                        if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'cancel?')) is True:
+                            print('cancel true')
+                            self.glocal.random_cancel_response()
+                            continue
+                        print(transcription)
                         mp_list.append(transcription)
                         print("list appended")
                 except Exception as e:
@@ -118,6 +125,7 @@ class gladosLocal(Thread):
         self.insults = list()
         self.questions = list()
         self.qresponses = list()
+        self.cancel = list()
         self.fuck = list()
         self.last_greeting = None
         self.last_insult = None
@@ -125,6 +133,7 @@ class gladosLocal(Thread):
         self.last_question = None
         self.last_qresponse = None
         self.last_fresponse = None
+        self.last_cresponse = None
         self.timers = list()
         self.voiceurl = configFile["DEFAULT"]["VoiceUrl"]
         self.configp = configFile["LOCALSPEAK"]
@@ -133,6 +142,7 @@ class gladosLocal(Thread):
         self.insults = self.llp(self.configp["insults"])
         self.questions = self.llp(self.configp["questions"])
         self.qresponse = self.llp(self.configp["qresponses"])
+        self.cancel = self.llp(self.configp['cancel'])
         self.vision_confidence = float(self.configp["VisionConfidence"])
         self.fuck = self.llp(self.configp["fuck"])
         self.mixer = Mixer("Speaker")
@@ -151,6 +161,10 @@ class gladosLocal(Thread):
         last = proc
         return proc
 
+    def random_cancel_response(self, just_text = False):
+        return self.__random_audio(random.choice(self.cancel), 
+                                   self.last_cresponse, self.cancel, just_text)
+    
     def random_question_response(self, just_text = False):
         return self.__random_audio(random.choice(self.qresponse), 
                                    self.last_qresponse, self.qresponse, just_text)
