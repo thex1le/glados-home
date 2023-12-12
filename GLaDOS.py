@@ -120,13 +120,6 @@ class gladosLocal(Thread):
     def __init__(self, configFile):
         Thread.__init__(self)
         Thread.daemon = True
-        self.greetings = list()
-        self.processing = list()
-        self.insults = list()
-        self.questions = list()
-        self.qresponses = list()
-        self.cancel = list()
-        self.fuck = list()
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
@@ -137,14 +130,14 @@ class gladosLocal(Thread):
         self.timers = list()
         self.voiceurl = configFile["DEFAULT"]["VoiceUrl"]
         self.configp = configFile["LOCALSPEAK"]
-        self.greetings = self.llp(self.configp["greetings"])
-        self.processing = self.llp(self.configp["processing"])
-        self.insults = self.llp(self.configp["insults"])
-        self.questions = self.llp(self.configp["questions"])
-        self.qresponse = self.llp(self.configp["qresponses"])
-        self.cancel = self.llp(self.configp['cancel'])
-        self.vision_confidence = float(self.configp["VisionConfidence"])
-        self.fuck = self.llp(self.configp["fuck"])
+        self.greetings = self.llp(self.configp.get("greetings", list()))
+        self.processing = self.llp(self.configp.get("processing", list()))
+        self.insults = self.llp(self.configp.get("insults", list()))
+        self.questions = self.llp(self.configp.get("questions", list()))
+        self.qresponse = self.llp(self.configp.get("qresponses", list()))
+        self.cancel = self.llp(self.configp.get('cancel', list()))
+        self.vision_confidence = float(self.configp.get("VisionConfidence", 0.0))
+        self.fuck = self.llp(self.configp.get("fuck", list()))
         self.mixer = Mixer("Speaker")
         self.__change_volume(int(configFile["DEFAULT"]["VolumeLevel"]))
         self.currentvol = int(self.mixer.getvolume()[0])
