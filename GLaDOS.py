@@ -13,6 +13,7 @@ from ctypes import *
 from contextlib import contextmanager
 import re
 import multiprocessing as mp
+from queue import Queue
 
 #3rd party imports
 import pyaudio
@@ -127,7 +128,7 @@ class gladosLocal(Thread):
         self.last_qresponse = None
         self.last_fresponse = None
         self.last_cresponse = None
-        self.timers = list()
+        self.timers = Queue()
         self.voiceurl = configFile["DEFAULT"]["VoiceUrl"]
         self.configp = configFile["LOCALSPEAK"]
         self.greetings = self.llp(self.configp.get("greetings", list()))
@@ -216,37 +217,50 @@ class gladosLocal(Thread):
             self.random_fuck_response()
         return check
     
+    def translate_time(self, prompt: str) -> dict:
+        pattern = r'(\d+)\s*(hour|minute|second)s?'
+        matches = re.findall(pattern, prompt)
+        time_dict = {f'{time_unit}s': int(value) for value, time_unit in matches}
+        total_seconds = time_dict.get('seconds', 0) \
+                    + time_dict.get('minutes', 0) * 60 \
+                    + time_dict.get('hours', 0) * 3600
+        time_dict['total_seconds'] = total_seconds
+        print(time_dict)
+        return time_dict
+
     def timer(self, prompt):
-        pcommand = ["set timer", "set a timer"]
+        print(f"timer called with. {prompt}")
         prompt = prompt.lower()
-        for pc in pcommand:
-            check = self.__check_local_command(prompt, pc)
+        check = self.__check_local_command(prompt, re.compile(r'set\s+(a\s+|the\s+)?timer'))
+        if check is True:
+            time_dict = self.translate_time(prompt)
+            egg = EggTimer(time_dict['total_seconds'], self.speak)
+            egg.start()
+            self.timers.put(egg)
+            time_units = list()
+            if 'hours' in time_dict:
+                time_units.append(f"{time_dict['hours']} hours")
+            if 'minutes' in time_dict:
+                time_units.append(f"{time_dict['minutes']} minutes")
+            if 'seconds' in time_dict:
+                time_units.append(f"{time_dict['seconds']} seconds")
+            time_string = ', '.join(time_units)
+            if ',' in time_string:
+                time_string = time_string.rsplit(', ', 1)
+                time_string = ' and '.join(time_string)
+            self.speak(time_string)
+        else: 
+            check = self.__check_local_command(prompt, re.compile(r'(stop|cancel)\s+(the\s+|a\s+)?timer'))
             if check is True:
-                break
-        # figure amount of time
-        ttype = [{"type":"minutes", "re":re.compile(r'minutes?'), "mul":60}, 
-              {"type":"seconds", "re":re.compile(r'seconds?'), "mul": 1}, 
-              {"type":"hours", "re":re.compile(r'hours?'), "mul": 3600}]
-        for t in ttype:
-            scheck = self.__check_local_command(prompt, t["re"])
-            if scheck is True:
-                ti = re.findall(r'\b\d+\b', prompt)
-                num = int(ti[0])
-                seconds = num * t['mul']
-                egg = EggTimer(seconds, self.speak)
-                egg.start()
-                self.timers.append(egg)
-                self.speak("I have Set a Timer for {}, {}".format(num, t['type']))
-                break
-        #if check is False:
-        #    # note, need to find number of timer...
-        #    pcommand = ["stop timer", "stop a timer"]
-        #    for pc in pcommand:
-        #        check = self.__check_local_command(prompt, pc)
-        #        if check is True:
-        #            break
-        #        # need to fix number there
-        #        self.timmers[0].stop()
+                if self.timers.empty() is True:
+                    print("value was empty, no timer")
+                    self.speak("You have no running Timers")
+                else:
+                    print("value was true one timer")
+                    t = self.timers.get()
+                    t.stop()
+                    t.join()
+        print(f"returning with timer value of {check}")
         return check
 
     def run(self):
@@ -329,7 +343,7 @@ class EggTimer(Thread):
             elapsed_time = time.time() - self.start_time
             remaining_time = max(0, self.duration - elapsed_time)
             self.is_running = False
-            print("Egg timer stopped. Remaining time: {:.2f} seconds.".format(remaining_time))
+            self.speak("Timer stopped. Remaining time: {:.2f} seconds.".format(remaining_time))
 
     def check_remaining_time(self):
         rtn = {"remain": 0, "complete":False}
@@ -340,6 +354,7 @@ class EggTimer(Thread):
             if remaining_time == 0:
                 rtn["remian"] = 0
                 rtn["complete"] = True
+                self.speak("Your Timer is complete")
         else:
             rtn["remain"] = 0
             rtn["complete"] = True
@@ -351,7 +366,6 @@ class EggTimer(Thread):
             r = self.check_remaining_time()
             print(r)
             if r["complete"] is True:
-                self.speak("Your Timer is complete")
                 break
             time.sleep(.2)
             
