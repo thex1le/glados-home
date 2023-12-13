@@ -11,7 +11,6 @@ import sys
 import configparser
 from ctypes import *
 from contextlib import contextmanager
-import re
 import multiprocessing as mp
 from queue import Queue
 
@@ -22,7 +21,7 @@ import openai
 from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
-
+import regex as re
 #glados imports
 from gladossenses import camera as gleyes
 
@@ -67,6 +66,19 @@ class gladosSTT(Thread):
             text = None
         return text
 
+    def parse_command(self, prompt):
+        glados_pattern = r'(glados){e<=3}'
+        glados_match = re.search(glados_pattern, prompt, re.IGNORECASE | re.BESTMATCH)
+        if glados_match:
+            split_index = glados_match.end()
+            greeting = prompt[:split_index].strip()
+            command = prompt[split_index:].strip()
+            has_extra_command = bool(command)
+            return {"greeting": greeting, "has_extra_command": has_extra_command, "command": command}
+        else:
+            return {"greeting": None, "has_extra_command": False, "command": None}
+
+
     def record(self, mp_list):
     # TODO, how do we keep things local so were not hitting google all the time...
         while True:
@@ -83,26 +95,33 @@ class gladosSTT(Thread):
                     print("transcribe done")
                     print(transcription.lower())
                     # use private method in this case to reduce code
-                    if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'glad??')) is True:
+                    #if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'glad??')) is True:
+                    pcommand = self.parse_command(transcription)
+                    print(f'parse command is {pcommand}')
+                    if pcommand["greeting"] is not None:
                         # here is where we should pause and take a longer recording for the command we need to trigger glados to talk here...
                         # reconsider how this works with multithreading
-                        greet = self.glocal.random_greeting(True)
-                        rq = self.glocal.random_question(True)
-                        self.glocal.speak(f"{greet}. {rq}")
-                        with sr.Microphone() as source:
-                            recognizer = sr.Recognizer()
-                            source.pause_threshold = 1
-                            audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
-                            transcription = recognizer.recognize_google(audio)
-                        print("good prompt")
-                        #transcript audio to test 
-                        # check for cancel command
-                        if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'cancel?')) is True:
-                            print('cancel true')
-                            self.glocal.random_cancel_response()
-                            continue
+                        print(pcommand)
+                        if pcommand["has_extra_command"] is False:
+                            greet = self.glocal.random_greeting(True)
+                            rq = self.glocal.random_question(True)
+                            self.glocal.speak(f"{greet}. {rq}")
+                            with sr.Microphone() as source:
+                                recognizer = sr.Recognizer()
+                                source.pause_threshold = 1
+                                audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
+                                transcription = recognizer.recognize_google(audio)
+                            print("good prompt")
+                            #transcript audio to test 
+                            # check for cancel command
+                            # TODO work out how the cancel command works
+                            if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'cancel?')) is True:
+                                print('cancel true')
+                                self.glocal.random_cancel_response()
+                                continue
                         print(transcription)
-                        mp_list.append(transcription)
+                        #mp_list.append(transcription)
+                        mp_list.append(pcommand['command'])
                         print("list appended")
                 except Exception as e:
                  print("An error ocurred : {}".format(e))
@@ -257,6 +276,7 @@ class gladosLocal(Thread):
                     self.speak("You have no running Timers")
                 else:
                     print("value was true one timer")
+                    #TODO when stopping timers track which one we stop...
                     t = self.timers.get()
                     t.stop()
                     t.join()
