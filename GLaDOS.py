@@ -67,7 +67,7 @@ class gladosSTT(Thread):
         return text
 
     def parse_command(self, prompt):
-        glados_pattern = r'(glados){e<=3}'
+        glados_pattern = r'(hey glados){e<=3}'
         glados_match = re.search(glados_pattern, prompt, re.IGNORECASE | re.BESTMATCH)
         if glados_match:
             split_index = glados_match.end()
