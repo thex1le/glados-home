@@ -117,7 +117,10 @@ class YoloDetect(Thread):
         while True:
             image = self.imageget.get_data(True) 
             print(f"Got image from sender")
-            self.process_image(image)
+            try:
+                self.process_image(image)
+            except Exception:
+                print("Image Error")
 
 
 class DataSend(Thread):
