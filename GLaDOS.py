@@ -13,6 +13,7 @@ from ctypes import *
 from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
+from json import loads
 
 #3rd party imports
 import pyaudio
@@ -24,7 +25,7 @@ from alsaaudio import Mixer
 import regex as re
 #glados imports
 from gladossenses import camera as gleyes
-
+from homeassistant_api import Client
 
 class GLaDOS_Exception(Exception):
     pass
@@ -135,11 +136,39 @@ class gladosSTT(Thread):
             while True:
                 time.sleep(10)
 
+class HomeAssistantLink:
+    def __init__(self, configFile):
+        base = configFile['HOMEASSISTANT']
+        self.token = base['token']
+        self.api = base['api']
+        self.weather_entity_id = base['weather_entity']
+
+    def __get_weather(self) -> dict:
+        client = Client(self.api, self.token)
+        data = None
+        try:
+            # Fetch the state of the weather entity
+            weather_data = client.get_entity(entity_id = self.weather_entity_id)
+            if weather_data:
+                data = weather_data
+        except Exception as e:
+            print("An error occurred:", e)
+        return data      
+    
+    def get_temp(self) -> dict:
+        """
+        Return current temp highs and low's as a string
+        """
+        wdata = self.__get_weather()
+        watt = wdata.state.attributes
+        return str(f"The current temperature is {watt['temperature']}")
+
 
 class gladosLocal(Thread):
-    def __init__(self, configFile):
+    def __init__(self, configFile, remoteLLM):
         Thread.__init__(self)
         Thread.daemon = True
+        self.llm = remoteLLM
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
@@ -148,6 +177,7 @@ class gladosLocal(Thread):
         self.last_fresponse = None
         self.last_cresponse = None
         self.timers = Queue()
+        self.configFile = configFile
         self.voiceurl = configFile["DEFAULT"]["VoiceUrl"]
         self.configp = configFile["LOCALSPEAK"]
         self.greetings = self.llp(self.configp.get("greetings", list()))
@@ -166,6 +196,24 @@ class gladosLocal(Thread):
         self.sight_results = None
         self.stop = False
         self.seen = None
+        self.homeass = HomeAssistantLink(configFile)
+        self.homeass.get_temp()
+    
+    def __gen_random_short_greeting(self) -> list:
+        # TODO make this work, there is multiple problems getting back predictable responses in a parseable format
+        #llmi  = self.llm(self.configFile, "Generate 20 short greetings, do not number them and return them in a csv formated string")
+        llmi  = self.llm(self.configFile, "Generate 20 short greetings, do not number them and return them as a base64 encoded json string")
+        llmi.start()
+        while llmi.real_response is None:
+            time.sleep(.1)
+        import pdb
+        pdb.set_trace()
+        #llmi.real_response.replace('"','').split('.')
+        # run json loads on it twice, not sure why but it strips the escapes and works
+        sgreeting = loads(loads(llmi.real_response)).values()
+        # more hackery since list() on the dict_values throws an error but this works to get the item
+        for i in sgreeting:
+            y = list(i)
 
     def __random_audio(self, choice, last, options_list, just_text = False):
         proc = self.__dedupe(choice, last, options_list)
@@ -230,6 +278,13 @@ class gladosLocal(Thread):
     def get_seen_prompt(self):
         return self.seen
 
+    
+    def get_temp(self, prompt):
+        check = self.__check_local_command(prompt.lower(), re.compile(r"what(?:'?s| is) the (current )?(outside )?(temp(erature)?)( outside)?\??"))
+        if check is True:
+            self.speak(self.homeass.get_temp())
+        return check
+
     def fuckyou(self, prompt):
         check = self.__check_local_command(prompt.lower(), "fuck you")
         if check is True:
@@ -248,7 +303,6 @@ class gladosLocal(Thread):
         return time_dict
 
     def timer(self, prompt):
-        print(f"timer called with. {prompt}")
         prompt = prompt.lower()
         check = self.__check_local_command(prompt, re.compile(r'set\s+(a\s+|the\s+)?timer'))
         if check is True:
@@ -272,15 +326,12 @@ class gladosLocal(Thread):
             check = self.__check_local_command(prompt, re.compile(r'(stop|cancel)\s+(the\s+|a\s+)?timer'))
             if check is True:
                 if self.timers.empty() is True:
-                    print("value was empty, no timer")
                     self.speak("You have no running Timers")
                 else:
-                    print("value was true one timer")
                     #TODO when stopping timers track which one we stop...
                     t = self.timers.get()
                     t.stop()
                     t.join()
-        print(f"returning with timer value of {check}")
         return check
 
     def run(self):
@@ -449,16 +500,18 @@ if __name__ == "__main__":
         configp.read(args.conf[0])
     else:
         raise GLaDOS_Exception("Unable to load file {}".format(configFile))
-    gl = gladosLocal(configp)
+    gl = gladosLocal(configp, gladosGPT)
     gl.start()
     gstt = gladosSTT(gl)
     gstt.start()
-    local_commands = [gl.fuckyou, gl.timer, gl.set_volume]
+    local_commands = (gl.get_temp, gl.fuckyou, gl.timer, gl.set_volume)
     while True:
         prompt = gstt.get_text()
+        #prompt = "what's the temperature outside"
         if prompt is not None:
             # check for local commands
             # TODO load commands from config?
+            print(f"prompt is in main {prompt}")
             for cmd in local_commands:
                 cmdbool = cmd(prompt)
                 if cmdbool is True:
@@ -468,8 +521,8 @@ if __name__ == "__main__":
                 # skip the rest on the while loop
                 continue
             gladosgpt = gladosGPT(configp, prompt)
-            gladosgpt.add_prompt(gl.get_seen_prompt())
-            gladosgpt.start()
+            #gladosgpt.add_prompt(gl.get_seen_prompt())
+            #gladosgpt.start()
             time.sleep(0.2)
             while gladosgpt.real_response is None:
                 gl.random_processing()
