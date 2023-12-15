@@ -14,7 +14,6 @@ import zmq
 import pdb
 import numpy as np
 import cv2
-from picamera2 import Picamera2
 
 class GLaDOS_Server_Exception(Exception):
     pass
@@ -22,6 +21,7 @@ class GLaDOS_Server_Exception(Exception):
 
 class camera(Thread):
     def __init__(self, configfile):
+        from picamera2 import Picamera2
         Thread.__init__(self)
         Thread.daemon = True
         self.config = configfile['DEFAULT']
@@ -89,6 +89,8 @@ class YoloDetect(Thread):
             print(type(yclass))
             if yclass is None:
                 continue
+            #import pdb
+            #pdb.set_trace()
             jclass = json.loads(yclass.tojson())
             for cname in jclass:
                 name = cname["name"]
@@ -115,7 +117,10 @@ class YoloDetect(Thread):
         while True:
             image = self.imageget.get_data(True) 
             print(f"Got image from sender")
-            self.process_image(image)
+            try:
+                self.process_image(image)
+            except Exception:
+                print("Image Error")
 
 
 class DataSend(Thread):
