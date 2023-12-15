@@ -89,6 +89,8 @@ class YoloDetect(Thread):
             print(type(yclass))
             if yclass is None:
                 continue
+            #import pdb
+            #pdb.set_trace()
             jclass = json.loads(yclass.tojson())
             for cname in jclass:
                 name = cname["name"]
