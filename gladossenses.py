@@ -14,7 +14,6 @@ import zmq
 import pdb
 import numpy as np
 import cv2
-from picamera2 import Picamera2
 
 class GLaDOS_Server_Exception(Exception):
     pass
@@ -22,6 +21,7 @@ class GLaDOS_Server_Exception(Exception):
 
 class camera(Thread):
     def __init__(self, configfile):
+        from picamera2 import Picamera2
         Thread.__init__(self)
         Thread.daemon = True
         self.config = configfile['DEFAULT']
