@@ -15,9 +15,6 @@ import pdb
 import numpy as np
 import cv2
 
-#internal libs
-import gvision
-
 class GLaDOS_Server_Exception(Exception):
     pass
 
@@ -71,6 +68,8 @@ class camera(Thread):
 
 class YoloDetect(Thread):
     def __init__(self, configfile):
+        #internal libs, import here so its deps are not needed on other devices
+        import gvision
         Thread.__init__(self)
         Thread.daemon = True
         self.configfile = configfile
@@ -82,7 +81,7 @@ class YoloDetect(Thread):
         self.imagesend = DataSend(self.configfile)
         self.imagesend.start()
         # TODO add this to config file
-        # start the RTSP server on 0.0.0.0:8554
+        print("Starting the RTSP server on rtsp://0.0.0.0:8554/GLaDOS")
         self.rtsp = gvision.RTSPServer()
 
     def get_sight(self):
