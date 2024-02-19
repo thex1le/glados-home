@@ -66,21 +66,3 @@ class RTSPServer(GstRtspServer.RTSPServer):
     def send_data(self, data):
         self.rtsp.send_data(data)
 
-
-def serve():
-    # need to change this to get the image from somewhere.. either passed in as an object that updates... or read from a file in a location in a loop...
-    file = "Thick-billed_parrots_in_a_U.S._zoo.jpg"
-    try:
-        while True:
-            frame = cv2.imread(file)
-            frame = cv2.resize(frame, (1280, 720))
-            server.send_data(frame)
-            time.sleep(.5)
-    except Exception as e:
-        print("Image Read error")
-
-if __name__ == "__main__":
-    server = RTSPServer()
-    while True:
-        serve()
-
