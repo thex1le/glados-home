@@ -25,7 +25,8 @@ class camera(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.config = configfile['DEFAULT']
-        self.picam = bool(self.config['picam'])
+        # use json lib to convert string bool to bool
+        self.picam = json.loads(self.config['picam'].lower())
         if self.picam is True:
             self.cap = Picamera2()
             self.cap.configure(self.cap.create_preview_configuration({"size": (1920, 1080), 'format': 'BGR888'}))
