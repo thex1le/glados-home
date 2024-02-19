@@ -198,7 +198,8 @@ class gladosLocal(Thread):
         self.seen = None
         self.homeass = HomeAssistantLink(configFile)
         self.homeass.get_temp()
-    
+        #self.portal1song()
+
     def __gen_random_short_greeting(self) -> list:
         # TODO make this work, there is multiple problems getting back predictable responses in a parseable format
         #llmi  = self.llm(self.configFile, "Generate 20 short greetings, do not number them and return them in a csv formated string")
@@ -277,7 +278,14 @@ class gladosLocal(Thread):
     
     def get_seen_prompt(self):
         return self.seen
-
+    
+    def portal1song(self):
+        with open('./wav/portal_still_alive.wav', 'rb') as wav:
+            self.__play_audio(wav.read())
+    
+    def portal2song(self):
+        with open('./wav/portal2_want_you_gone.wav', 'rb') as wav:
+            self.__play_audio(wav.read())
     
     def get_temp(self, prompt):
         check = self.__check_local_command(prompt.lower(), re.compile(r"what(?:'?s| is) the (current )?(outside )?(temp(erature)?)( outside)?\??"))
