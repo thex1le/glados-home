@@ -23,7 +23,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
-                             '! rtph264pay config-interval=0 name=pay0 pt=96'.format(1280, 720, 50)        
+                             '! rtph264pay config-interval=0 name=pay0 pt=96'.format(1280, 720, 30)        
 
     def send_data(self, data):
         self.data = data
@@ -64,5 +64,6 @@ class RTSPServer(GstRtspServer.RTSPServer):
         self.rtsp.start()
 
     def send_data(self, data):
+        data = cv2.resize(data, (1280, 720))
         self.rtsp.send_data(data)
 
