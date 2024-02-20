@@ -34,9 +34,10 @@ class camera(Thread):
         else:
             camera = int(self.config["Camera"])
             self.cap = cv2.VideoCapture(camera)
-            self.cap.set(cv2.CAP_PROP_FOURCC, 1196444237)
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
         self.image = None
         self.stop = False
         self.results = dict()
@@ -57,6 +58,7 @@ class camera(Thread):
             else:
                 ret, frame = self.cap.read()
             self.image = frame
+            cv2.imwrite('raw.jpg', frame)
             time.sleep(.02)
 
     def get_results(self):
@@ -117,6 +119,7 @@ class YoloDetect(Thread):
 
     def process_image(self, image):
         final_image=loads(image) 
+        cv2.imwrite('raw_rx.jpg', final_image)
         self.sight = self.__yolo_process_image(final_image)
         print("sending back dict")
         self.imagesend.send_data(self.__translate_results(self.sight))
