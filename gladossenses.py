@@ -29,7 +29,8 @@ class camera(Thread):
         self.picam = json.loads(self.config['picam'].lower())
         if self.picam is True:
             self.cap = Picamera2()
-            self.cap.configure(self.cap.create_preview_configuration({"size": (1920, 1080), 'format': 'BGR888'}))
+            self.cap.configure(self.cap.create_preview_configuration({"size": (1920, 1080), 'format': 'RGB888'}))
+            image = cv2.cvtColor( image, cv2.COLOR_BGR2RGB )
             self.cap.start()
         else:
             camera = int(self.config["Camera"])
