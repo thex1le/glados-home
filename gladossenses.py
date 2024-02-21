@@ -113,8 +113,16 @@ class YoloDetect(Thread):
 
     def __yolo_process_image(self, image):
         # pass image to rtsp..
-        self.rtsp.send_data(image)
         results = self.model(image)
+        for r in results:
+            annotator = Annotator(image)
+            boxes = r.boxes
+            for box in boxes:
+                b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
+                c = box.cls
+                annotator.box_label(b, self.model.names[int(c)])
+        a_image = annotator.result()
+        self.rtsp.send_data(a_image)
         return results
 
     def process_image(self, image):
@@ -219,6 +227,7 @@ if __name__ == "__main__":
     # import and init the 3rd part glados text to speach engine, this prevents init of the engine when you just want to print the help
     from gladosTTS import engine
     from ultralytics import YOLO
+    from ultralytics.utils.plotting import Annotator
     eyes = YoloDetect(configp)
     eyes.start()
     # start the text to speach engine
