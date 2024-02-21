@@ -529,8 +529,8 @@ if __name__ == "__main__":
                 # skip the rest on the while loop
                 continue
             gladosgpt = gladosGPT(configp, prompt)
-            #gladosgpt.add_prompt(gl.get_seen_prompt())
-            #gladosgpt.start()
+            gladosgpt.add_prompt(gl.get_seen_prompt())
+            gladosgpt.start()
             time.sleep(0.2)
             while gladosgpt.real_response is None:
                 gl.random_processing()
