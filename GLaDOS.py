@@ -344,10 +344,14 @@ class gladosLocal(Thread):
 
     def run(self):
         while self.stop is False:
-            # update results every 10 seconds
             self.sight_results = self.eyes.get_results()
             self.seen = self.process_sight(self.sight_results)
-            time.sleep(5)
+            if self.sight_results.get("person", None) is None:
+                print("sleeping 10")
+                time.sleep(10)
+            else:
+                print("sleeping 1")
+                time.sleep(1)
     
     def __adjust_count(self, obj):
         count = 0
