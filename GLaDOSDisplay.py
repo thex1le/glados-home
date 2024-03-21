@@ -153,7 +153,6 @@ class gladosLCD:
         # play an animation of the apature science logo
         frame_filenames = sorted(glob(path.join(imagespath, "*{}".format(ftype))))
         for filename in frame_filenames:
-            print(filename)
             self.__display_frame(filename)
             sleep(1/29.97)
 
