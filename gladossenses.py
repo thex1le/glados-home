@@ -30,6 +30,7 @@ class camera(Thread):
         if self.picam is True:
             self.cap = Picamera2()
             self.cap.configure(self.cap.create_preview_configuration({"size": (1920, 1080), 'format': 'RGB888'}))
+            self.cap.configure(self.cap.create_preview_configuration({"size": (640, 640), 'format': 'RGB888'}))
             self.cap.start()
         else:
             camera = int(self.config["Camera"])
