@@ -113,6 +113,7 @@ class YoloDetect(Thread):
 
     def __yolo_process_image(self, image):
         # pass image to rtsp..
+        image = self.__crop_resize(image)
         results = self.model(image)
         for r in results:
             annotator = Annotator(image)
@@ -125,9 +126,23 @@ class YoloDetect(Thread):
         self.rtsp.send_data(a_image)
         return results
 
+    def __crop_resize(self, image, size_x = 640, size_y = 640):
+        height, width = image.shape[:2]
+        new_width = height
+        # crop
+        left = int((width - new_width) / 2)
+        top = 0
+        right = int((width + new_width) / 2)
+        bottom = height
+
+        image_cropped = image[top:bottom, left:right]
+
+        return cv2.resize(image_cropped, (640, 640))
+
     def process_image(self, image):
         final_image=loads(image) 
         cv2.imwrite('raw_rx.jpg', final_image)
+        #TODO consider shirnking images for faster processing?
         self.sight = self.__yolo_process_image(final_image)
         print("sending back dict")
         self.imagesend.send_data(self.__translate_results(self.sight))
