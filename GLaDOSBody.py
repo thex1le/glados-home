@@ -3,7 +3,7 @@ from time import sleep
 from threading import Thread
 
 
-class gservo(Thread):
+class Gservo(Thread):
     def __init__(self, skit, max_angle=90):
         Thread.__init__(self)
         Thread.daemon = True
@@ -22,14 +22,6 @@ class gservo(Thread):
         self.exec_command = False
         self.moveing = False
 
-    def map_pixel(self):
-        # calculate the offset for a given image side
-        half = self.cfov / 2
-        fov_l = self.middle - half
-        fov_r = self.middle + half
-        degree_per_pixel = (fov_r - fov_l) / self.image_axis
-        return degree_per_pixel
-    
     def get_max_angle(self):
         return self.max_angle
 
@@ -103,7 +95,7 @@ class gservo(Thread):
 
 if __name__ == "__main__":
     kit = ServoKit(channels=16)
-    body_rotate = gservo(skit=kit.servo[0], max_angle=180)
+    body_rotate = Gservo(skit=kit.servo[0], max_angle=180)
     #body_rotate.start()
     while True:
         print("enter degrees, current angle is {}".format(body_rotate.get_angle()))

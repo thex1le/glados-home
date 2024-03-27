@@ -1,7 +1,7 @@
 from adafruit_servokit import ServoKit
 from time import sleep
 from threading import Thread
-from GLaDOSBody import gservo
+from GLaDOSBody import Gservo
 
 class GLaDOSTracker(Thread):
     def __init__(self, servos: dict, cam_x_width: int = 640, cam_y_width: int = 640):
@@ -52,7 +52,7 @@ class GLaDOSTracker(Thread):
 if __name__ == "__main__":
     kit = ServoKit(channels=16)
     gservos = dict()
-    gservos["body_rotate"] = gservo(skit=kit.servo[0], max_angle=180)
+    gservos["body_rotate"] = Gservo(skit=kit.servo[0], max_angle=180)
     gdtrack = GLaDOSTracker(640, 640, gservos)
     while True:
         print("Paste data")
