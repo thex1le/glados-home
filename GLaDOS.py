@@ -1,5 +1,4 @@
 import requests
-import urllib
 import io
 import base64
 import random
