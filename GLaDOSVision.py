@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
 import threading
-import argparse
-import sys
-import time
 
 #3rd Party imports
 import gi
@@ -11,7 +8,6 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 import cv2
-import numpy as np
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, **properties):
