@@ -22,7 +22,7 @@ from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
 #glados imports
-from gladossenses import camera as gleyes
+from GLaDOSSenses import camera as gleyes
 from homeassistant_api import Client
 
 class GLaDOS_Exception(Exception):

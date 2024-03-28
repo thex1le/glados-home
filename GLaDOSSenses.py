@@ -73,7 +73,7 @@ class camera(Thread):
 class YoloDetect(Thread):
     def __init__(self, configfile):
         #internal libs, import here so its deps are not needed on other devices
-        import gvision
+        import GLaDOSVision
         Thread.__init__(self)
         Thread.daemon = True
         self.configfile = configfile
