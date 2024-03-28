@@ -18,7 +18,6 @@ from json import loads
 #3rd party imports
 import pyaudio
 import speech_recognition as sr
-import openai
 from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
