@@ -26,6 +26,9 @@ import regex as re
 #glados imports
 from gladossenses import camera as gleyes
 from homeassistant_api import Client
+from gtrack import GLaDOSTracker
+from adafruit_servokit import ServoKit
+from GLaDOSBody import gservo
 
 class GLaDOS_Exception(Exception):
     pass
@@ -47,7 +50,8 @@ def noalsaerr():
 
 with noalsaerr():
     p = pyaudio.PyAudio()
-stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
+#stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
+stream = p.open(format=pyaudio.paFloat32, channels=2, rate=44100, output=1)
 
 
 class gladosSTT(Thread):
@@ -343,14 +347,28 @@ class gladosLocal(Thread):
         return check
 
     def run(self):
+        kit = ServoKit(channels=16)
+        gservos = dict()
+        gservos["body_rotate"] = gservo(skit=kit.servo[0], max_angle=180)
+        gdtrack = GLaDOSTracker(640, 640, gservos)
+
         while self.stop is False:
             self.sight_results = self.eyes.get_results()
+            # here is where we handle servos
+            bbox = gdtrack.find_person(self.sight_results)
+            if bbox != {}:
+                print("moving camera")
+                print(bbox)
+                new_angle = gdtrack.calc_servo(640, 180, bbox['x1'], bbox['x2'], gservos["body_rotate"].get_angle())
+                # move this into the lib... but do here for debug now
+                print(new_angle)
+                gservos["body_rotate"].set_speed_angle((5, new_angle))
+                gservos["body_rotate"].move()
+
             self.seen = self.process_sight(self.sight_results)
             if self.sight_results.get("person", None) is None:
-                print("sleeping 10")
                 time.sleep(10)
             else:
-                print("sleeping 1")
                 time.sleep(1)
     
     def __adjust_count(self, obj):
