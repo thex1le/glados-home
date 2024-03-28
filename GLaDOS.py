@@ -198,22 +198,6 @@ class gladosLocal(Thread):
         self.homeass.get_temp()
         #self.portal1song()
 
-    def __gen_random_short_greeting(self) -> list:
-        # TODO make this work, there is multiple problems getting back predictable responses in a parseable format
-        #llmi  = self.llm(self.configFile, "Generate 20 short greetings, do not number them and return them in a csv formated string")
-        llmi  = self.llm(self.configFile, "Generate 20 short greetings, do not number them and return them as a base64 encoded json string")
-        llmi.start()
-        while llmi.real_response is None:
-            time.sleep(.1)
-        import pdb
-        pdb.set_trace()
-        #llmi.real_response.replace('"','').split('.')
-        # run json loads on it twice, not sure why but it strips the escapes and works
-        sgreeting = loads(loads(llmi.real_response)).values()
-        # more hackery since list() on the dict_values throws an error but this works to get the item
-        for i in sgreeting:
-            y = list(i)
-
     def __random_audio(self, choice, last, options_list, just_text = False):
         proc = self.__dedupe(choice, last, options_list)
         if just_text is False:
