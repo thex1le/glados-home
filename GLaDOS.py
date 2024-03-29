@@ -12,7 +12,7 @@ from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
 
-#3rd party imports
+# 3rd party imports
 import requests
 import pyaudio
 import speech_recognition as sr
@@ -22,21 +22,25 @@ from alsaaudio import Mixer
 import regex as re
 from homeassistant_api import Client
 
-import GLaDOSBody
-#glados imports
+# glados imports
 from GLaDOSSenses import camera as gleyes
 from GLaDOSBody import GBody
 
-class GLaDOS_Exception(Exception):
+
+class GladosException(Exception):
     pass
+
 
 # silence some errors on the terminal
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
+
 def py_error_handler(filename, line, function, err, fmt):
     pass
 
+
 c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
 
 @contextmanager
 def noalsaerr():
@@ -45,13 +49,14 @@ def noalsaerr():
     yield
     asound.snd_lib_error_set_handler(None)
 
+
 with noalsaerr():
     p = pyaudio.PyAudio()
-#stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
+# stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
 stream = p.open(format=pyaudio.paFloat32, channels=2, rate=44100, output=1)
 
 
-class gladosSTT(Thread):
+class GladosSTT(Thread):
     # glados speach to text
     def __init__(self, glocal):
         Thread.__init__(self)
@@ -68,21 +73,20 @@ class gladosSTT(Thread):
             text = None
         return text
 
-    def parse_command(self, prompt):
+    def parse_command(self, user_prompt):
         glados_pattern = r'(hey glados){e<=3}'
-        glados_match = re.search(glados_pattern, prompt, re.IGNORECASE | re.BESTMATCH)
+        glados_match = re.search(glados_pattern, user_prompt, re.IGNORECASE | re.BESTMATCH)
         if glados_match:
             split_index = glados_match.end()
-            greeting = prompt[:split_index].strip()
-            command = prompt[split_index:].strip()
+            greeting = user_prompt[:split_index].strip()
+            command = user_prompt[split_index:].strip()
             has_extra_command = bool(command)
             return {"greeting": greeting, "has_extra_command": has_extra_command, "command": command}
         else:
             return {"greeting": None, "has_extra_command": False, "command": None}
 
-
     def record(self, mp_list):
-    # TODO, how do we keep things local so were not hitting google all the time...
+        # TODO, how do we keep things local so were not hitting google all the time...
         while True:
             print("Say 'Hey GLaDOS' to start recording your question")
             with sr.Microphone() as source:
@@ -96,13 +100,12 @@ class gladosSTT(Thread):
                     transcription = recognizer.recognize_google(audio)
                     print("transcribe done")
                     print(transcription.lower())
-                    # use private method in this case to reduce code
-                    #if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'glad??')) is True:
                     pcommand = self.parse_command(transcription)
                     print(f'parse command is {pcommand}')
                     if pcommand["greeting"] is not None:
-                        # here is where we should pause and take a longer recording for the command we need to trigger glados to talk here...
-                        # reconsider how this works with multithreading
+                        # here is where we should pause and take a longer recording
+                        # for the command we need to trigger glados to talk here...
+                        # TODO reconsider how this works with multithreading
                         print(pcommand)
                         if pcommand["has_extra_command"] is False:
                             greet = self.glocal.random_greeting(True)
@@ -111,25 +114,25 @@ class gladosSTT(Thread):
                             with sr.Microphone() as source:
                                 recognizer = sr.Recognizer()
                                 source.pause_threshold = 1
-                                audio = recognizer.listen(source,phrase_time_limit=None, timeout=None)
+                                audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
                                 transcription = recognizer.recognize_google(audio)
-                            print("good prompt")
-                            #transcript audio to test 
+                            print("good user_prompt")
+                            # transcript audio to test
                             # check for cancel command
                             # TODO work out how the cancel command works
-                            if self.glocal._gladosLocal__check_local_command(transcription.lower(), re.compile(r'cancel?')) is True:
+                            if self.glocal._gladosLocal__check_local_command(transcription.lower(),
+                                                                             re.compile(r'cancel?')) is True:
                                 print('cancel true')
                                 self.glocal.random_cancel_response()
                                 continue
                         print(transcription)
-                        #mp_list.append(transcription)
                         mp_list.append(pcommand['command'])
                         print("list appended")
                 except Exception as e:
-                 print("An error ocurred : {}".format(e))
+                    print("An unknown error occurred : {}".format(e))
 
     def run(self):
-        # use manager to run managment loop
+        # use manager to run management loop
         with mp.Manager() as manager:
             self.mplist = manager.list()
             self.proc = mp.Process(target=self.record, args=(self.mplist,))
@@ -137,9 +140,10 @@ class gladosSTT(Thread):
             while True:
                 time.sleep(10)
 
+
 class HomeAssistantLink:
-    def __init__(self, configFile):
-        base = configFile['HOMEASSISTANT']
+    def __init__(self, config_file):
+        base = config_file['HOMEASSISTANT']
         self.token = base['token']
         self.api = base['api']
         self.weather_entity_id = base['weather_entity']
@@ -149,7 +153,7 @@ class HomeAssistantLink:
         data = None
         try:
             # Fetch the state of the weather entity
-            weather_data = client.get_entity(entity_id = self.weather_entity_id)
+            weather_data = client.get_entity(entity_id=self.weather_entity_id)
             if weather_data:
                 data = weather_data
         except Exception as e:
@@ -162,14 +166,14 @@ class HomeAssistantLink:
         """
         wdata = self.__get_weather()
         watt = wdata.state.attributes
-        return str(f"The current temperature is {watt['temperature']}")
+        return "The current temperature is {}".format(watt['temperature'])
 
 
-class gladosLocal(Thread):
-    def __init__(self, configFile, remoteLLM):
+class GladosLocal(Thread):
+    def __init__(self, config_file, remote_llm):
         Thread.__init__(self)
         Thread.daemon = True
-        self.llm = remoteLLM
+        self.llm = remote_llm
         self.last_greeting = None
         self.last_insult = None
         self.last_process = None
@@ -178,9 +182,9 @@ class gladosLocal(Thread):
         self.last_fresponse = None
         self.last_cresponse = None
         self.timers = Queue()
-        self.configFile = configFile
-        self.voiceurl = configFile["DEFAULT"]["VoiceUrl"]
-        self.configp = configFile["LOCALSPEAK"]
+        self.configFile = config_file
+        self.voiceurl = config_file["DEFAULT"]["VoiceUrl"]
+        self.configp = config_file["LOCALSPEAK"]
         self.greetings = self.llp(self.configp.get("greetings", list()))
         self.processing = self.llp(self.configp.get("processing", list()))
         self.insults = self.llp(self.configp.get("insults", list()))
@@ -190,14 +194,15 @@ class gladosLocal(Thread):
         self.vision_confidence = float(self.configp.get("VisionConfidence", 0.0))
         self.fuck = self.llp(self.configp.get("fuck", list()))
         self.mixer = Mixer("Speaker")
-        self.__change_volume(int(configFile["DEFAULT"]["VolumeLevel"]))
-        self.currentvol = int(self.mixer.getvolume()[0])
-        self.eyes = gleyes(configFile)
+        self.__change_volume(int(config_file["DEFAULT"]["VolumeLevel"]))
+        self.current_vol = int(self.mixer.getvolume()[0])
+        self.eyes = gleyes(config_file)
         self.eyes.start()
         self.sight_results = mp.Manager.dict()
         self.stop = False
-        self.homeass = HomeAssistantLink(configFile)
+        self.homeass = HomeAssistantLink(config_file)
         self.homeass.get_temp()
+        # TODO figure out how to implement the songs
         #self.portal1song()
         self.mp_lock = mp.Lock()
         self.seen = None
@@ -257,13 +262,13 @@ class gladosLocal(Thread):
                 clines.append(i.strip())
             return clines
         else:
-            raise GLaDOS_Exception("Unable to load file {}".format(file))
+            raise GladosException("Unable to load file {}".format(file))
         # load local phrases
 
-    def __check_local_command(self, prompt, command):
-        if type(command) != re.Pattern:
+    def __check_local_command(self, user_prompt, command):
+        if type(command) is not re.Pattern:
             command = re.escape(command)
-        match = re.search(command, prompt)
+        match = re.search(command, user_prompt)
         return bool(match)
     
     def get_seen_prompt(self):
@@ -277,21 +282,22 @@ class gladosLocal(Thread):
         with open('./wav/portal2_want_you_gone.wav', 'rb') as wav:
             self.__play_audio(wav.read())
     
-    def get_temp(self, prompt):
-        check = self.__check_local_command(prompt.lower(), re.compile(r"what(?:'?s| is) the (current )?(outside )?(temp(erature)?)( outside)?\??"))
+    def get_temp(self, user_prompt):
+        c_str = r"what(?:'?s| is) the (current )?(outside )?(temp(erature)?)( outside)?\??"
+        check = self.__check_local_command(user_prompt.lower(), re.compile(c_str))
         if check is True:
             self.speak(self.homeass.get_temp())
         return check
 
-    def fuckyou(self, prompt):
-        check = self.__check_local_command(prompt.lower(), "fuck you")
+    def fuck_you(self, user_prompt):
+        check = self.__check_local_command(user_prompt.lower(), "fuck you")
         if check is True:
             self.random_fuck_response()
         return check
     
-    def translate_time(self, prompt: str) -> dict:
+    def translate_time(self, user_prompt: str) -> dict:
         pattern = r'(\d+)\s*(hour|minute|second)s?'
-        matches = re.findall(pattern, prompt)
+        matches = re.findall(pattern, user_prompt)
         time_dict = {f'{time_unit}s': int(value) for value, time_unit in matches}
         total_seconds = time_dict.get('seconds', 0) \
                     + time_dict.get('minutes', 0) * 60 \
@@ -300,11 +306,11 @@ class gladosLocal(Thread):
         print(time_dict)
         return time_dict
 
-    def timer(self, prompt):
-        prompt = prompt.lower()
-        check = self.__check_local_command(prompt, re.compile(r'set\s+(a\s+|the\s+)?timer'))
+    def timer(self, user_prompt):
+        user_prompt = user_prompt.lower()
+        check = self.__check_local_command(user_prompt, re.compile(r'set\s+(a\s+|the\s+)?timer'))
         if check is True:
-            time_dict = self.translate_time(prompt)
+            time_dict = self.translate_time(user_prompt)
             egg = EggTimer(time_dict['total_seconds'], self.speak)
             egg.start()
             self.timers.put(egg)
@@ -321,12 +327,12 @@ class gladosLocal(Thread):
                 time_string = ' and '.join(time_string)
             self.speak(time_string)
         else: 
-            check = self.__check_local_command(prompt, re.compile(r'(stop|cancel)\s+(the\s+|a\s+)?timer'))
+            check = self.__check_local_command(user_prompt, re.compile(r'(stop|cancel)\s+(the\s+|a\s+)?timer'))
             if check is True:
                 if self.timers.empty() is True:
                     self.speak("You have no running Timers")
                 else:
-                    #TODO when stopping timers track which one we stop...
+                    # TODO when stopping timers track which one we stop...
                     t = self.timers.get()
                     t.stop()
                     t.join()
@@ -355,7 +361,6 @@ class gladosLocal(Thread):
         context = ["You can see the following things in the room"]
         for item in seen.keys():
             count = self.__adjust_count(seen[item]["objects"])
-            #count = seen[item]['count']
             if count == 0:
                 continue
             context.append(f"{count} {item}")
@@ -382,20 +387,22 @@ class gladosLocal(Thread):
         # Set the volume
         self.mixer.setvolume(int(level)) 
     
-    def set_volume(self, prompt):
-        pccommand = ["set volume", "change volume"]
-        prompt = prompt.lower()
-        for pc in pccommand:
-            check = self.__check_local_command(prompt, pc)
+    def set_volume(self, user_prompt):
+        check = False
+        pc_command = ["set volume", "change volume"]
+        user_prompt = user_prompt.lower()
+        for pc in pc_command:
+            check = self.__check_local_command(user_prompt, pc)
             if check is True:
                 break
-        scheck = self.__check_local_command(prompt, re.compile(r'%'))
+        scheck = self.__check_local_command(user_prompt, re.compile(r'%'))
         if scheck is True:
-            level = re.findall(r'\b\d+\b', prompt)
+            level = re.findall(r'\b\d+\b', user_prompt)
             self.__change_volume(int(level[0]))
-            self.currentvol = level[0]
+            self.current_vol = level[0]
             self.speak("I have set the volume to {} percent".format(level[0]))
         return check
+
 
 class EggTimer(Thread):
     def __init__(self, duration_in_seconds, speak):
@@ -406,7 +413,7 @@ class EggTimer(Thread):
         self.is_running = False
         self.speak = speak
 
-    def tstart(self):
+    def timer_start(self):
         if not self.is_running:
             self.start_time = time.time()
             self.is_running = True
@@ -435,7 +442,7 @@ class EggTimer(Thread):
         return rtn
     
     def run(self):
-        self.tstart()
+        self.timer_start()
         while True:    
             r = self.check_remaining_time()
             print(r)
@@ -444,7 +451,7 @@ class EggTimer(Thread):
             time.sleep(.2)
             
 
-class gladosGPT(Thread):
+class GladosGPT(Thread):
     def __init__(self, configp, prompt):
         Thread.__init__(self)
         Thread.daemon = True
@@ -454,27 +461,25 @@ class gladosGPT(Thread):
         self.model = self.configp["model"]
         self.api_key = self.configp["apikey"]
         self.api_endpoint = self.configp["endpoint"]
-        self.content = self.configp["prompt"]
+        self.content = self.configp["user_prompt"]
         self.updated_content = None
 
     def add_prompt(self, content):
-        # allow extra info to be added to the prompt
+        # allow extra info to be added to the user_prompt
         self.updated_content = content
 
     def generate_text(self):
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",}
         if self.updated_content is None:
-            localcontent = self.content
+            local_content = self.content
         else:
-            localcontent = f"{self.content}. {self.updated_content}"
-        print(localcontent)
+            local_content = f"{self.content}. {self.updated_content}"
+        print(local_content)
         data = {
                 "model": self.model,
-                "messages": [{"role": "system", "content": localcontent},
+                "messages": [{"role": "system", "content": local_content},
                     {"role": "user", "content": self.prompt}],
-            "max_tokens": 1500,
-        }
-        
+                "max_tokens": 1500}
         response = requests.post(self.api_endpoint, headers=headers, json=data)
         if response.status_code == 200:
             response_json = response.json()
@@ -487,43 +492,44 @@ class gladosGPT(Thread):
     def run(self):
         self.generate_text()
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evil Home AI')
     parser.add_argument('-config', type=str, default=1, dest='conf', nargs=1, help='Config File')
     try: 
         args = parser.parse_args()
-    except:
+    except Exception:
         parser.print_help()
         sys.exit(0)
-    if len(sys.argv)==1:
+    if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
     configp = configparser.ConfigParser()
     if path.isfile(args.conf[0]) is True:
         configp.read(args.conf[0])
     else:
-        raise GLaDOS_Exception("Unable to load file {}".format(configFile))
-    gl = gladosLocal(configp, gladosGPT)
+        raise GladosException("Unable to load file {}".format(args.conf[0]))
+    gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    gstt = gladosSTT(gl)
+    gstt = GladosSTT(gl)
     gstt.start()
-    local_commands = (gl.get_temp, gl.fuckyou, gl.timer, gl.set_volume)
+    local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
     while True:
         prompt = gstt.get_text()
-        #prompt = "what's the temperature outside"
         if prompt is not None:
+            cmd_bool = False
             # check for local commands
             # TODO load commands from config?
-            print(f"prompt is in main {prompt}")
+            print(f"user_prompt is in main {prompt}")
             for cmd in local_commands:
-                cmdbool = cmd(prompt)
-                if cmdbool is True:
+                cmd_bool = cmd(user_prompt=prompt)
+                if cmd_bool is True:
                     # break the for loop
                     break
-            if cmdbool is True:
+            if cmd_bool is True:
                 # skip the rest on the while loop
                 continue
-            gladosgpt = gladosGPT(configp, prompt)
+            gladosgpt = GladosGPT(configp, prompt)
             gladosgpt.add_prompt(gl.get_seen_prompt())
             gladosgpt.start()
             time.sleep(0.2)
