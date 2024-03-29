@@ -202,27 +202,33 @@ class gladosLocal(Thread):
         self.homeass = HomeAssistantLink(configFile)
         self.homeass.get_temp()
         #self.portal1song()
+        self.mp_lock = mp.Lock()
+        self.seen = None
+        # TODO, get camera size from config file and update all libs to use that
+        self.glados_body = GLaDOSBody.GBody(640, 640, self.sight_results, self.mp_lock)
+        self.glados_body.start()
 
-    def __random_audio(self, choice, last, options_list, just_text = False):
+
+    def __random_audio(self, choice, last, options_list, just_text=False):
         proc = self.__dedupe(choice, last, options_list)
         if just_text is False:
             self.speak(proc)
         last = proc
         return proc
 
-    def random_cancel_response(self, just_text = False):
+    def random_cancel_response(self, just_text=False):
         return self.__random_audio(random.choice(self.cancel), 
                                    self.last_cresponse, self.cancel, just_text)
     
-    def random_question_response(self, just_text = False):
+    def random_question_response(self, just_text=False):
         return self.__random_audio(random.choice(self.qresponse), 
                                    self.last_qresponse, self.qresponse, just_text)
 
-    def random_question(self, just_text = False):
+    def random_question(self, just_text=False):
         return self.__random_audio(random.choice(self.questions), 
                                    self.last_question, self.questions, just_text)
 
-    def random_insult(self, just_text = False):
+    def random_insult(self, just_text=False):
         return self.__random_audio(random.choice(self.insults), 
                                    self.last_insult, self.insults, just_text)
     
@@ -335,9 +341,11 @@ class gladosLocal(Thread):
                 self.sight_results = self.eyes.get_results()
             self.seen = self.process_sight(self.sight_results)
             if self.sight_results.get("person", None) is None:
-                time.sleep(10)
+                # TODO this where you will do human detector millimeter wave
+                time.sleep(5)
             else:
-                time.sleep(1)
+                # update at 30fps for now
+                time.sleep(2)
     
     def __adjust_count(self, obj):
         count = 0
