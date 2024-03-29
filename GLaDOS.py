@@ -1,4 +1,3 @@
-import requests
 import io
 import base64
 import random
@@ -12,23 +11,21 @@ from ctypes import *
 from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
-from json import loads
 
 #3rd party imports
+import requests
 import pyaudio
 import speech_recognition as sr
 from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
+from homeassistant_api import Client
 
 import GLaDOSBody
 #glados imports
 from GLaDOSSenses import camera as gleyes
-from homeassistant_api import Client
-from gtrack import GLaDOSTracker
-from adafruit_servokit import ServoKit
-from GLaDOSBody import gservo
+from GLaDOSBody import GBody
 
 class GLaDOS_Exception(Exception):
     pass
@@ -205,7 +202,7 @@ class gladosLocal(Thread):
         self.mp_lock = mp.Lock()
         self.seen = None
         # TODO, get camera size from config file and update all libs to use that
-        self.glados_body = GLaDOSBody.GBody(640, 640, self.sight_results, self.mp_lock)
+        self.glados_body = GBody(640, 640, self.sight_results, self.mp_lock)
         self.glados_body.start()
 
 
