@@ -21,6 +21,8 @@ from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
+
+import GLaDOSBody
 #glados imports
 from GLaDOSSenses import camera as gleyes
 from homeassistant_api import Client
@@ -195,9 +197,8 @@ class gladosLocal(Thread):
         self.currentvol = int(self.mixer.getvolume()[0])
         self.eyes = gleyes(configFile)
         self.eyes.start()
-        self.sight_results = None
+        self.sight_results = mp.Manager.dict()
         self.stop = False
-        self.seen = None
         self.homeass = HomeAssistantLink(configFile)
         self.homeass.get_temp()
         #self.portal1song()
@@ -329,24 +330,9 @@ class gladosLocal(Thread):
         return check
 
     def run(self):
-        kit = ServoKit(channels=16)
-        gservos = dict()
-        gservos["body_rotate"] = gservo(skit=kit.servo[0], max_angle=180)
-        gdtrack = GLaDOSTracker(640, 640, gservos)
-
         while self.stop is False:
-            self.sight_results = self.eyes.get_results()
-            # here is where we handle servos
-            bbox = gdtrack.find_person(self.sight_results)
-            if bbox != {}:
-                print("moving camera")
-                print(bbox)
-                new_angle = gdtrack.calc_servo(640, 180, bbox['x1'], bbox['x2'], gservos["body_rotate"].get_angle())
-                # move this into the lib... but do here for debug now
-                print(new_angle)
-                gservos["body_rotate"].set_speed_angle((5, new_angle))
-                gservos["body_rotate"].move()
-
+            with self.mp_lock:
+                self.sight_results = self.eyes.get_results()
             self.seen = self.process_sight(self.sight_results)
             if self.sight_results.get("person", None) is None:
                 time.sleep(10)
