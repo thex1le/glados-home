@@ -210,46 +210,45 @@ class GladosLocal(Thread):
         self.glados_body = GBody(640, 640, self.sight_results, self.mp_lock)
         self.glados_body.start()
 
-
-    def __random_audio(self, choice, last, options_list, just_text=False):
+    def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
         proc = self.__dedupe(choice, last, options_list)
         if just_text is False:
             self.speak(proc)
-        last = proc
+        if hasattr(self, last_attr_name):
+            setattr(self, last_attr_name, proc)
         return proc
 
     def random_cancel_response(self, just_text=False):
         return self.__random_audio(random.choice(self.cancel), 
-                                   self.last_cresponse, self.cancel, just_text)
+                                   self.last_cresponse, self.cancel, 'last_cresponse', just_text)
     
     def random_question_response(self, just_text=False):
         return self.__random_audio(random.choice(self.qresponse), 
-                                   self.last_qresponse, self.qresponse, just_text)
+                                   self.last_qresponse, self.qresponse,'last_qresponse', just_text)
 
     def random_question(self, just_text=False):
         return self.__random_audio(random.choice(self.questions), 
-                                   self.last_question, self.questions, just_text)
+                                   self.last_question, self.questions, 'last_question', just_text)
 
     def random_insult(self, just_text=False):
         return self.__random_audio(random.choice(self.insults), 
-                                   self.last_insult, self.insults, just_text)
+                                   self.last_insult, self.insults, 'last_insult', just_text)
     
     def random_processing(self, just_text = False):
         return self.__random_audio(random.choice(self.processing), 
-                                   self.last_process, self.processing, just_text)
+                                   self.last_process, self.processing, 'last_process', just_text)
     
     def random_fuck_response(self, just_text = False):
         return self.__random_audio(random.choice(self.fuck), 
-                                   self.last_fresponse, self.fuck, just_text)
+                                   self.last_fresponse, self.fuck, 'last_fresponse', just_text)
     
     def random_greeting(self, just_text = False):
         return self.__random_audio(random.choice(self.greetings),
-                                   self.last_greeting, self.greetings, just_text)
+                                   self.last_greeting, self.greetings, 'last_greeting', just_text)
     
     def __dedupe(self, current, last, options):
         while current == last:
             current = random.choice(options)
-        last = current
         return current
 
     def llp(self, file):
