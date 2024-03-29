@@ -100,7 +100,7 @@ class Gservo(Thread):
 
 class GBody(Thread):
     # class for managing all the servo and body movement in relation to the camera
-    def __init__(self, cam_x_width: int, cam_y_width: int):
+    def __init__(self, cam_x_width: int, cam_y_width: int, seen_data, lock):
         Thread.__init__(self)
         Thread.daemon = True
         # access the servos
@@ -110,11 +110,11 @@ class GBody(Thread):
         self.body_UD = Gservo(skit=kit.servo[1], axis='y', max_angle=60)
         self.head_UD = Gservo(skit=kit.servo[2], axis='x', max_angle=60)
         self.head_LR = Gservo(skit=kit.servo[3], axis='y', max_angle=60)
-        self.seen_data = dict()
+        self.seen_data = seen_data
         self.cam_x_width = cam_x_width
         self.cam_y_width = cam_y_width
         self.stop = False
-
+        self.lock = lock
         # find the x1 x2, y1, y2 of the target,
         # figure out if the head can look at it...
         # if we can then head / neck moves to it...
@@ -128,29 +128,24 @@ class GBody(Thread):
         """
         self.stop = True
 
-    def set_seen_data(self, data: dict) -> None:
-        # meant to be a call back to update the seen data for the loop
-        # returns nothing and only updates if data is not empty
-        if data != {}:
-            self.seen_data = data
-
     def __find_person(self, target='person') -> dict:
         """
         Find the highest confidence person and return their bounding box from current data set
         self.seen_data expected to be YOLO8 data response object
         """
-        rtn = dict()
-        if target in self.seen_data and self.seen_data[target]['count'] > 0:
-            highest_confidence = 0
-            highest_confidence_person = None
-            for p in self.seen_data[target]['objects']:
-                if p['confidence'] > highest_confidence:
-                    highest_confidence = p['confidence']
-                    highest_confidence_person = p
-            if highest_confidence_person is not None:
-                if highest_confidence >= .70:
-                    # take the highest confidence and return the bounding box
-                    rtn = highest_confidence_person['box']
+        with self.lock:
+            rtn = dict()
+            if target in self.seen_data and self.seen_data[target]['count'] > 0:
+                highest_confidence = 0
+                highest_confidence_person = None
+                for p in self.seen_data[target]['objects']:
+                    if p['confidence'] > highest_confidence:
+                        highest_confidence = p['confidence']
+                        highest_confidence_person = p
+                if highest_confidence_person is not None:
+                    if highest_confidence >= .70:
+                        # take the highest confidence and return the bounding box
+                        rtn = highest_confidence_person['box']
         return rtn
 
     def __calc_servo(self, servo: Gservo, bbox: dict) -> int:
@@ -190,7 +185,7 @@ class GBody(Thread):
         # move "shoulders" first
         head_lr = self.__calc_servo(self.head_LR, target)
         head_ud = self.__calc_servo(self.head_UD, target)
-        # dont use threading for now
+        # don't use threading for now
         self.head_LR.set_angle(head_lr)
         self.head_UD.set_angle(head_ud)
         self.head_LR.move()
@@ -208,5 +203,6 @@ class GBody(Thread):
 
 
 if __name__ == "__main__":
-    gl = GBody(640, 640)
+    from multiprocessing import Manager, Lock
+    gl = GBody(640, 640, Manager.dict(), Lock())
     gl.start()
