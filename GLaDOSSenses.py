@@ -112,8 +112,8 @@ class YoloDetect(Thread):
 
     def __yolo_process_image(self, image):
         # pass image to rtsp..
-        image = self.__crop_resize(image)
         results = self.model(image)
+        annotator = Annotator(image)
         for r in results:
             annotator = Annotator(image)
             boxes = r.boxes
@@ -124,19 +124,6 @@ class YoloDetect(Thread):
         a_image = annotator.result()
         self.rtsp.send_data(a_image)
         return results
-
-    def __crop_resize(self, image, size_x = 640, size_y = 640):
-        height, width = image.shape[:2]
-        new_width = height
-        # crop
-        left = int((width - new_width) / 2)
-        top = 0
-        right = int((width + new_width) / 2)
-        bottom = height
-
-        image_cropped = image[top:bottom, left:right]
-
-        return cv2.resize(image_cropped, (640, 640))
 
     def process_image(self, image):
         final_image=loads(image) 
@@ -221,7 +208,8 @@ class DataRecv(Thread):
             print("got data")
         self.socketsend.close()
         self.context.term()
-        
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evil Home AI Senses Server')
     parser.add_argument('-config', type=str, default=1, dest='conf', nargs=1, help='Config File')
