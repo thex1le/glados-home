@@ -162,7 +162,7 @@ if __name__ == "__main__":
     # glcd0 is the big right side
     glcd0 = GladosLCD()
     # glcd1 is the little left side
-    glcd1 = GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6, sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
+    glcd1 = GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6, sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
     gl1t = Thread(target=glcd1.aperture_animation, args=())
     gl1t.start()
     glcd0.rainbow = True
