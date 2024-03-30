@@ -23,7 +23,7 @@ import regex as re
 from homeassistant_api import Client
 
 # glados imports
-from GLaDOSSenses import camera as gleyes
+from GLaDOSSenses import Camera as gleyes
 from GLaDOSBody import GBody
 
 

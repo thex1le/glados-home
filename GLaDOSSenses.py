@@ -4,9 +4,8 @@ import json
 from threading import Thread
 import argparse
 import configparser
-import multiprocessing as mp
 from os import path
-import time
+from time import sleep
 from pickle import dumps, loads
 
 #3rd party
@@ -17,7 +16,7 @@ class GLaDOS_Server_Exception(Exception):
     pass
 
 
-class camera(Thread):
+class Camera(Thread):
     def __init__(self, configfile):
         from picamera2 import Picamera2
         Thread.__init__(self)
@@ -26,11 +25,12 @@ class camera(Thread):
         # use json lib to convert string bool to bool
         self.picam = json.loads(self.config['picam'].lower())
         if self.picam is True:
+            # pi cam
             self.cap = Picamera2()
-            self.cap.configure(self.cap.create_preview_configuration({"size": (1920, 1080), 'format': 'RGB888'}))
-            self.cap.configure(self.cap.create_preview_configuration({"size": (640, 640), 'format': 'RGB888'}))
+            self.cap.configure(self.cap.create_preview_configuration({"size": (640, 480), 'format': 'RGB888'}))
             self.cap.start()
         else:
+            # usb webcam
             camera = int(self.config["Camera"])
             self.cap = cv2.VideoCapture(camera)
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
@@ -47,7 +47,7 @@ class camera(Thread):
 
     def get_image(self, blocking=True):
         while blocking is True and self.image is None:
-            time.sleep(.1)
+            sleep(.1)
         return self.image
 
     def run(self):
@@ -58,7 +58,7 @@ class camera(Thread):
                 ret, frame = self.cap.read()
             self.image = frame
             cv2.imwrite('raw.jpg', frame)
-            time.sleep(.02)
+            sleep(.02)
 
     def get_results(self):
         self.imagesend.send_data(self.get_image(), jsonsend=False)
@@ -84,7 +84,7 @@ class YoloDetect(Thread):
         self.imagesend.start()
         # TODO add this to config file
         print("Starting the RTSP server on rtsp://0.0.0.0:8554/GLaDOS")
-        self.rtsp = gvision.RTSPServer()
+        self.rtsp = GLaDOSVision.RTSPServer()
 
     def get_sight(self):
         return self.sight
@@ -96,8 +96,6 @@ class YoloDetect(Thread):
             print(type(yclass))
             if yclass is None:
                 continue
-            #import pdb
-            #pdb.set_trace()
             jclass = json.loads(yclass.tojson())
             for cname in jclass:
                 name = cname["name"]
@@ -105,8 +103,7 @@ class YoloDetect(Thread):
                     results_dict[name]["count"] += 1
                     results_dict[name]["objects"].append(cname)
                 else:
-                    results_dict[name] = {"count": 1,
-                            "objects": [cname], "class_name": name}
+                    results_dict[name] = {"count": 1, "objects": [cname], "class_name": name}
         print(results_dict)
         return results_dict
 
@@ -128,7 +125,6 @@ class YoloDetect(Thread):
     def process_image(self, image):
         final_image=loads(image) 
         cv2.imwrite('raw_rx.jpg', final_image)
-        #TODO consider shirnking images for faster processing?
         self.sight = self.__yolo_process_image(final_image)
         print("sending back dict")
         self.imagesend.send_data(self.__translate_results(self.sight))
@@ -175,7 +171,7 @@ class DataSend(Thread):
                     self.socketsend.send(data)
             except IndexError:
                 pass
-            time.sleep(.1)
+            sleep(.1)
         self.socketsend.close()
         self.context.term()
 
@@ -196,7 +192,7 @@ class DataRecv(Thread):
     def get_data(self, blocking=False):
         if blocking is True:
             while self.data is None:
-                time.sleep(.1)
+                sleep(.1)
         data = self.data
         self.data = None
         return data
