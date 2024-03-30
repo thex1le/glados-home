@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7735  # pylint: disable=unused-import
 from ledhelper import LedHelper
 
+
 class GladosLCD(Thread):
     def __init__(self, cs=board.CE0, dc=board.D25, rst=board.D24, sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
@@ -24,8 +25,8 @@ class GladosLCD(Thread):
         self.breath_stop = False
         self.disp = st7735.ST7735R(spi, rotation=90, invert=True, width=80, x_offset=26, 
                                    y_offset=1, cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=baud_rate)
-        self.on_positions = [(1, 1), (1,2), (1,3), (1,4), (2, 1), (2, 2), (2, 3), (2, 4), (3, 1), (3,2), (3,3), (3,4), 
-                             (4, 1), (4, 2), (4, 3), (4, 4), (5, 1), (5, 2), (5, 3), (5, 4), 
+        self.on_positions = [(1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (3, 1), (3, 2), (3, 3),
+                             (3, 4), (4, 1), (4, 2), (4, 3), (4, 4), (5, 1), (5, 2), (5, 3), (5, 4), 
                              (6, 1), (6, 2), (6, 3), (6, 4), (7, 1), (7, 2), (7, 3), (7, 4), (8, 2), (8, 4), 
                              (9, 1), (9, 3), (9, 4), (10, 3), (11, 1), (11, 2), (11, 4), (12, 2)]
         self.rainbow = False
@@ -36,7 +37,7 @@ class GladosLCD(Thread):
         self.breath_fast = False
         self.breathe_animation = True
 
-    def set_breath_options(self, breath_dict:dict):
+    def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
         self.breathe_animation = breath_dict['animation']
         self.rainbow = breath_dict['rainbow']
@@ -45,10 +46,10 @@ class GladosLCD(Thread):
         return {'fast': self.breath_fast, 'rainbow': self.rainbow,
                 'animation': self.breathe_animation}
 
-    def adjust_brightness(self, color, brightness_factor):
+    def adjust_brightness(self, color: tuple, brightness_factor: float) -> tuple:
         return tuple(int(c * brightness_factor) for c in color)
 
-    def draw_image(self, times, color=(255, 0 , 0)):
+    def draw_image(self, times, color=(255, 0, 0)):
         c = 0
         while c <= times:
             image = self.create_custom_circles_image(circle_color=color)
@@ -74,7 +75,7 @@ class GladosLCD(Thread):
         spacing_x = width // (num_circles_x + 1)
         spacing_y = height // (num_circles_y + 1)
         if self.rainbow is True:
-            circle_color = ledhelper.color_wheel(self.gcolor)
+            circle_color = LedHelper.color_wheel(self.gcolor)
             if self.gcolor == 255:
                 self.gcolor = 0
             else:
@@ -86,7 +87,7 @@ class GladosLCD(Thread):
                 center_x = x * spacing_x
                 center_y = y * spacing_y
                 # Determine the color of the circle based on its position in on_positions list
-                if (x , y) in self.on_positions and x <= self.counter:
+                if (x, y) in self.on_positions and x <= self.counter:
                     current_color = cd 
                 else:
                     current_color = black_color
@@ -99,7 +100,7 @@ class GladosLCD(Thread):
         image = Image.open(filename)
         # Scale the image to the smaller screen dimension
         image_ratio = image.width / image.height
-        image = image.resize((160, int((160/ image_ratio))), Image.BICUBIC)
+        image = image.resize((160, int((160 / image_ratio))), Image.BICUBIC)
         if image.height < 80:
             # create new canvas (color format, size, background color) default is aperture orange
             new_canvas = Image.new("RGB", (160, 80), "#ff9a00")
@@ -116,7 +117,7 @@ class GladosLCD(Thread):
             self.__display_frame(filename)
             sleep(1/29.97)
 
-    def breathe(self, fast=False, breathe=True):
+    def breathe(self):
         self.breath_stop = False
         up = True
         self.counter = 1
@@ -124,25 +125,25 @@ class GladosLCD(Thread):
         slptb = 0.15
         tb = 8
         mid = 3
-        if fast is True:
+        if self.breath_fast is True:
             slpm = 0.
             slptb = 0
             tb = 0
             mid = 0
         while self.breath_stop is False:
             self.draw_image(times=mid)
-            if breathe is True:
-                if fast is False:
+            if self.breath_fast is True:
+                if self.breath_fast is False:
                     sleep(slpm)
                 if self.counter > 12:
                     up = False
                     self.draw_image(times=tb)
-                    if fast is False:
+                    if self.breath_fast is False:
                         sleep(slptb)
                 if self.counter <= 1:
                     up = True
                     self.draw_image(times=tb)
-                    if fast is False:
+                    if self.breath_fast is False:
                         sleep(slptb)
                 if up is True:
                     self.counter += 1
@@ -152,19 +153,24 @@ class GladosLCD(Thread):
                 self.counter = 12
                 sleep(.2)
 
+    def run(self):
+        self.aperture_animation()
+        self.breathe()
+
+
 if __name__ == "__main__":
     # glcd0 is the big right side
     glcd0 = GladosLCD()
     # glcd1 is the little left side
     glcd1 = GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6, sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
-    gl1t = Thread(target = glcd1.aperture_animation, args=())
+    gl1t = Thread(target=glcd1.aperture_animation, args=())
     gl1t.start()
-    glcd0.rainbow=True
-    gl0t = Thread(target = glcd0.aperture_animation, args=())
+    glcd0.rainbow = True
+    gl0t = Thread(target=glcd0.aperture_animation, args=())
     gl0t.start()
     gl1t.join()
     gl0t.join()
     glcd1.rainbow = True
-    g1breath = Thread(target=glcd1.breathe, kwargs={"fast":False, "breathe":True})
+    g1breath = Thread(target=glcd1.breathe, kwargs={"fast": False, "breathe": True})
     g1breath.start()
-    glcd0.breathe(fast=False, breathe=False)
+    glcd0.breathe()
