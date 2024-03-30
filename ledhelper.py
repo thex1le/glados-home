@@ -23,7 +23,7 @@ class LedHelper:
         return (color[1], color[0], color[2])
 
     @staticmethod
-    def wheel(pos: int, order="RGB") -> tuple:
+    def color_wheel(pos: int, order="RGB") -> tuple:
         """
         Input a value 0 to 255 to get a color value.
         ags: pos on color wheel as int
@@ -75,7 +75,7 @@ class NeoPixelAnimations:
         if self.pixel_grid == ():
             # generate a grid for all leds if none provided
             self.pixel_grid= tuple(range(0, self.pixel_number))
-        self.wheel = LedHelper.wheel
+        self.wheel = LedHelper.color_wheel
 
     def rainbow_cycle(self, wait, order="RGB"):
         """

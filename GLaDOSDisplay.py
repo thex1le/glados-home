@@ -9,7 +9,7 @@ import busio
 import board
 from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7735  # pylint: disable=unused-import
-
+from ledhelper import LedHelper
 
 class GladosLCD(Thread):
     def __init__(self, cs=board.CE0, dc=board.D25, rst=board.D24, sck=board.SCK, mosi=board.MOSI, flip=False):
@@ -57,27 +57,6 @@ class GladosLCD(Thread):
             self.disp.image(image)
             c += 1
 
-    @staticmethod
-    def color_wheel(pos):
-        # return a position on the color wheel based on input 0 to 255
-        if pos < 0 or pos > 255:
-            r = g = b = 0
-        elif pos < 85:
-            r = int(pos * 3)
-            g = int(255 - pos * 3)
-            b = 0
-        elif pos < 170:
-            pos -= 85
-            r = int(255 - pos * 3)
-            g = 0
-            b = int(pos * 3)
-        else:
-            pos -= 170
-            r = 0
-            g = int(pos * 3)
-            b = int(255 - pos * 3)
-        return r, g, b
-
     # Define a new function to selectively turn a red dot on or off in the 4x12 grid
     def create_custom_circles_image(self, circle_color=(255, 0, 0)):
         # Adjusted image dimensions for the LCD screen
@@ -95,7 +74,7 @@ class GladosLCD(Thread):
         spacing_x = width // (num_circles_x + 1)
         spacing_y = height // (num_circles_y + 1)
         if self.rainbow is True:
-            circle_color = GladosLCD.color_wheel(self.gcolor)
+            circle_color = ledhelper.color_wheel(self.gcolor)
             if self.gcolor == 255:
                 self.gcolor = 0
             else:
