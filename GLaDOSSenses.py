@@ -238,7 +238,7 @@ if __name__ == "__main__":
     from ultralytics.utils.plotting import Annotator
     eyes = YoloDetect(configp)
     eyes.start()
-    # start the text to speach engine
+    # start the text to speech engine
     engine.main()
     #ttsengine = mp.Process(target=engine.main, args=())
     #ttsengine.start()
