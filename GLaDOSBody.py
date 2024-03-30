@@ -161,6 +161,7 @@ class GBody(Thread):
                         highest_confidence = p['confidence']
                         highest_confidence_person = p
                 if highest_confidence_person is not None:
+                    # TODO get confidence score from config
                     if highest_confidence >= .70:
                         # take the highest confidence and return the bounding box
                         rtn = highest_confidence_person['box']
