@@ -13,7 +13,7 @@ class ledHead:
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
         self.lh = ledhelper.LedHelper
         self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
-        self.swap = self.lh.rgb2grbswap
+        self.swap = self.lh.rgb2grb_swap
         # power led
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
         self.pwmled = self.hat.channels[4]

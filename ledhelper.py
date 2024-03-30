@@ -14,13 +14,13 @@ class LedHelper:
         return tuple(int(c * brightness_factor) for c in color)
     
     @staticmethod
-    def rgb2grbswap(color: tuple) -> tuple:
+    def rgb2grb_swap(color: tuple) -> tuple:
         """
-        Convert swap postion of R and G to convert from RGB to GRB or GRB to RGB
+        Convert swap position of R and G to convert from RGB to GRB or GRB to RGB
         color (tuple)
         Returns: tuple of color
         """
-        return (color[1], color[0], color[2])
+        return color[1], color[0], color[2]
 
     @staticmethod
     def color_wheel(pos: int, order="RGB") -> tuple:
@@ -58,7 +58,7 @@ class LedHelper:
 
 class NeoPixelAnimations:
     """
-    Pass in a neo pixel object and you can trigger animations
+    Pass in a neo pixel object to trigger animations
     Also supports loading pixel grids
     """
     def __init__(self, pixel, pixel_number: int, pixel_grid: tuple = ()) -> None:
