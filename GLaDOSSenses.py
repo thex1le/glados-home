@@ -231,7 +231,7 @@ if __name__ == "__main__":
     if path.isfile(args.conf[0]) is True:
         configp.read(args.conf[0])
     else:
-        raise GLaDOS_Server_Exception("Unable to load file {}".format(configFile))
+        raise GLaDOS_Server_Exception("Unable to load file {}".format(args.conf[0]))
     # import and init the 3rd part glados text to speach engine, this prevents init of the engine when you just want to print the help
     from gladosTTS import engine
     from ultralytics import YOLO
