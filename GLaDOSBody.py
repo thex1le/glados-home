@@ -5,7 +5,10 @@ from threading import Thread
 from adafruit_servokit import ServoKit
 import GLaDOSDisplay
 import board
-
+import ledhelper
+import adafruit_pca9685
+import neopixel
+import busio
 
 class Gservo(Thread):
     def __init__(self, skit, axis, max_angle=90):
@@ -125,11 +128,17 @@ class GBody(Thread):
         # then recalculate so the head and neck can move back to center
         # and the body will rotate and middle_angle will move up or down
         # order of off center is self.body_LR > self.body_UD,> self.head.UP> self, head left right
-        big_lcd_left = GLaDOSDisplay.GladosLCD()
-        little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6,
-                                                   sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
-        big_lcd_left.start()
-        little_lcd_right.start()
+        # TODO figure out how we are going to track anger intensity over various body parts
+        self.led_head = LedHead()
+        # thread the startup of the led head
+        led_head_start = Thread(target=self.led_head.startup(), args=())
+        led_head_start.start()
+        self.big_lcd_left = GLaDOSDisplay.GladosLCD()
+        self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6,
+                                                        sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
+        self.big_lcd_left.start()
+        self.little_lcd_right.start()
+        led_head_start.join()
 
     def stop_body(self):
         """
@@ -209,6 +218,64 @@ class GBody(Thread):
         while self.stop is False:
             self.move_servos()
             sleep(.2)
+
+
+class LedHead:
+    def __init__(self):
+        # note the LED in the eye is GRB not RGB make sure to convert
+        self.pixels = neopixel.NeoPixel(board.D17, 1, brightness=1, auto_write=True)
+        self.lh = ledhelper.LedHelper
+        self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
+        self.swap = self.lh.rgb2grb_swap
+        # power led
+        self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
+        self.pwm_led = self.hat.channels[4]
+        self.hat.frequency = 60
+        self.pwm_led.duty_cycle = 250
+        # self.anger is a tuple which represents the major and minor anger, first being major, second being minor
+        self.intensity = (.1, .1)
+
+    def startup(self):
+        # Do a startup sequence plusing the eye and head power LED from low to high...
+        eye_led_thread = Thread(target=self.ani.intensity, args=(10, self.swap((255, 255, 0))))
+        pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
+        eye_led_thread.start()
+        pwm_led_thread.start()
+        eye_led_thread.join()
+        pwm_led_thread.join()
+        self.pwm_led.duty_cycle = 150
+        self.pixels.brightness = self.intensity[0]
+        self.pixels.autowrite = True
+        self.pixels[0] = self.lh.adjust_brightness(self.swap((255, 255, 0)), self.intensity[1])
+        self.pixels.show()
+
+    def disco(self):
+        # set intensity to half
+        self.intensity = (.8, .8)
+        self.pixels.brightness = self.intensity[0]
+        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "GRB"))
+        pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
+        eye_led_thread.start()
+        pwm_led_thread.start()
+        eye_led_thread.join()
+        pwm_led_thread.join()
+
+    # TODO you left off considering how to handle intensity across the entire robot
+    def angry_eye(self, steps=20, very_angry=True):
+        self.intensity = (.1, .1)
+        self.pixels.brightness = self.intensity[0]
+        self.pixels[0] = (255, 255, 0)
+        self.pixels.show()
+        sleep(1.4)
+        anger = (255, 69, 0)
+        if very_angry is True:
+            anger = (139, 0, 0)
+            self.pwm_led.duty_cycle = 65535
+            self.intensity = (0.9, 0.9)
+        self.pixels.brightness = self.intensity[0]
+        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "GRB", self.intensity))
+        eye_led_thread.start()
+        eye_led_thread.join()
 
 
 if __name__ == "__main__":
