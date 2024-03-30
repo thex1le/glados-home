@@ -11,9 +11,11 @@ from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7735  # pylint: disable=unused-import
 
 
-class GladosLCD:
+class GladosLCD(Thread):
     def __init__(self, cs=board.CE0, dc=board.D25, rst=board.D24, sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
+        Thread.__init__(self)
+        Thread.daemon = True
         cs_pin = DigitalInOut(cs)
         dc_pin = DigitalInOut(dc)
         reset_pin = DigitalInOut(rst)
@@ -31,6 +33,17 @@ class GladosLCD:
         self.counter = 1
         self.disp.spi_device.cs_active_value = False
         self.flip = flip
+        self.breath_fast = False
+        self.breathe_animation = True
+
+    def set_breath_options(self, breath_dict:dict):
+        self.breath_fast = breath_dict['fast']
+        self.breathe_animation = breath_dict['animation']
+        self.rainbow = breath_dict['rainbow']
+
+    def get_breath_options(self) -> dict:
+        return {'fast': self.breath_fast, 'rainbow': self.rainbow,
+                'animation': self.breathe_animation}
 
     def adjust_brightness(self, color, brightness_factor):
         return tuple(int(c * brightness_factor) for c in color)
@@ -38,13 +51,14 @@ class GladosLCD:
     def draw_image(self, times, color=(255, 0 , 0)):
         c = 0
         while c <= times:
-            image = self.create_custom_circles_image(circle_color = color)
+            image = self.create_custom_circles_image(circle_color=color)
             if self.flip is True:
                 image = image.rotate(180)
             self.disp.image(image)
             c += 1
 
-    def color_wheel(self, pos):
+    @staticmethod
+    def color_wheel(pos):
         # return a position on the color wheel based on input 0 to 255
         if pos < 0 or pos > 255:
             r = g = b = 0
@@ -81,7 +95,7 @@ class GladosLCD:
         spacing_x = width // (num_circles_x + 1)
         spacing_y = height // (num_circles_y + 1)
         if self.rainbow is True:
-            circle_color = self.color_wheel(self.gcolor)
+            circle_color = GladosLCD.color_wheel(self.gcolor)
             if self.gcolor == 255:
                 self.gcolor = 0
             else:

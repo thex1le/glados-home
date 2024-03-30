@@ -56,7 +56,7 @@ class LedHelper:
         return color
 
 
-class Animations:
+class NeoPixelAnimations:
     """
     Pass in a neo pixel object and you can trigger animations
     Also supports loading pixel grids

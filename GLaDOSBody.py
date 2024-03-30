@@ -1,7 +1,10 @@
-from adafruit_servokit import ServoKit
 from time import sleep
 from threading import Thread
 
+#3rd party imports
+from adafruit_servokit import ServoKit
+import GLaDOSDisplay
+import board
 
 class Gservo(Thread):
     def __init__(self, skit, axis, max_angle=90):
@@ -121,6 +124,11 @@ class GBody(Thread):
         # then recalculate so the head and neck can move back to center
         # and the body will rotate and middle_angle will move up or down
         # order of off center is self.body_LR > self.body_UD,> self.head.UP> self, head left right
+        big_lcd_left = GLaDOSDisplay.GladosLCD()
+        little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6,
+                                                   sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
+        # YOU LEFT OFF HERE ADDING THE LEDS AND SCREENS INTO THE BODY CODE..
+        #LED HELPER SHOULD BE USED TO REDUCE CODE...
 
     def stop_body(self):
         """

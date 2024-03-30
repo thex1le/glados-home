@@ -12,7 +12,7 @@ class ledHead:
         # note the LED in the eye is GRB not RGB make sure to convert
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
         self.lh = ledhelper.LedHelper
-        self.ani = ledhelper.Animations(self.pixels, 1)
+        self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
         self.swap = self.lh.rgb2grbswap
         # power led
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
