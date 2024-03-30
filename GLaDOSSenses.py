@@ -22,12 +22,15 @@ class Camera(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.config = configfile['DEFAULT']
+        cam_res = self.config['camera_resolution'].split(',')
+        self.cam_res_x = int(cam_res[0])
+        self.cam_res_y = int(cam_res[1])
         # use json lib to convert string bool to bool
         self.picam = json.loads(self.config['picam'].lower())
         if self.picam is True:
             # pi cam
             self.cap = Picamera2()
-            self.cap.configure(self.cap.create_preview_configuration({"size": (640, 480), 'format': 'RGB888'}))
+            self.cap.configure(self.cap.create_preview_configuration({"size": (self.cam_res_x, self.cam_res_y), 'format': 'RGB888'}))
             self.cap.start()
         else:
             # usb webcam
@@ -75,6 +78,12 @@ class YoloDetect(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.configfile = configfile
+        cam_res = self.configfile['DEFAULT']['camera_resolution'].split(',')
+        self.cam_res_x = int(cam_res[0])
+        self.cam_res_y = int(cam_res[1])
+        self.factory = self.configfile['DEFAULT']['rtsp_factory']
+        self.rtsp_port = int(self.configfile['DEFAULT']['rtsp_port'])
+        self.rtsp_server_ip = self.configfile['DEFAULT']['rtsp_server_ip']
         self.confyolo = configfile["YOLO"]
         self.model = YOLO(self.confyolo["model"])
         self.sight = None
@@ -83,8 +92,9 @@ class YoloDetect(Thread):
         self.imagesend = DataSend(self.configfile)
         self.imagesend.start()
         # TODO add this to config file
-        print("Starting the RTSP server on rtsp://0.0.0.0:8554/GLaDOS")
-        self.rtsp = GLaDOSVision.RTSPServer()
+        print("Starting the RTSP server on rtsp://{}:{}/{}".format(self.rtsp_server_ip, self.rtsp_port, self.factory))
+        self.rtsp = GLaDOSVision.RTSPServer(cam_x=self.cam_res_x, cam_y=self.cam_res_y,
+                                            port=self.rtsp_port, factory=self.factory)
 
     def get_sight(self):
         return self.sight

@@ -196,7 +196,7 @@ class GladosLocal(Thread):
         self.mixer = Mixer("Speaker")
         self.__change_volume(int(config_file["DEFAULT"]["VolumeLevel"]))
         self.current_vol = int(self.mixer.getvolume()[0])
-        self.eyes = gleyes(config_file)
+        self.eyes = gleyes(self.configFile)
         self.eyes.start()
         self.sight_results = mp.Manager.dict()
         self.stop = False
