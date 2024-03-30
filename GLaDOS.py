@@ -185,6 +185,9 @@ class GladosLocal(Thread):
         self.configFile = config_file
         self.voiceurl = config_file["DEFAULT"]["VoiceUrl"]
         self.configp = config_file["LOCALSPEAK"]
+        cam_res = self.configFile['DEFAULT']['camera_resolution'].split(',')
+        cam_res_x = int(cam_res[0])
+        cam_res_y = int(cam_res[1])
         self.greetings = self.llp(self.configp.get("greetings", list()))
         self.processing = self.llp(self.configp.get("processing", list()))
         self.insults = self.llp(self.configp.get("insults", list()))
@@ -206,8 +209,7 @@ class GladosLocal(Thread):
         #self.portal1song()
         self.mp_lock = mp.Lock()
         self.seen = None
-        # TODO, get camera size from config file and update all libs to use that
-        self.glados_body = GBody(640, 640, self.sight_results, self.mp_lock)
+        self.glados_body = GBody(cam_res_x, cam_res_y, self.sight_results, self.mp_lock)
         self.glados_body.start()
 
     def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
