@@ -200,19 +200,20 @@ class GBody(Thread):
 
     def move_servos(self):
         target = self.__find_person()
-        # move "shoulders" first
-        head_lr = self.__calc_servo(self.head_LR, target)
-        head_ud = self.__calc_servo(self.head_UD, target)
-        # don't use threading for now
-        self.head_LR.set_angle(head_lr)
-        self.head_UD.set_angle(head_ud)
-        self.head_LR.move()
-        self.head_UD.move()
-        # head should now be centered on the target
-        # level the head and arm with body and rotation
-        # x-axis
-        self.__level_servos(self.head_LR, self.body_LR)
-        self.__level_servos(self.head_UD, self.body_UD)
+        if target != {}:
+            # move "shoulders" first
+            head_lr = self.__calc_servo(self.head_LR, target)
+            head_ud = self.__calc_servo(self.head_UD, target)
+            # don't use threading for now
+            self.head_LR.set_angle(head_lr)
+            self.head_UD.set_angle(head_ud)
+            self.head_LR.move()
+            self.head_UD.move()
+            # head should now be centered on the target
+            # level the head and arm with body and rotation
+            # x-axis
+            self.__level_servos(self.head_LR, self.body_LR)
+            self.__level_servos(self.head_UD, self.body_UD)
 
     def run(self):
         while self.stop is False:
