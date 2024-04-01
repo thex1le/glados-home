@@ -132,12 +132,12 @@ class GBody(Thread):
         self.led_head = LedHead()
         # thread the startup of the led head
         led_head_start = Thread(target=self.led_head.startup(), args=())
-        led_head_start.start()
         self.big_lcd_left = GLaDOSDisplay.GladosLCD()
         self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6,
                                                         sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
         self.big_lcd_left.start()
         self.little_lcd_right.start()
+        led_head_start.start()
         led_head_start.join()
 
     def stop_body(self):
