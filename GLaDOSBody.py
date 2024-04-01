@@ -131,7 +131,7 @@ class GBody(Thread):
         # TODO figure out how we are going to track anger intensity over various body parts
         self.led_head = LedHead()
         # thread the startup of the led head
-        led_head_start = Thread(target=self.led_head.startup(), args=())
+        led_head_start = Thread(target=self.led_head.startup, args=())
         self.big_lcd_left = GLaDOSDisplay.GladosLCD()
         self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6,
                                                         sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
