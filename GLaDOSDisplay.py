@@ -121,10 +121,10 @@ class GladosLCD(Thread):
         self.breathe_loop = True
         up = True
         self.counter = 1
-        slpm = 0.1
-        slptb = 0.15
-        tb = 8
-        mid = 3
+        slpm = 0.12
+        slptb = 0.18
+        tb = 12
+        mid = 5
         if self.breath_fast is True:
             slpm = 0.
             slptb = 0
