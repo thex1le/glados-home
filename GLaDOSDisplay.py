@@ -22,8 +22,7 @@ class GladosLCD(Thread):
         reset_pin = DigitalInOut(rst)
         baud_rate = 24000000
         spi = busio.SPI(clock=sck, MOSI=mosi)
-        self.breath_stop = False
-        self.disp = st7735.ST7735R(spi, rotation=90, invert=True, width=80, x_offset=26, 
+        self.disp = st7735.ST7735R(spi, rotation=90, invert=True, width=80, x_offset=26,
                                    y_offset=1, cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=baud_rate)
         self.on_positions = [(1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (3, 1), (3, 2), (3, 3),
                              (3, 4), (4, 1), (4, 2), (4, 3), (4, 4), (5, 1), (5, 2), (5, 3), (5, 4), 
@@ -36,6 +35,7 @@ class GladosLCD(Thread):
         self.flip = flip
         self.breath_fast = False
         self.breathe_animation = True
+        self.breathe_loop = True
 
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
@@ -118,7 +118,7 @@ class GladosLCD(Thread):
             sleep(1/29.97)
 
     def breathe(self):
-        self.breath_stop = False
+        self.breathe_loop = True
         up = True
         self.counter = 1
         slpm = 0.1
@@ -130,9 +130,9 @@ class GladosLCD(Thread):
             slptb = 0
             tb = 0
             mid = 0
-        while self.breath_stop is False:
+        while self.breathe_loop is True:
             self.draw_image(times=mid)
-            if self.breath_fast is True:
+            if self.breathe_animation is True:
                 if self.breath_fast is False:
                     sleep(slpm)
                 if self.counter > 12:
@@ -157,6 +157,9 @@ class GladosLCD(Thread):
         self.aperture_animation()
         self.breathe()
 
+    def stop(self):
+        # end all loops so you can join thread
+        self.breathe_loop = False
 
 if __name__ == "__main__":
     # glcd0 is the big right side
