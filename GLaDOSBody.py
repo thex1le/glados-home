@@ -117,9 +117,9 @@ class GBody(Thread):
         # build a servo control for each joint
         self.body_LR = Gservo(skit=kit.servo[0], axis='x', max_angle=180)
         self.body_UD = Gservo(skit=kit.servo[1], axis='y', max_angle=60)
-        self.head_UD = Gservo(skit=kit.servo[2], axis='x', max_angle=60)
-        self.head_LR = Gservo(skit=kit.servo[3], axis='y', max_angle=60)
-        self.seen_data = Manager.dict()
+        self.head_UD = Gservo(skit=kit.servo[2], axis='y', max_angle=60)
+        self.head_LR = Gservo(skit=kit.servo[3], axis='x', max_angle=60)
+        self.seen_data = Manager().dict()
         self.cam_x_width = cam_x_width
         self.cam_y_width = cam_y_width
         self.stop = False
