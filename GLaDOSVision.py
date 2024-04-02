@@ -10,7 +10,9 @@ from gi.repository import Gst, GstRtspServer, GLib
 import cv2
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
-    def __init__(self, **properties):
+    def __init__(self, cam_x, cam_y, **properties):
+        self.cam_x = cam_x
+        self.cam_y = cam_y
         super(RtspSystem, self).__init__(**properties)
         self.data = None
         fps = 30
@@ -50,14 +52,14 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
 class RTSPServer(GstRtspServer.RTSPServer):
     def __init__(self, cam_x=640, cam_y=480, port=8554, factory="/GLaDOS", **properties):
         super(RTSPServer, self).__init__(**properties)
-        self.rtsp = RtspSystem()
+        self.cam_x = cam_x
+        self.cam_y = cam_y
+        self.rtsp = RtspSystem(cam_x, cam_y)
         self.rtsp.set_shared(True)
         self.set_service(str(port))
         self.get_mount_points().add_factory(factory, self.rtsp)
         self.attach(None)
         Gst.init(None)
-        self.cam_x = cam_x
-        self.cam_y = cam_y
         self.rtsp.start()
 
     def send_data(self, data):
