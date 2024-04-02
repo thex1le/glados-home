@@ -201,7 +201,7 @@ class GladosLocal(Thread):
         self.current_vol = int(self.mixer.getvolume()[0])
         self.eyes = gleyes(self.configFile)
         self.eyes.start()
-        self.sight_results = mp.Manager.dict()
+        self.sight_results = mp.Manager().dict()
         self.stop = False
         self.homeass = HomeAssistantLink(config_file)
         self.homeass.get_temp()

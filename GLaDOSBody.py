@@ -131,13 +131,13 @@ class GBody(Thread):
         # TODO figure out how we are going to track anger intensity over various body parts
         self.led_head = LedHead()
         # thread the startup of the led head
-        led_head_start = Thread(target=self.led_head.startup(), args=())
-        led_head_start.start()
+        led_head_start = Thread(target=self.led_head.startup, args=())
         self.big_lcd_left = GLaDOSDisplay.GladosLCD()
-        self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6,
+        self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6,
                                                         sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
         self.big_lcd_left.start()
         self.little_lcd_right.start()
+        led_head_start.start()
         led_head_start.join()
 
     def stop_body(self):
@@ -200,19 +200,20 @@ class GBody(Thread):
 
     def move_servos(self):
         target = self.__find_person()
-        # move "shoulders" first
-        head_lr = self.__calc_servo(self.head_LR, target)
-        head_ud = self.__calc_servo(self.head_UD, target)
-        # don't use threading for now
-        self.head_LR.set_angle(head_lr)
-        self.head_UD.set_angle(head_ud)
-        self.head_LR.move()
-        self.head_UD.move()
-        # head should now be centered on the target
-        # level the head and arm with body and rotation
-        # x-axis
-        self.__level_servos(self.head_LR, self.body_LR)
-        self.__level_servos(self.head_UD, self.body_UD)
+        if target != {}:
+            # move "shoulders" first
+            head_lr = self.__calc_servo(self.head_LR, target)
+            head_ud = self.__calc_servo(self.head_UD, target)
+            # don't use threading for now
+            self.head_LR.set_angle(head_lr)
+            self.head_UD.set_angle(head_ud)
+            self.head_LR.move()
+            self.head_UD.move()
+            # head should now be centered on the target
+            # level the head and arm with body and rotation
+            # x-axis
+            self.__level_servos(self.head_LR, self.body_LR)
+            self.__level_servos(self.head_UD, self.body_UD)
 
     def run(self):
         while self.stop is False:
@@ -223,7 +224,7 @@ class GBody(Thread):
 class LedHead:
     def __init__(self):
         # note the LED in the eye is GRB not RGB make sure to convert
-        self.pixels = neopixel.NeoPixel(board.D17, 1, brightness=1, auto_write=True)
+        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
         self.lh = ledhelper.LedHelper
         self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
         self.swap = self.lh.rgb2grb_swap
