@@ -209,7 +209,7 @@ class GladosLocal(Thread):
         #self.portal1song()
         self.mp_lock = mp.Lock()
         self.seen = None
-        self.glados_body = GBody(cam_res_x, cam_res_y, self.sight_results, self.mp_lock)
+        self.glados_body = GBody(cam_res_x, cam_res_y, self.mp_lock)
         self.glados_body.start()
 
     def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
@@ -343,6 +343,7 @@ class GladosLocal(Thread):
         while self.stop is False:
             with self.mp_lock:
                 self.sight_results = self.eyes.get_results()
+                self.glados_body.update_seen_data(self.sight_results)
             self.seen = self.process_sight(self.sight_results)
             if self.sight_results.get("person", None) is None:
                 # TODO this where you will do human detector millimeter wave

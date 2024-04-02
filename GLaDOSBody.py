@@ -1,5 +1,6 @@
 from time import sleep
 from threading import Thread
+from multiprocessing import Manager
 
 #3rd party imports
 from adafruit_servokit import ServoKit
@@ -9,6 +10,7 @@ import ledhelper
 import adafruit_pca9685
 import neopixel
 import busio
+
 
 class Gservo(Thread):
     def __init__(self, skit, axis, max_angle=90):
@@ -107,7 +109,7 @@ class Gservo(Thread):
 
 class GBody(Thread):
     # class for managing all the servo and body movement in relation to the camera
-    def __init__(self, cam_x_width: int, cam_y_width: int, seen_data, lock):
+    def __init__(self, cam_x_width: int, cam_y_width: int, lock):
         Thread.__init__(self)
         Thread.daemon = True
         # access the servos
@@ -117,7 +119,7 @@ class GBody(Thread):
         self.body_UD = Gservo(skit=kit.servo[1], axis='y', max_angle=60)
         self.head_UD = Gservo(skit=kit.servo[2], axis='x', max_angle=60)
         self.head_LR = Gservo(skit=kit.servo[3], axis='y', max_angle=60)
-        self.seen_data = seen_data
+        self.seen_data = Manager.dict()
         self.cam_x_width = cam_x_width
         self.cam_y_width = cam_y_width
         self.stop = False
@@ -139,6 +141,9 @@ class GBody(Thread):
         self.little_lcd_right.start()
         led_head_start.start()
         led_head_start.join()
+
+    def update_seen_data(self, data):
+        self.seen_data = data
 
     def stop_body(self):
         """
