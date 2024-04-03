@@ -11,9 +11,9 @@ import cv2
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, cam_x, cam_y, **properties):
+        super(RtspSystem, self).__init__(**properties)
         self.cam_x = cam_x
         self.cam_y = cam_y
-        super(RtspSystem, self).__init__(**properties)
         self.data = None
         fps = 30
         self.launch_string =    self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
@@ -54,9 +54,11 @@ class RTSPServer(GstRtspServer.RTSPServer):
         super(RTSPServer, self).__init__(**properties)
         self.cam_x = cam_x
         self.cam_y = cam_y
-        self.rtsp = RtspSystem(cam_x, cam_y)
+        self.rtsp = RtspSystem(self.cam_x, self.cam_y)
         self.rtsp.set_shared(True)
         self.set_service(str(port))
+        if not factory.startswith('/'):
+            factory = '/' + factory
         self.get_mount_points().add_factory(factory, self.rtsp)
         self.attach(None)
         Gst.init(None)
