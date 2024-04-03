@@ -9,6 +9,7 @@ gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 import cv2
 
+
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, cam_x, cam_y, **properties):
         super(RtspSystem, self).__init__(**properties)
@@ -16,7 +17,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.cam_y = cam_y
         self.data = None
         fps = 30
-        self.launch_string =    self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+        self.launch_string = self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
