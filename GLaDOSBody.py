@@ -245,18 +245,32 @@ class GBody(Thread):
         servo1.move()
         servo2.move()
 
+    def __distance_check(self, servo, new_angle, degree_diff=2):
+        # TODO get degrees of difference from config file
+        move = False
+        current_angle = servo.get_angle()
+        if new_angle > current_angle:
+            if (new_angle - current_angle) > degree_diff:
+                move = True
+        elif new_angle < current_angle:
+            if (current_angle -  new_angle) > degree_diff:
+                move = True
+        return move
+
     def move_servos(self):
         target = self.__find_person()
-        # TODO only move if we are more than X degrees off target...
         if target != {}:
             # move "shoulders" first
             head_lr = self.__calc_servo(self.head_LR, target)
             head_ud = self.__calc_servo(self.head_UD, target)
-            # don't use threading for now
-            self.head_LR.set_angle(head_lr)
-            self.head_UD.set_angle(head_ud)
-            self.head_LR.move()
-            self.head_UD.move()
+            if self.__distance_check(self.head_LR, head_lr ) is True:
+                self.head_LR.set_angle(head_lr)
+                # don't use threading for now
+                self.head_LR.move()
+            if self.__distance_check(self.head_UD, head_ud) is True:
+                self.head_UD.set_angle(head_ud)
+                # dont use threading for now
+                self.head_UD.move()
             # head should now be centered on the target
             # level the head and arm with body and rotation
             # x-axis
