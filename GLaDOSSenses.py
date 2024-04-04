@@ -5,7 +5,7 @@ from threading import Thread
 import argparse
 import configparser
 from os import path
-from time import sleep
+from time import sleep, time
 from pickle import dumps, loads
 
 #3rd party
@@ -18,7 +18,7 @@ class GLaDOSServerException(Exception):
 
 
 class Camera(Thread):
-    def __init__(self, configfile):
+    def __init__(self, callback, configfile):
         from picamera2 import Picamera2
         Thread.__init__(self)
         Thread.daemon = True
@@ -49,6 +49,35 @@ class Camera(Thread):
         self.imageget.start()
         self.imagesend = DataSend(configfile)
         self.imagesend.start()
+        self.scan_callback = callback
+        self.skip_run = False
+
+    def __capture_image(self):
+        if self.picam is True:
+            frame = self.cap.capture_array()
+        else:
+            ret, frame = self.cap.read()
+        return frame
+
+    def target_scan(self, target="person", search_time=90, confidence=.70):
+        target_found = False
+        t = time()
+        while (time() - t) < search_time and target_found is False:
+            if target in self.results.keys():
+                for p in self.results[target]['objects']:
+                    if p['confidence'] >= confidence:
+                        # found the target in the timeframe
+                        target_found = True
+                        self.scan_callback()
+                        break
+
+    def __process_image(self):
+        results = dict()
+        self.imagesend.send_data(self.get_image(), jsonsend=False)
+        data = self.imageget.get_data()
+        if data is not None:
+            results = json.loads(data)
+        return results
 
     def get_image(self, blocking=True):
         while blocking is True and self.image is None:
@@ -57,19 +86,12 @@ class Camera(Thread):
 
     def run(self):
         while self.stop is False:
-            if self.picam is True:
-                frame = self.cap.capture_array()
-            else:
-                ret, frame = self.cap.read()
-            self.image = frame
-            cv2.imwrite('raw.jpg', frame)
+            self.image = self.__capture_image()
+            self.results = self.__process_image()
+            # cv2.imwrite('raw.jpg', self.image)
             sleep(.02)
 
     def get_results(self):
-        self.imagesend.send_data(self.get_image(), jsonsend=False)
-        data = self.imageget.get_data()
-        if data is not None:
-            self.results = json.loads(data)
         return self.results
 
 
