@@ -23,7 +23,6 @@ import regex as re
 from homeassistant_api import Client
 
 # glados imports
-from GLaDOSSenses import Camera as gleyes
 from GLaDOSBody import GBody
 
 
@@ -348,6 +347,7 @@ class GladosLocal(Thread):
             if self.sight_results.get("person", None) is None:
                 # TODO this where you will do human detector millimeter wave
                 # TODO set scan config time and number of times to look in conf file
+                # TODO consider scanning for other things?
                 if (time.time() - self.last_seen_human) < 120 and scan_room <= 2:
                     self.glados_body.scan_room()
                     scan_room += 1

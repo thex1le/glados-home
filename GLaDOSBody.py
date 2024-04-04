@@ -1,4 +1,4 @@
-from time import sleep
+from time import sleep, time
 from threading import Thread
 from multiprocessing import Manager
 
@@ -10,6 +10,7 @@ import ledhelper
 import adafruit_pca9685
 import neopixel
 import busio
+from GLaDOSSenses import Camera as gleyes
 
 
 class Gservo(Thread):
@@ -17,6 +18,7 @@ class Gservo(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         # lock skit to the channel for this class
+        self.min_angle = 0
         self.skit = skit
         # start at middle speed
         self.speed = 5
@@ -109,7 +111,7 @@ class Gservo(Thread):
 
 class GBody(Thread):
     # class for managing all the servo and body movement in relation to the camera
-    def __init__(self, cam_x_width: int, cam_y_width: int, lock):
+    def __init__(self, config_file, cam_x_width: int, cam_y_width: int, lock):
         Thread.__init__(self)
         Thread.daemon = True
         # access the servos
@@ -124,6 +126,8 @@ class GBody(Thread):
         self.cam_y_width = cam_y_width
         self.stop = False
         self.lock = lock
+        self.eyes = gleyes(self.set_scan_success, config_file)
+        self.eyes.start()
         # find the x1 x2, y1, y2 of the target,
         # figure out if the head can look at it...
         # if we can then head / neck moves to it...
@@ -141,9 +145,47 @@ class GBody(Thread):
         self.little_lcd_right.start()
         led_head_start.start()
         led_head_start.join()
+        self.scan_success = False
 
-    def update_seen_data(self, data):
-        self.seen_data = data
+    def set_scan_success(self):
+        # callback for the camera thread to signal the servos to stop moving
+        self.scan_success = True
+
+    def scan_room(self, scan_speed=3, search_time=90, confidence=.70):
+        #TODO consider how this will change with left and right cameras...,
+        self.eyes.target_scan(search_time=search_time, confidence=confidence)
+        t = time()
+        while (time() - t) < search_time and self.scan_success is False:
+            if self.scan_success is False:
+                self.head_LR.set_speed_angle((scan_speed, self.head_LR.min_angle), execute=True)
+                self.body_LR.set_speed_angle((scan_speed, self.body_LR.min_angle), execute=True)
+                # TODO change when threading is enabled
+                self.head_LR.move()
+                self.body_LR.move()
+            else:
+                break
+            # block till head and body are at min
+            while (self.body_LR.get_angle() != self.body_LR.min_angle and
+                   self.head_LR.get_angle() != self.head_LR.min_angle or self.scan_success is True):
+                sleep(.2)
+            if self.scan_success is False:
+                self.head_LR.set_speed_angle((scan_speed, self.head_LR.max_angle), execute=True)
+                self.body_LR.set_speed_angle((scan_speed, self.body_LR.max_angle), execute=True)
+                # TODO change when threading is enabled
+                self.head_LR.move()
+                self.body_LR.move()
+            else:
+                break
+            # block till head and body are at max
+            while (self.body_LR.get_angle() != self.body_LR.max_angle and
+                   self.head_LR.get_angle() != self.head_LR.max_angle or self.scan_success is True):
+                sleep(.2)
+        if self.scan_success is True:
+            with self.lock:
+                self.seen_data = self.eyes.get_results()
+            self.scan_success = False
+            self.move_servos()
+
 
     def stop_body(self):
         """
@@ -205,6 +247,7 @@ class GBody(Thread):
 
     def move_servos(self):
         target = self.__find_person()
+        # TODO only move if we are more than X degrees off target...
         if target != {}:
             # move "shoulders" first
             head_lr = self.__calc_servo(self.head_LR, target)
@@ -222,6 +265,8 @@ class GBody(Thread):
 
     def run(self):
         while self.stop is False:
+            with self.lock:
+                self.seen_data = self.eyes.get_results()
             self.move_servos()
             sleep(.2)
 
