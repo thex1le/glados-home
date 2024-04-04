@@ -5,19 +5,20 @@ from threading import Thread
 import argparse
 import configparser
 from os import path
-from time import sleep
+from time import sleep, time
 from pickle import dumps, loads
 
 #3rd party
 import zmq
 import cv2
 
-class GLaDOS_Server_Exception(Exception):
+
+class GLaDOSServerException(Exception):
     pass
 
 
 class Camera(Thread):
-    def __init__(self, configfile):
+    def __init__(self, callback, configfile):
         from picamera2 import Picamera2
         Thread.__init__(self)
         Thread.daemon = True
@@ -30,7 +31,8 @@ class Camera(Thread):
         if self.picam is True:
             # pi cam
             self.cap = Picamera2()
-            self.cap.configure(self.cap.create_preview_configuration({"size": (self.cam_res_x, self.cam_res_y), 'format': 'RGB888'}))
+            self.cap.configure(self.cap.create_preview_configuration({"size": (self.cam_res_x, self.cam_res_y),
+                                                                      'format': 'RGB888'}))
             self.cap.start()
         else:
             # usb webcam
@@ -47,6 +49,35 @@ class Camera(Thread):
         self.imageget.start()
         self.imagesend = DataSend(configfile)
         self.imagesend.start()
+        self.scan_callback = callback
+        self.skip_run = False
+
+    def __capture_image(self):
+        if self.picam is True:
+            frame = self.cap.capture_array()
+        else:
+            ret, frame = self.cap.read()
+        return frame
+
+    def target_scan(self, target="person", search_time=90, confidence=.70):
+        target_found = False
+        t = time()
+        while (time() - t) < search_time and target_found is False:
+            if target in self.results.keys():
+                for p in self.results[target]['objects']:
+                    if p['confidence'] >= confidence:
+                        # found the target in the timeframe
+                        target_found = True
+                        self.scan_callback()
+                        break
+
+    def __process_image(self):
+        results = dict()
+        self.imagesend.send_data(self.get_image(), jsonsend=False)
+        data = self.imageget.get_data()
+        if data is not None:
+            results = json.loads(data)
+        return results
 
     def get_image(self, blocking=True):
         while blocking is True and self.image is None:
@@ -55,25 +86,18 @@ class Camera(Thread):
 
     def run(self):
         while self.stop is False:
-            if self.picam is True:
-                frame = self.cap.capture_array()
-            else:
-                ret, frame = self.cap.read()
-            self.image = frame
-            cv2.imwrite('raw.jpg', frame)
+            self.image = self.__capture_image()
+            self.results = self.__process_image()
+            # cv2.imwrite('raw.jpg', self.image)
             sleep(.02)
 
     def get_results(self):
-        self.imagesend.send_data(self.get_image(), jsonsend=False)
-        data = self.imageget.get_data()
-        if data is not None:
-            self.results = json.loads(data)
         return self.results
 
 
 class YoloDetect(Thread):
     def __init__(self, configfile):
-        #internal libs, import here so its deps are not needed on other devices
+        # internal libs, import here so its deps are not needed on other devices
         import GLaDOSVision
         Thread.__init__(self)
         Thread.daemon = True
@@ -133,7 +157,7 @@ class YoloDetect(Thread):
         return results
 
     def process_image(self, image):
-        final_image=loads(image) 
+        final_image = loads(image)
         cv2.imwrite('raw_rx.jpg', final_image)
         self.sight = self.__yolo_process_image(final_image)
         print("sending back dict")
@@ -209,7 +233,7 @@ class DataRecv(Thread):
 
     def run(self):
         while self.stop is False:
-            #TODO check if there is a timeout here or it will never close on exit?
+            # TODO check if there is a timeout here or it will never close on exit?
             self.data = self.socket.recv()  # Receive the data as a JSON string
             print("got data")
         self.socketsend.close()
@@ -221,18 +245,19 @@ if __name__ == "__main__":
     parser.add_argument('-config', type=str, default=1, dest='conf', nargs=1, help='Config File')
     try: 
         args = parser.parse_args()
-    except:
+    except Exception:
         parser.print_help()
         sys.exit(0)
-    if len(sys.argv)==1:
+    if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
     configp = configparser.ConfigParser()
     if path.isfile(args.conf[0]) is True:
         configp.read(args.conf[0])
     else:
-        raise GLaDOS_Server_Exception("Unable to load file {}".format(args.conf[0]))
-    # import and init the 3rd part glados text to speach engine, this prevents init of the engine when you just want to print the help
+        raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
+    # import and init the 3rd part glados text to speach engine,
+    # this prevents init of the engine when you just want to print the help
     from gladosTTS import engine
     from ultralytics import YOLO
     from ultralytics.utils.plotting import Annotator
@@ -240,11 +265,9 @@ if __name__ == "__main__":
     eyes.start()
     # start the text to speech engine
     engine.main()
-    #ttsengine = mp.Process(target=engine.main, args=())
-    #ttsengine.start()
+    # ttsengine = mp.Process(target=engine.main, args=())
+    #t tsengine.start()
     # loop
     # do we keep looping hear? what blocks on main?
-    #while True:
+    # while True:
     #    time.sleep(1)
-        
-
