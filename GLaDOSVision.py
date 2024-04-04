@@ -11,9 +11,9 @@ import cv2
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, cam_x, cam_y, **properties):
+        super(RtspSystem, self).__init__(**properties)
         self.cam_x = cam_x
         self.cam_y = cam_y
-        super(RtspSystem, self).__init__(**properties)
         self.data = None
         fps = 30
         self.launch_string =    self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
