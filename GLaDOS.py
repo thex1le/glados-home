@@ -199,8 +199,6 @@ class GladosLocal(Thread):
         self.mixer = Mixer("Speaker")
         self.__change_volume(int(config_file["DEFAULT"]["VolumeLevel"]))
         self.current_vol = int(self.mixer.getvolume()[0])
-        self.eyes = gleyes(self.configFile)
-        self.eyes.start()
         self.sight_results = mp.Manager().dict()
         self.stop = False
         self.homeass = HomeAssistantLink(config_file)
@@ -209,8 +207,9 @@ class GladosLocal(Thread):
         #self.portal1song()
         self.mp_lock = mp.Lock()
         self.seen = None
-        self.glados_body = GBody(cam_res_x, cam_res_y, self.mp_lock)
+        self.glados_body = GBody(self.configFile, cam_res_x, cam_res_y, self.mp_lock)
         self.glados_body.start()
+        self.last_seen_human = time.time()
 
     def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
         proc = self.__dedupe(choice, last, options_list)
@@ -340,17 +339,23 @@ class GladosLocal(Thread):
         return check
 
     def run(self):
+        self.last_seen_human = time.time()
+        scan_room = 0
         while self.stop is False:
             with self.mp_lock:
-                self.sight_results = self.eyes.get_results()
-                self.glados_body.update_seen_data(self.sight_results)
+                self.sight_results = self.glados_body.eyes.get_results()
             self.seen = self.process_sight(self.sight_results)
             if self.sight_results.get("person", None) is None:
                 # TODO this where you will do human detector millimeter wave
-                time.sleep(5)
+                # TODO set scan config time and number of times to look in conf file
+                if (time.time() - self.last_seen_human) < 120 and scan_room <= 2:
+                    self.glados_body.scan_room()
+                    scan_room += 1
+                else:
+                    time.sleep(5)
             else:
-                # update at 30fps for now
-                time.sleep(2)
+                self.last_seen_human = time.time()
+                time.sleep(1)
     
     def __adjust_count(self, obj):
         count = 0
