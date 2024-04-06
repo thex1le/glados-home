@@ -23,6 +23,7 @@ import regex as re
 from homeassistant_api import Client
 
 # glados imports
+from glog_conifig import setup_logger
 from GLaDOSBody import GBody
 
 
@@ -57,9 +58,10 @@ stream = p.open(format=pyaudio.paFloat32, channels=2, rate=44100, output=1)
 
 class GladosSTT(Thread):
     # glados speach to text
-    def __init__(self, glocal):
+    def __init__(self, glocal: classmethod) -> None:
         Thread.__init__(self)
         Thread.daemon = True
+        self.logger = setup_logger(name=self.__name__)
         self.text = None
         self.glocal = glocal
         self.mplist = list()
@@ -87,25 +89,27 @@ class GladosSTT(Thread):
     def record(self, mp_list):
         # TODO, how do we keep things local so were not hitting google all the time...
         while True:
-            print("Say 'Hey GLaDOS' to start recording your question")
+
+            msg = "Say 'Hey GLaDOS' to start recording your question"
+            print(msg)
+            self.logger.info(msg)
             with sr.Microphone() as source:
                 recognizer = sr.Recognizer()
-                print("Adjusting for noise")
+                self.logger.debug("Adjusting for noise")
                 recognizer.adjust_for_ambient_noise(source, .5)
-                print("getting audio")
+                self.logger.debug("getting audio")
                 audio = recognizer.listen(source)
-                print("audio done")
+                self.logger.debug("audio done")
                 try:
                     transcription = recognizer.recognize_google(audio)
-                    print("transcribe done")
-                    print(transcription.lower())
+                    self.logger.debug(f"transcribe done, {transcription.lower()}")
                     pcommand = self.parse_command(transcription)
-                    print(f'parse command is {pcommand}')
+                    self.logger.debug(f'parse command is {pcommand}')
                     if pcommand["greeting"] is not None:
                         # here is where we should pause and take a longer recording
                         # for the command we need to trigger glados to talk here...
                         # TODO reconsider how this works with multithreading
-                        print(pcommand)
+                        self.logger.debug(pcommand)
                         if pcommand["has_extra_command"] is False:
                             greet = self.glocal.random_greeting(True)
                             rq = self.glocal.random_question(True)
@@ -115,20 +119,19 @@ class GladosSTT(Thread):
                                 source.pause_threshold = 1
                                 audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
                                 transcription = recognizer.recognize_google(audio)
-                            print("good user_prompt")
+                            self.logger.debug("good user_prompt")
                             # transcript audio to test
                             # check for cancel command
                             # TODO work out how the cancel command works
                             if self.glocal._gladosLocal__check_local_command(transcription.lower(),
                                                                              re.compile(r'cancel?')) is True:
-                                print('cancel true')
+                                self.logger.debug('cancel true')
                                 self.glocal.random_cancel_response()
                                 continue
-                        print(transcription)
+                        self.logger.debug(transcription)
                         mp_list.append(pcommand['command'])
-                        print("list appended")
                 except Exception as e:
-                    print("An unknown error occurred : {}".format(e))
+                    self.logger.error("An unknown error occurred : {}".format(e))
 
     def run(self):
         # use manager to run management loop
@@ -142,6 +145,7 @@ class GladosSTT(Thread):
 
 class HomeAssistantLink:
     def __init__(self, config_file):
+        self.logger = setup_logger(name=self.__name__)
         base = config_file['HOMEASSISTANT']
         self.token = base['token']
         self.api = base['api']
@@ -156,7 +160,7 @@ class HomeAssistantLink:
             if weather_data:
                 data = weather_data
         except Exception as e:
-            print("An error occurred:", e)
+            self.logger.error(f"An error occurred: {e}")
         return data      
     
     def get_temp(self) -> dict:
@@ -172,6 +176,7 @@ class GladosLocal(Thread):
     def __init__(self, config_file, remote_llm):
         Thread.__init__(self)
         Thread.daemon = True
+        self.logger = setup_logger(name=self.__name__)
         self.llm = remote_llm
         self.last_greeting = None
         self.last_insult = None
@@ -218,34 +223,49 @@ class GladosLocal(Thread):
             setattr(self, last_attr_name, proc)
         return proc
 
-    def random_cancel_response(self, just_text=False):
-        return self.__random_audio(random.choice(self.cancel), 
-                                   self.last_cresponse, self.cancel, 'last_cresponse', just_text)
-    
-    def random_question_response(self, just_text=False):
-        return self.__random_audio(random.choice(self.qresponse), 
-                                   self.last_qresponse, self.qresponse,'last_qresponse', just_text)
+    def random_cancel_response(self, just_text: bool = False) -> str:
+        cancel = self.__random_audio(random.choice(self.cancel),
+                                     self.last_cresponse, self.cancel, 'last_cresponse', just_text)
+        self.logger.debug(f"Cancel Command response: {cancel}")
+        return  cancel
 
-    def random_question(self, just_text=False):
-        return self.__random_audio(random.choice(self.questions), 
-                                   self.last_question, self.questions, 'last_question', just_text)
+    def random_question_response(self, just_text: bool = False) -> str:
+        rqr = self.__random_audio(random.choice(self.qresponse),
+                                  self.last_qresponse, self.qresponse,'last_qresponse', just_text)
+        self.logger.debug(f"Random Question Response {rqr}")
+        return rqr
 
-    def random_insult(self, just_text=False):
-        return self.__random_audio(random.choice(self.insults), 
-                                   self.last_insult, self.insults, 'last_insult', just_text)
-    
-    def random_processing(self, just_text = False):
-        return self.__random_audio(random.choice(self.processing), 
-                                   self.last_process, self.processing, 'last_process', just_text)
-    
-    def random_fuck_response(self, just_text = False):
-        return self.__random_audio(random.choice(self.fuck), 
-                                   self.last_fresponse, self.fuck, 'last_fresponse', just_text)
-    
-    def random_greeting(self, just_text = False):
-        return self.__random_audio(random.choice(self.greetings),
+    def random_question(self, just_text: bool = False) -> str:
+        rq = self.__random_audio(random.choice(self.questions),
+                                 self.last_question, self.questions, 'last_question', just_text)
+        self.logger.debug(f"Random Question: {rq}")
+        return rq
+
+    def random_insult(self, just_text: bool = False) -> str:
+        ri = self.__random_audio(random.choice(self.insults),
+                                  self.last_insult, self.insults, 'last_insult', just_text)
+
+        self.logger.debug(f"Random Insult: {ri}")
+        return ri
+
+    def random_processing(self, just_text: bool = False) -> str:
+        rp = self.__random_audio(random.choice(self.processing),
+                                 self.last_process, self.processing, 'last_process', just_text)
+        self.logger.debug(f"Random Processing: {rp}")
+        return rp
+
+    def random_fuck_response(self, just_text: bool = False) -> str:
+        rfr = self.__random_audio(random.choice(self.fuck),
+                                  self.last_fresponse, self.fuck, 'last_fresponse', just_text)
+        self.logger.debug(f"Random Fuck Off Response: {rfr}")
+        return  rfr
+
+    def random_greeting(self, just_text: bool = False) -> str:
+        rg = self.__random_audio(random.choice(self.greetings),
                                    self.last_greeting, self.greetings, 'last_greeting', just_text)
-    
+        self.logger.debug(f"Random Greeting: {rg}")
+        return rg
+
     def __dedupe(self, current, last, options):
         while current == last:
             current = random.choice(options)
@@ -261,7 +281,9 @@ class GladosLocal(Thread):
                 clines.append(i.strip())
             return clines
         else:
-            raise GladosException("Unable to load file {}".format(file))
+            msg = "Unable to load file {}".format(file)
+            self.logger.error(msg)
+            raise GladosException(msg)
         # load local phrases
 
     def __check_local_command(self, user_prompt, command):
@@ -302,7 +324,7 @@ class GladosLocal(Thread):
                     + time_dict.get('minutes', 0) * 60 \
                     + time_dict.get('hours', 0) * 3600
         time_dict['total_seconds'] = total_seconds
-        print(time_dict)
+        self.logger.debug(f"User requested time: {time_dict}")
         return time_dict
 
     def timer(self, user_prompt):
@@ -329,7 +351,9 @@ class GladosLocal(Thread):
             check = self.__check_local_command(user_prompt, re.compile(r'(stop|cancel)\s+(the\s+|a\s+)?timer'))
             if check is True:
                 if self.timers.empty() is True:
-                    self.speak("You have no running Timers")
+                    msg = "You have no running Timers"
+                    self.logger.debug(msg)
+                    self.speak(msg)
                 else:
                     # TODO when stopping timers track which one we stop...
                     t = self.timers.get()
@@ -381,7 +405,8 @@ class GladosLocal(Thread):
         if response.status_code == 200:
             return response.content
         else:
-            print("Failed to translate text")
+            msg = "Failed to translate text"
+            self.logger.debug(msg)
             return -1
 
     def __play_audio(self, data):
@@ -407,7 +432,9 @@ class GladosLocal(Thread):
             level = re.findall(r'\b\d+\b', user_prompt)
             self.__change_volume(int(level[0]))
             self.current_vol = level[0]
-            self.speak("I have set the volume to {} percent".format(level[0]))
+            msg = "I have set the volume to {} percent".format(level[0])
+            self.logger.debug(msg)
+            self.speak(msg)
         return check
 
 
@@ -415,6 +442,7 @@ class EggTimer(Thread):
     def __init__(self, duration_in_seconds, speak):
         Thread.__init__(self)
         Thread.daemon = True
+        self.logger = setup_logger(name=self.__name__)
         self.duration = duration_in_seconds
         self.start_time = None
         self.is_running = False
@@ -424,14 +452,16 @@ class EggTimer(Thread):
         if not self.is_running:
             self.start_time = time.time()
             self.is_running = True
-            print("Egg timer started for {} seconds.".format(self.duration))
+            msg = f"Egg timer started for {self.duration} seconds."
+            self.logger.debug(msg)
 
     def stop(self):
         if self.is_running:
             elapsed_time = time.time() - self.start_time
             remaining_time = max(0, self.duration - elapsed_time)
             self.is_running = False
-            self.speak("Timer stopped. Remaining time: {:.2f} seconds.".format(remaining_time))
+            msg = "Timer stopped. Remaining time: {:.2f} seconds.".format(remaining_time)
+            self.speak(msg)
 
     def check_remaining_time(self):
         rtn = {"remain": 0, "complete":False}
@@ -442,7 +472,9 @@ class EggTimer(Thread):
             if remaining_time == 0:
                 rtn["remian"] = 0
                 rtn["complete"] = True
-                self.speak("Your Timer is complete")
+                msg = "Your Timer is complete"
+                self.logger.debug(msg)
+                self.speak(msg)
         else:
             rtn["remain"] = 0
             rtn["complete"] = True
@@ -452,7 +484,7 @@ class EggTimer(Thread):
         self.timer_start()
         while True:    
             r = self.check_remaining_time()
-            print(r)
+            self.logger.debug(r)
             if r["complete"] is True:
                 break
             time.sleep(.2)
@@ -462,6 +494,7 @@ class GladosGPT(Thread):
     def __init__(self, configp, prompt):
         Thread.__init__(self)
         Thread.daemon = True
+        self.logger = setup_logger(name=self.__name__)
         self.real_response = None
         self.prompt = prompt
         self.configp = configp["OPENAI"]
@@ -491,10 +524,12 @@ class GladosGPT(Thread):
         if response.status_code == 200:
             response_json = response.json()
             self.real_response = response_json['choices'][0]['message']['content'].strip()
-            print("done")
+            msg = f"Response Done: {self.real_response}"
+            self.logger.debug(msg)
+            print(msg)
         else:
-            print(f"Failed to call the API. Status code: {response.status_code}")
-            print(response.text)
+            self.logger.error(f"Failed to call the API. Status code: {response.status_code}")
+            self.logger.debug(response.text)
 
     def run(self):
         self.generate_text()
