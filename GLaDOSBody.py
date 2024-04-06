@@ -1,6 +1,5 @@
 from time import sleep, time
 from threading import Thread
-from multiprocessing import Manager
 
 #3rd party imports
 from adafruit_servokit import ServoKit
