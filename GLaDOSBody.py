@@ -171,6 +171,7 @@ class GBody(Thread):
 
     def set_scan_success(self):
         # callback for the camera thread to signal the servos to stop moving
+        self.logger.debug("Body Callback triggered")
         self.scan_success = True
 
     def scan_room(self, scan_speed=3, search_time=90, confidence=.70):
