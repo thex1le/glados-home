@@ -1,4 +1,4 @@
-from time import sleep
+from time import sleep, time
 from threading import Thread
 
 #3rd party imports
@@ -10,11 +10,19 @@ import adafruit_pca9685
 import neopixel
 import busio
 
+# glados imports
+from GLaDOSSenses import Camera as gleyes
+from glog_conifig import setup_logger
+
+
 class Gservo(Thread):
-    def __init__(self, skit, axis, max_angle=90):
+    def __init__(self, location, skit, axis, servo_range: tuple = (), max_angle=90):
         Thread.__init__(self)
         Thread.daemon = True
+        self.logger = setup_logger(name=f"{self.__name__}_{location}")
+        self.location = location
         # lock skit to the channel for this class
+        self.min_angle = 0
         self.skit = skit
         # start at middle speed
         self.speed = 5
@@ -29,6 +37,10 @@ class Gservo(Thread):
         self.exec_command = False
         self.moving = False
         self.axis = axis.lower()
+        if servo_range == ():
+            self.allowed_servo_range = {"min_travel": 0, "max_travel": max_angle}
+        else:
+            self.allowed_servo_range = {"min_travel": servo_range[0], "max_travel": servo_range[1]}
 
     def get_max_angle(self):
         return self.max_angle
@@ -44,9 +56,20 @@ class Gservo(Thread):
             # go as slow as 1
             speed = 1
         self.speed = round(speed)
+        self.logger.debug(f"Speed set to {self.speed}")
 
     def set_angle(self, angle):
-        self.angle = angle
+        max = self.allowed_servo_range["max_travel"]
+        min = self.allowed_servo_range["min_travel"]
+        if angle >= max:
+            self.angle = max
+            self.logger.debug(f"{angle} is above {max}, setting to {max}")
+        elif angle <= min:
+            self.angle = min
+            self.logger.debug(f"{angle} is below {min}, setting to {min}")
+        else:
+            self.angle = angle
+            self.logger.debug(f"Angle set to {self.angle}")
 
     def set_speed_angle(self, speed_angle: tuple, execute=False):
         self.set_speed(speed_angle[0])
@@ -84,6 +107,7 @@ class Gservo(Thread):
 
     def move(self):
         if self.speed == 10 or self.first_boot is True:
+            self.logger.debug(f"moving to {self.angle}")
             self.skit.angle = self.angle
             sleep(.3)
             self.moving = True
@@ -92,6 +116,7 @@ class Gservo(Thread):
             self.first_boot = False
         else:
             if self.angle != self.current_angle:
+                self.logger.debug(f"moving to {self.angle}")
                 self.moving = True
                 self.__increment()
                 self.moving = False
@@ -107,21 +132,24 @@ class Gservo(Thread):
 
 class GBody(Thread):
     # class for managing all the servo and body movement in relation to the camera
-    def __init__(self, cam_x_width: int, cam_y_width: int, seen_data, lock):
+    def __init__(self, config_file, cam_x_width: int, cam_y_width: int, lock):
         Thread.__init__(self)
         Thread.daemon = True
+        self.logger = setup_logger(self.__name__)
         # access the servos
         kit = ServoKit(channels=16)
         # build a servo control for each joint
-        self.body_LR = Gservo(skit=kit.servo[0], axis='x', max_angle=180)
-        self.body_UD = Gservo(skit=kit.servo[1], axis='y', max_angle=60)
-        self.head_UD = Gservo(skit=kit.servo[2], axis='x', max_angle=60)
-        self.head_LR = Gservo(skit=kit.servo[3], axis='y', max_angle=60)
-        self.seen_data = seen_data
+        self.body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180)
+        self.body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=60)
+        self.head_UD = Gservo(location='head_up_down', skit=kit.servo[2], axis='y', max_angle=60)
+        self.head_LR = Gservo(location='head_lef_right', servo_range=(15, 45), skit=kit.servo[3], axis='x', max_angle=60)
+        self.seen_data = Manager().dict()
         self.cam_x_width = cam_x_width
         self.cam_y_width = cam_y_width
         self.stop = False
         self.lock = lock
+        self.eyes = gleyes(self.set_scan_success, config_file)
+        self.eyes.start()
         # find the x1 x2, y1, y2 of the target,
         # figure out if the head can look at it...
         # if we can then head / neck moves to it...
@@ -131,14 +159,56 @@ class GBody(Thread):
         # TODO figure out how we are going to track anger intensity over various body parts
         self.led_head = LedHead()
         # thread the startup of the led head
-        led_head_start = Thread(target=self.led_head.startup(), args=())
-        led_head_start.start()
+        led_head_start = Thread(target=self.led_head.startup, args=())
         self.big_lcd_left = GLaDOSDisplay.GladosLCD()
-        self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D18, rst=board.D5, dc=board.D6,
+        self.little_lcd_right = GLaDOSDisplay.GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6,
                                                         sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
         self.big_lcd_left.start()
         self.little_lcd_right.start()
+        led_head_start.start()
         led_head_start.join()
+        self.scan_success = False
+
+    def set_scan_success(self):
+        # callback for the camera thread to signal the servos to stop moving
+        self.scan_success = True
+
+    def scan_room(self, scan_speed=3, search_time=90, confidence=.70):
+        #TODO consider how this will change with left and right cameras...,
+        self.logger.debug("Scanning Room for Target")
+        self.eyes.target_scan(search_time=search_time, confidence=confidence)
+        t = time()
+        while (time() - t) < search_time and self.scan_success is False:
+            if self.scan_success is False:
+                self.head_LR.set_speed_angle((scan_speed, self.head_LR.min_angle), execute=True)
+                self.body_LR.set_speed_angle((scan_speed, self.body_LR.min_angle), execute=True)
+                # TODO change when threading is enabled
+                self.head_LR.move()
+                self.body_LR.move()
+            else:
+                break
+            # block till head and body are at min
+            while (self.body_LR.get_angle() != self.body_LR.min_angle and
+                   self.head_LR.get_angle() != self.head_LR.min_angle or self.scan_success is True):
+                sleep(.2)
+            if self.scan_success is False:
+                self.head_LR.set_speed_angle((scan_speed, self.head_LR.max_angle), execute=True)
+                self.body_LR.set_speed_angle((scan_speed, self.body_LR.max_angle), execute=True)
+                # TODO change when threading is enabled
+                self.head_LR.move()
+                self.body_LR.move()
+            else:
+                break
+            # block till head and body are at max
+            while (self.body_LR.get_angle() != self.body_LR.max_angle and
+                   self.head_LR.get_angle() != self.head_LR.max_angle or self.scan_success is True):
+                sleep(.2)
+        if self.scan_success is True:
+            with self.lock:
+                self.seen_data = self.eyes.get_results()
+            self.scan_success = False
+            self.move_servos()
+        self.logger.debug("Scanning For Target Complete")
 
     def stop_body(self):
         """
@@ -146,7 +216,7 @@ class GBody(Thread):
         """
         self.stop = True
 
-    def __find_person(self, target='person') -> dict:
+    def __find_person(self, target='person', confidence=.7) -> dict:
         """
         Find the highest confidence person and return their bounding box from current data set
         self.seen_data expected to be YOLO8 data response object
@@ -161,10 +231,10 @@ class GBody(Thread):
                         highest_confidence = p['confidence']
                         highest_confidence_person = p
                 if highest_confidence_person is not None:
-                    # TODO get confidence score from config
-                    if highest_confidence >= .70:
+                    if highest_confidence >= confidence:
                         # take the highest confidence and return the bounding box
                         rtn = highest_confidence_person['box']
+        self.logger.debug(f"Confidence box found {rtn} with confidence score of {confidence}")
         return rtn
 
     def __calc_servo(self, servo: Gservo, bbox: dict) -> int:
@@ -192,31 +262,58 @@ class GBody(Thread):
     def __level_servos(self, servo1: Gservo, servo2: Gservo) -> None:
         # bring servo1 to midpoint by moving servo2
         # ensure servos are on the same axis
+        self.logger.debug(f"Leveling Servos {servo1.location} & {servo2.location}")
         if servo1.axis != servo2.axis:
-            raise Exception("Servos are not on same axis")
+            msg = "Servers are not on same axsis"
+            self.logger.error(msg)
+            raise Exception(msg)
         servo2.set_angle(servo1.get_angle())
         servo1.set_angle(servo1.get_middle_angle())
         servo1.move()
         servo2.move()
 
+    def __distance_check(self, servo, new_angle, degree_diff=2):
+        # TODO get degrees of difference from config file
+        move = False
+        current_angle = servo.get_angle()
+        if new_angle > current_angle:
+            if (new_angle - current_angle) > degree_diff:
+                self.logger.debug(f"Going up, {new_angle} is greater than current {current_angle}, moving")
+                move = True
+            else:
+                self.logger.debug(f"Going up, {new_angle} is less than current {current_angle}, not moving")
+        elif new_angle < current_angle:
+            if (current_angle - new_angle) > degree_diff:
+                self.logger.debug(f"Going Down, {new_angle} is less than current {current_angle}, moving")
+                move = True
+            else:
+                self.logger.debug(f"Going Down, {new_angle} is more than current {current_angle}, not moving")
+        return move
+
     def move_servos(self):
         target = self.__find_person()
-        # move "shoulders" first
-        head_lr = self.__calc_servo(self.head_LR, target)
-        head_ud = self.__calc_servo(self.head_UD, target)
-        # don't use threading for now
-        self.head_LR.set_angle(head_lr)
-        self.head_UD.set_angle(head_ud)
-        self.head_LR.move()
-        self.head_UD.move()
-        # head should now be centered on the target
-        # level the head and arm with body and rotation
-        # x-axis
-        self.__level_servos(self.head_LR, self.body_LR)
-        self.__level_servos(self.head_UD, self.body_UD)
+        if target != {}:
+            # move "shoulders" first
+            head_lr = self.__calc_servo(self.head_LR, target)
+            head_ud = self.__calc_servo(self.head_UD, target)
+            if self.__distance_check(self.head_LR, head_lr ) is True:
+                self.head_LR.set_angle(head_lr)
+                # don't use threading for now
+                self.head_LR.move()
+            if self.__distance_check(self.head_UD, head_ud) is True:
+                self.head_UD.set_angle(head_ud)
+                # dont use threading for now
+                self.head_UD.move()
+            # head should now be centered on the target
+            # level the head and arm with body and rotation
+            # x-axis
+            self.__level_servos(self.head_LR, self.body_LR)
+            self.__level_servos(self.head_UD, self.body_UD)
 
     def run(self):
         while self.stop is False:
+            with self.lock:
+                self.seen_data = self.eyes.get_results()
             self.move_servos()
             sleep(.2)
 
@@ -224,7 +321,8 @@ class GBody(Thread):
 class LedHead:
     def __init__(self):
         # note the LED in the eye is GRB not RGB make sure to convert
-        self.pixels = neopixel.NeoPixel(board.D17, 1, brightness=1, auto_write=True)
+        self.logger = setup_logger(self.__name__)
+        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
         self.lh = ledhelper.LedHelper
         self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
         self.swap = self.lh.rgb2grb_swap
@@ -238,6 +336,7 @@ class LedHead:
 
     def startup(self):
         # Do a startup sequence plusing the eye and head power LED from low to high...
+        self.logger.debug("Startup Sequence")
         eye_led_thread = Thread(target=self.ani.intensity, args=(10, self.swap((255, 255, 0))))
         pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
         eye_led_thread.start()
@@ -252,6 +351,7 @@ class LedHead:
 
     def disco(self):
         # set intensity to half
+        self.logger.debug("Triggered Disco Mode")
         self.intensity = (.8, .8)
         self.pixels.brightness = self.intensity[0]
         eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "GRB"))
@@ -263,6 +363,7 @@ class LedHead:
 
     # TODO you left off considering how to handle intensity across the entire robot
     def angry_eye(self, steps=20, very_angry=True):
+        self.logger.debug("Triggered Angry Eye")
         self.intensity = (.1, .1)
         self.pixels.brightness = self.intensity[0]
         self.pixels[0] = (255, 255, 0)
