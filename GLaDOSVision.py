@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import threading
 
 #3rd Party imports
@@ -11,6 +10,7 @@ import cv2
 
 #glados imports
 from glog_conifig import setup_logger
+
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, cam_x, cam_y, **properties):
