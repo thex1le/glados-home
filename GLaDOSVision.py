@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import threading
 
 #3rd Party imports
@@ -8,6 +7,9 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 import cv2
+
+#glados imports
+from glog_conifig import setup_logger
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
@@ -21,7 +23,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
-                             '! rtph264pay config-interval=0 name=pay0 pt=96'.format(self.cam_x, self.cam_y, 30)
+                             '! rtph264pay config-interval=0 name=pay0 pt=96'.format(self.cam_x, self.cam_y, fps)
 
     def send_data(self, data):
         self.data = data
@@ -53,6 +55,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
 class RTSPServer(GstRtspServer.RTSPServer):
     def __init__(self, cam_x=640, cam_y=480, port=8554, factory="/GLaDOS", **properties):
         super(RTSPServer, self).__init__(**properties)
+        self.logger = setup_logger(name=self.__name__)
         self.cam_x = cam_x
         self.cam_y = cam_y
         self.rtsp = RtspSystem(self.cam_x, self.cam_y)
@@ -64,6 +67,7 @@ class RTSPServer(GstRtspServer.RTSPServer):
         self.attach(None)
         Gst.init(None)
         self.rtsp.start()
+        self.logger.debug(f"RTSP Server Started on port {port} and factory {factory}")
 
     def send_data(self, data):
         data = cv2.resize(data, (self.cam_x, self.cam_y))
