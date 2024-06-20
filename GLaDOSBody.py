@@ -9,6 +9,7 @@ import ledhelper
 import adafruit_pca9685
 import neopixel
 import busio
+import paho.mqtt.client as mqtt
 
 # glados imports
 from GLaDOSSenses import Camera as gleyes
