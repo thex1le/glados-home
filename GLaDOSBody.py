@@ -1,5 +1,12 @@
 from time import sleep, time
 from threading import Thread
+import socketserver
+from json import loads, dumps
+import argparse
+from os import path
+import sys
+import configparser
+from multiprocessing import Manager, Lock
 
 #3rd party imports
 from adafruit_servokit import ServoKit
@@ -169,6 +176,10 @@ class GBody(Thread):
         led_head_start.join()
         self.scan_success = False
 
+    def callback_handler(self, command: dict):
+        for i in command:
+            print(i)
+
     def set_scan_success(self):
         # callback for the camera thread to signal the servos to stop moving
         self.scan_success = True
@@ -322,7 +333,7 @@ class LedHead:
     def __init__(self):
         # note the LED in the eye is GRB not RGB make sure to convert
         self.logger = setup_logger(self.__name__)
-        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
+        self.pixels = neopixel.NeoPixel(board.D21, 1, brightness=1, auto_write=True)
         self.lh = ledhelper.LedHelper
         self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
         self.swap = self.lh.rgb2grb_swap
@@ -380,7 +391,81 @@ class LedHead:
         eye_led_thread.join()
 
 
+class DumbLEDController:
+    def __init__(self, pwd_hat: classmethod, channel: int, duty_cycle: int = 100) -> None:
+        self.led = pwd_hat.hat.channels[channel]
+        self.led.duty_cycle = duty_cycle
+        self.current_brightness = duty_cycle
+
+    def set_brightness(self, brightness: int) -> bool:
+        """
+        Returns a Bool if it was able to set the brightness
+        """
+        ret = False
+        if 0 < brightness <= 1000:
+            self.led.duty_cycle = brightness
+            self.current_brightness = brightness
+            ret = True
+        return ret
+
+    def get_brightness(self) -> int:
+        return self.current_brightness
+
+
+class BodyTCPHandler(socketserver.BaseRequestHandler):
+    @staticmethod
+    def receive_all(socket_obj):
+        """
+        Receive all data from a socket until the connection is closed.
+        :param socket_obj: socket.socket
+        :return: bytes
+        """
+        buffer_size = 4096  # Define the size of the buffer
+        data = b''  # This will store all the data received
+        while True:
+            part = socket_obj.recv(buffer_size)
+            data += part
+            if len(part) < buffer_size:
+                # No more data to read or connection closed
+                break
+        return data
+
+    def handle(self):
+        callbacks = self.callbacks
+        data = BodyTCPHandler.receive_all(self.request)
+        commands = loads(data.decode('ascii'))
+        for i in commands:
+            #TODO Figure out how commands will work
+            pass
+
+class BodyTCPServer(socketserver.TCPServer):
+    def __init__(self, server_address, request_handler_class, callbacks: dict):
+        super().__init__(server_address, request_handler_class)
+        self.callbacks = callbacks
+
+
 if __name__ == "__main__":
-    from multiprocessing import Manager, Lock
-    gl = GBody(640, 640, Manager.dict(), Lock())
+    parser = argparse.ArgumentParser(description='Evil Home Body Control Server')
+    parser.add_argument('-config', type=str, default=1, dest='conf', nargs=1, help='Config File')
+    try:
+        args = parser.parse_args()
+    except Exception:
+        parser.print_help()
+        sys.exit(0)
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+    configp = configparser.ConfigParser()
+    if path.isfile(args.conf[0]) is True:
+        configp.read(args.conf[0])
+    else:
+        raise Exception("Unable to load file {}".format(args.conf[0]))
+    handler_dicts = dict()
+    ip = configp['DEFAULT']['body_server_ip']
+    port = configp["DEFAULT"]["body_server_port"]
+    #TODO YOU LEFT OFF TRYING TO FIGURE OUT HOW TO PASS SSERVER COMMANDS IN what they look like and how it calls shit... OG idea was multiple call backs based on commands
+    # however since its all run by the GBODY anyways is that needed?
+    body_server = BodyTCPServer((ip, port), BodyTCPHandler, handler_dicts)
+    cam_x, cam_y = configp['DEFAULT']['camera_resolution'].split(',')
+    gl = GBody(configp, cam_x, cam_y, Manager.dict(), Lock())
     gl.start()
