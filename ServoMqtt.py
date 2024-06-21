@@ -43,7 +43,8 @@ class Gservo(Thread):
             self.allowed_servo_range = {"min_travel": 0, "max_travel": max_angle}
         else:
             self.allowed_servo_range = {"min_travel": servo_range[0], "max_travel": servo_range[1]}
-
+        self.client.connect(self.broker, self.port, 60)
+        self.client.loop_forever()
     def on_connect(self, client, userdata, flags, rc):
         self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.topic}")
         self.client.subscribe(self.topic)
