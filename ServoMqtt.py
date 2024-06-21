@@ -54,8 +54,8 @@ class Gservo(Thread):
         jmsg = loads(cmd)
         if jmsg.get("servo", "") == self.location:
             # message is the correct servo
-            angle = jmsg.get("angle", self.middle_angle)
-            speed = jmsg.get("speed", self.speed)
+            angle = int(jmsg.get("angle", self.middle_angle))
+            speed = int(jmsg.get("speed", self.speed))
             self.set_speed_angle((angle, speed), execute=True)
 
     def get_max_angle(self):
