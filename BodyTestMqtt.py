@@ -17,7 +17,7 @@ class MQTTClient:
 
     def connect(self):
         self.client.connect(self.broker, self.port, 60)
-        self.client.loop_forever()
+        #self.client.loop_forever()
 
 
 if __name__ == "__main__":
@@ -29,4 +29,5 @@ if __name__ == "__main__":
     mqtt_client.connect()
     msglist = [{"servo": "body_left_right", "angle": 90, "speed": 10}]
     for m in msglist:
-        mqtt_client.client.publish(json.dumps(m))
+        print(f"sending {m}")
+        mqtt_client.client.publish(topic, json.dumps(m))
