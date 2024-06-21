@@ -9,13 +9,12 @@ from adafruit_servokit import ServoKit
 # glados imports
 from glog_conifig import setup_logger
 
-
 class Gservo(Thread):
     def __init__(self, location, skit, axis, servo_range: tuple = (), max_angle=90,
                  broker='localhost', port=1883, topic="body/servo"):
         Thread.__init__(self)
         Thread.daemon = True
-        #self.logger = setup_logger(name=f"{self.__name__}_{location}")
+        self.logger = setup_logger(name=f"{self.__name__}_{location}")
         self.location = location
         self.broker = broker
         self.port = port
@@ -39,15 +38,16 @@ class Gservo(Thread):
         self.exec_command = False
         self.moving = False
         self.axis = axis.lower()
+        self.stop_bool = False
         if servo_range == ():
             self.allowed_servo_range = {"min_travel": 0, "max_travel": max_angle}
         else:
             self.allowed_servo_range = {"min_travel": servo_range[0], "max_travel": servo_range[1]}
         self.client.connect(self.broker, self.port, 60)
-        #self.client.loop_forever()
+        self.client.loop_start()
     
     def on_connect(self, client, userdata, flags, rc):
-        #self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.topic}")
+        self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.topic}")
         print(self.location, f"connected on {self.topic}")
         self.client.subscribe(self.topic)
 
@@ -55,10 +55,8 @@ class Gservo(Thread):
         print("got msg")
         cmd = msg.payload.decode()
         print(cmd)
-        #self.logger.debug(f"{self.location}, {msg.topic},  {cmd}")
+        self.logger.debug(f"{self.location}, {msg.topic},  {cmd}")
         jmsg = loads(cmd)
-        import pdb
-        pdb.set_trace()
         if jmsg.get("servo", "") == self.location:
             # message is the correct servo
             angle = int(jmsg.get("angle", self.middle_angle))
@@ -79,20 +77,20 @@ class Gservo(Thread):
             # go as slow as 1
             speed = 1
         self.speed = round(speed)
-        #self.logger.debug(f"Speed set to {self.speed}")
+        self.logger.debug(f"Speed set to {self.speed}")
 
     def set_angle(self, angle):
         max = self.allowed_servo_range["max_travel"]
         min = self.allowed_servo_range["min_travel"]
         if angle >= max:
             self.angle = max
-            #self.logger.debug(f"{angle} is above {max}, setting to {max}")
+            self.logger.debug(f"{angle} is above {max}, setting to {max}")
         elif angle <= min:
             self.angle = min
-            #self.logger.debug(f"{angle} is below {min}, setting to {min}")
+            self.logger.debug(f"{angle} is below {min}, setting to {min}")
         else:
             self.angle = angle
-            #self.logger.debug(f"Angle set to {self.angle}")
+            self.logger.debug(f"Angle set to {self.angle}")
 
     def set_speed_angle(self, speed_angle: tuple, execute=False):
         self.set_speed(speed_angle[0])
@@ -130,7 +128,7 @@ class Gservo(Thread):
 
     def move(self):
         if self.speed == 10 or self.first_boot is True:
-            #self.logger.debug(f"moving to {self.angle}")
+            self.logger.debug(f"moving to {self.angle}")
             self.skit.angle = self.angle
             sleep(.3)
             self.moving = True
@@ -145,18 +143,29 @@ class Gservo(Thread):
                 self.moving = False
 
     def run(self):
-        self.client.loop_forever()
+        while self.stop_bool is False:
+            if self.exec_command is True:
+                self.move()
+                self.exec_command = False
+            else:
+                sleep(.1)
+        self.client.loop_stop()
+
+    def stop(self):
+        self.stop_bool = True
+
 
 if __name__ == "__main__":
     ip = '192.168.86.52'
     kit = ServoKit(channels=16)
-    import pdb
-    pdb.set_trace()
     body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180, broker=ip)
+    body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=60, broker=ip)
+    head_UD = Gservo(location='head_up_down', skit=kit.servo[2], axis='y', max_angle=60, broker=ip)
+    head_LR = Gservo(location='head_left_right', servo_range=(15, 45), skit=kit.servo[3], axis='x', max_angle=60,
+                     broker=ip)
     body_LR.start()
-    #body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=60, broker=ip)
-    #head_UD = Gservo(location='head_up_down', skit=kit.servo[2], axis='y', max_angle=60, broker=ip)
-    #head_LR = Gservo(location='head_left_right', servo_range=(15, 45), skit=kit.servo[3], axis='x', max_angle=60,
-    #                 broker=ip)
+    body_UD.start()
+    head_LR.start()
+    head_UD.start()
     while True:
         sleep(1)
