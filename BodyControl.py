@@ -14,6 +14,7 @@ import board
 # glados imports
 from glog_conifig import setup_logger
 
+
 class Gservo(Thread):
     def __init__(self, location, skit, axis, servo_range: tuple = (), max_angle=90,
                  broker='localhost', port=1883, topic="body/servo"):
