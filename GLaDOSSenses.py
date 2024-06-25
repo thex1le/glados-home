@@ -109,7 +109,7 @@ class Camera(Thread):
 class YoloDetect(Thread):
     def __init__(self, configfile):
         # internal libs, import here so its deps are not needed on other devices
-        import GLaDOSVision
+        import GLaDOSRTSP
         Thread.__init__(self)
         Thread.daemon = True
         self.logger = setup_logger(name=self.__name__)
@@ -132,8 +132,8 @@ class YoloDetect(Thread):
         msg = f"Starting the RTSP server on rtsp://{self.rtsp_server_ip}:{self.rtsp_port}/{self.factory}"
         self.logger.info(msg)
         print(msg)
-        self.rtsp = GLaDOSVision.RTSPServer(cam_x=self.cam_res_x, cam_y=self.cam_res_y,
-                                            port=self.rtsp_port, factory=self.factory)
+        self.rtsp = GLaDOSRTSP.RTSPServer(cam_x=self.cam_res_x, cam_y=self.cam_res_y,
+                                          port=self.rtsp_port, factory=self.factory)
 
     def get_sight(self):
         return self.sight
