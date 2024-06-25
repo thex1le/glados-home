@@ -246,6 +246,7 @@ class LedShoulders:
 
 class LedHead:
     def __init__(self, broker='localhost', port=1883):
+        # GPIO 18 hookup
         self.logger = setup_logger(self.__name__)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.lh = ledhelper.LedHelper
