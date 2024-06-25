@@ -1,3 +1,4 @@
+import random
 from time import sleep, time
 from threading import Thread
 from json import loads, dumps
@@ -166,6 +167,81 @@ class Gservo(Thread):
 
     def stop(self):
         self.stop_bool = True
+
+
+class LedShoulders:
+    def __init__(self, broker='localhost', port=1883):
+        # GPIO 12 hookup
+        self.logger = setup_logger(self.__name__)
+        led_num = 64
+        self.pixels = neopixel.NeoPixel(board.D12, led_num, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
+        self.lh = ledhelper.LedHelper
+        self.ani = ledhelper.NeoPixelAnimations(self.pixels, led_num)
+        self.swap = self.lh.rgb2grb_swap
+        self.intensity = (0.5, 0.5)
+        self.stripes = list()
+        self.stripes.extend(range(8,24))
+        self.stripes.extend(range(40,56))
+        self.broker = broker
+        self.port = port
+        self.client = mqtt.Client()
+        self.cmd_topic = "body/led"
+        self.intensity_topic = "intensity"
+        self.topic_handler = {self.cmd_topic: self.handle_cmd, self.intensity_topic: self.handle_intensity}
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
+        self.client.connect(self.broker, self.port, 60)
+        self.client.loop_start()
+        self.location = "shoulder_led"
+        self.animations = {"startup": self.startup, "disco": self.disco, "twinkle": self.twinkle}
+        self.twinkle_loop = False
+
+    def on_connect(self, client, userdata, flags, rc):
+        self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.cmd_topic}")
+        self.client.subscribe(self.cmd_topic)
+        self.client.subscribe(self.intensity_topic)
+
+    def on_message(self, client, userdata, msg):
+        if msg.topic in self.topic_handler:
+            self.topic_handler[msg.topic](msg)
+
+    def handle_cmd(self, msg):
+        jmsg = loads(msg.payload.decode())
+        if jmsg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
+            if jmsg[self.location]['command'] in self.animations.keys():
+                jmsg[self.location]['command']()
+
+    def handle_intensity(self, msg):
+        # TODO figure out update commands
+        jmsg = loads(msg.payload.decode())
+        if jmsg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
+            self.intensity = jmsg["intensity"]
+
+    def startup(self):
+        # do a knight rider style startup
+        self.twinkle_loop = False
+        for p in range(0, 63):
+            self.pixels[p] = self.lh.adjust_brightness((255,0, 0), self.intensity[0])
+            sleep(.2)
+
+    def disco(self):
+        self.twinkle_loop = False
+        self.logger.debug("Triggered Disco Mode")
+        self.pixels.brightness = self.intensity[0]
+        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "RGB"))
+        eye_led_thread.start()
+
+    def twinkle(self):
+        self.twinkle_loop = True
+        self.logger.debug("Triggered Disco Mode")
+        self.pixels.brightness = self.intensity[0]
+        while self.twinkle_loop:
+            for p in self.stripes:
+                cd = self.lh.adjust_brightness((255, 0, 0), random.choice([x / 10.0 for x in range(1, 9)]))
+                self.pixels[p] = cd
+            self.pixels.show()
 
 
 class LedHead:
