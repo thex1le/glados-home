@@ -18,7 +18,7 @@ from glog_conifig import setup_logger
 
 class Gservo(Thread):
     def __init__(self, location, skit, axis, servo_range: tuple = (), max_angle=90,
-                 broker='localhost', port=1883, topic="body/servo"):
+                 broker='localhost', port=1883):
         Thread.__init__(self)
         Thread.daemon = True
         self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
