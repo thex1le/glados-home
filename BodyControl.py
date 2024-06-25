@@ -346,7 +346,6 @@ class LedHead:
         self.pixels[0] = self.lh.adjust_brightness(self.yellow_eye, self.intensity[1])
         self.pixels.show()
 
-# NOTE you need to code up a class for the "shoulders"
 # NOTE you also need to code up a class for the Lamp portion its self...
 
 # on the pi5 code, need to have classes to read from LIDAR sensor to channel..
