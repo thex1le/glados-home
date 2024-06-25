@@ -109,8 +109,7 @@ class NeoPixelAnimations:
             intense += .1
             self.pixels.brightness = intense
             sleep(st)
-    
-    
+
     def fade_color(self, start_color, end_color, steps, order="RGB", intensity = (.1, .1)):
         # calculate intensity steps
         ic = steps / (intensity[0] * 10)
