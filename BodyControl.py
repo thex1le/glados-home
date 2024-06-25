@@ -5,6 +5,11 @@ from json import loads, dumps
 # 3rd party
 import paho.mqtt.client as mqtt
 from adafruit_servokit import ServoKit
+import neopixel
+import ledhelper
+import adafruit_pca9685
+import busio
+import board
 
 # glados imports
 from glog_conifig import setup_logger
@@ -151,9 +156,118 @@ class Gservo(Thread):
         self.stop_bool = True
 
 
+class LedHead:
+    def __init__(self, broker='localhost', port=1883):
+        self.logger = setup_logger(self.__name__)
+        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
+        self.lh = ledhelper.LedHelper
+        self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
+        self.swap = self.lh.rgb2grb_swap
+        # power led
+        self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
+        self.pwm_led = self.hat.channels[4]
+        self.hat.frequency = 60
+        self.pwm_led.duty_cycle = 250
+        # self.intensity is a tuple which represents the major and minor anger, first being major, second being minor
+        self.intensity = (.1, .1)
+        self.broker = broker
+        self.port = port
+        self.client = mqtt.Client()
+        self.cmd_topic = "body/led"
+        self.intensity_topic = "intensity"
+        self.topic_handler = {self.cmd_topic: self.handle_cmd, self.intensity_topic: self.handle_intensity}
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
+        self.client.connect(self.broker, self.port, 60)
+        self.client.loop_start()
+        self.location = "eye_led"
+        self.animations = {"startup": self.startup, "disco": self.disco, "angry_eye": self.angry_eye,
+                           "normal_eye": self.normal_eye}
+        self.yellow_eye = (246, 216, 121)
+
+    def on_connect(self, client, userdata, flags, rc):
+        self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.cmd_topic}")
+        self.client.subscribe(self.cmd_topic)
+        self.client.subscribe(self.intensity_topic)
+
+    def on_message(self, client, userdata, msg):
+        if msg.topic in self.topic_handler:
+            self.topic_handler[msg.topic](msg)
+
+    def handle_cmd(self, msg):
+        jmsg = loads(msg.payload.decode())
+        if jmsg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
+            if jmsg[self.location]['command'] in self.animations.keys():
+                jmsg[self.location]['command']()
+
+    def handle_intensity(self, msg):
+        # TODO figure out update commands
+        jmsg = loads(msg.payload.decode())
+        if jmsg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
+            self.intensity = jmsg["intensity"]
+
+    def startup(self):
+        # Do a startup sequence plusing the eye and head power LED from low to high...
+        self.logger.debug("Startup Sequence")
+        eye_led_thread = Thread(target=self.ani.intensity, args=(10, self.yellow_eye))
+        pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
+        eye_led_thread.start()
+        pwm_led_thread.start()
+        eye_led_thread.join()
+        pwm_led_thread.join()
+        self.normal_eye()
+
+    def disco(self):
+        # set intensity to half
+        self.logger.debug("Triggered Disco Mode")
+        self.pixels.brightness = self.intensity[0]
+        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "RGB"))
+        pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
+        eye_led_thread.start()
+        pwm_led_thread.start()
+        eye_led_thread.join()
+        pwm_led_thread.join()
+
+    def angry_eye(self, steps=20, very_angry=True):
+        self.logger.debug("Triggered Angry Eye")
+        # TODO review this later
+        # ignore global intensity because we want to ramp up to it...
+        self.intensity = (.1, .1)
+        self.pixels.brightness = self.intensity[0]
+        self.pixels[0] = (255, 255, 0)
+        self.pixels.show()
+        sleep(1.4)
+        anger = (255, 69, 0)
+        # TODO figure out how to handle this via msg system
+        if very_angry is True:
+            anger = (139, 0, 0)
+            self.pwm_led.duty_cycle = 65535
+            self.intensity = (0.9, 0.9)
+        self.pixels.brightness = self.intensity[0]
+        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "RGB", self.intensity))
+        eye_led_thread.start()
+        eye_led_thread.join()
+
+    def normal_eye(self):
+        self.pwm_led.duty_cycle = 150
+        self.pixels.brightness = self.intensity[0]
+        self.pixels.autowrite = True
+        self.pixels[0] = self.lh.adjust_brightness(self.yellow_eye, self.intensity[1])
+        self.pixels.show()
+
+# NOTE you need to code up a class for the "shoulders"
+# NOTE you also need to code up a class for the Lamp portion its self...
+
+# on the pi5 code, need to have classes to read from LIDAR sensor to channel..
+# also need class to read temp senders and have them take action
+# bird detection to kill external power? how will that work...
+
 if __name__ == "__main__":
     ip = '192.168.86.52'
     kit = ServoKit(channels=16)
+    led_head = LedHead(broker=ip)
     body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180, broker=ip)
     body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=180, broker=ip)
     head_UD = Gservo(location='head_left_right', skit=kit.servo[2], axis='y', max_angle=180, broker=ip)
