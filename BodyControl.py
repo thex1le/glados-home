@@ -23,7 +23,9 @@ class Gservo(Thread):
         self.location = location
         self.broker = broker
         self.port = port
-        self.topic = topic
+        self.cmd_topic = "body/servo"
+        self.intensity_topic = "intensity"
+        self.topic_handler = {self.cmd_topic: self.handle_cmd, self.intensity_topic: self.handle_intensity}
         self.client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -52,10 +54,15 @@ class Gservo(Thread):
         self.client.loop_start()
     
     def on_connect(self, client, userdata, flags, rc):
-        self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.topic}")
-        self.client.subscribe(self.topic)
+        self.logger.debug(f"Connecting to {self.broker}:{self.port} on channel {self.cmd_topic}")
+        self.client.subscribe(self.cmd_topic)
+        self.client.subscribe(self.intensity_topic)
 
     def on_message(self, client, userdata, msg):
+        if msg.topic in self.topic_handler:
+            self.topic_handler[msg.topic](msg)
+
+    def handle_cmd(self, msg):
         jmsg = loads(msg.payload.decode())
         if jmsg.get("servo", "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
@@ -63,6 +70,10 @@ class Gservo(Thread):
             angle = int(jmsg.get("angle", self.middle_angle))
             speed = int(jmsg.get("speed", self.speed))
             self.set_speed_angle((speed, angle), execute=True)
+
+    def handle_intensity(self, msg):
+        #TODO figure out update commands
+        pass
 
     def get_max_angle(self):
         return self.max_angle
