@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 import threading
 
-#3rd Party imports
+# 3rd Party imports
 import gi
-gi.require_version('Gst', '1.0')
-gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 import cv2
 
-#glados imports
+# glados imports
 from glog_conifig import setup_logger
+
+# version checks
+gi.require_version('Gst', '1.0')
+gi.require_version('GstRtspServer', '1.0')
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
-    def __init__(self, cam_x, cam_y, **properties):
+    def __init__(self, cam_x: int, cam_y: int, **properties):
         super(RtspSystem, self).__init__(**properties)
         self.cam_x = cam_x
         self.cam_y = cam_y
         self.data = None
+        self.number_frames = 0
         fps = 30
         self.launch_string = self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
@@ -53,7 +56,8 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
 
 
 class RTSPServer(GstRtspServer.RTSPServer):
-    def __init__(self, cam_x=640, cam_y=480, port=8554, factory="/GLaDOS", **properties):
+    def __init__(self, cam_x: int = 640, cam_y: int = 480,
+                 port: int = 8554, factory: str = "/GLaDOS", **properties) -> None:
         super(RTSPServer, self).__init__(**properties)
         self.logger = setup_logger(name=self.__name__)
         self.cam_x = cam_x
@@ -69,7 +73,7 @@ class RTSPServer(GstRtspServer.RTSPServer):
         self.rtsp.start()
         self.logger.debug(f"RTSP Server Started on port {port} and factory {factory}")
 
-    def send_data(self, data):
+    def send_data(self, data: bytes) -> None:
         data = cv2.resize(data, (self.cam_x, self.cam_y))
         self.rtsp.send_data(data)
 
