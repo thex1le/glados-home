@@ -1,4 +1,5 @@
 import sys
+# TODO fix import of local gladosTTS
 sys.path.insert(0, '/home/textile/glados-home/gladosTTS')
 import json
 from threading import Thread
