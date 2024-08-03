@@ -37,6 +37,9 @@ class GladosLCD(Thread):
         self.breathe_animation = True
         self.breathe_loop = True
 
+    #TODO WIRE IN MQTT CLIENT, NEED TO CONSIDER what commands we actually take, need to draw out hardware maps
+    # as to what runs on what so we can map what messages go where...
+
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
         self.breathe_animation = breath_dict['animation']

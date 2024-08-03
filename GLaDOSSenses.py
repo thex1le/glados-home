@@ -66,6 +66,11 @@ class Camera(Thread):
             ret, frame = self.cap.read()
         return frame
 
+    # TODO this is where we can use mqtt to signal servos to stop moving?
+    # TODO what were you thinking here? why is target_scan under camera class? how will this work with 3 cameras?
+    # how will we de conflict zmq images with multiple camera's, how do we tag images to keep them straight?
+    # main pi 5 wil have 2 and second pi 2 will have one...
+    # more of a body function thing? how do we link the camera
     def target_scan(self, target="person", search_time=90, confidence=.70):
         self.logger.debug(f"Camera Scanning for target: {target}")
         target_found = False
@@ -105,6 +110,10 @@ class Camera(Thread):
     def get_results(self):
         return self.results
 
+
+# TODO YOU LEFT OFF CONNECTING IN MQQT CLIENT, it needs to send data to a debug channel
+# DATASEND can be replaced by mqtt to send text back to main running program
+# CONSIDER setting up a listener to take commands if needed? maybe not this portion kind of runs alone by its self
 
 class YoloDetect(Thread):
     def __init__(self, configfile):

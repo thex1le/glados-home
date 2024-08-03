@@ -203,12 +203,28 @@ class LedShoulders(MQTTClient):
             self.pixels.show()
 
 
-class DumbLEDController:
-    def __init__(self, pwd_hat: classmethod, channel: int, duty_cycle: int = 100) -> None:
+class DumbLEDController(Thread):
+    """
+    LED Controller for pca9685
+    """
+    def __init__(self, channel: int, duty_cycle: int = 100) -> None:
+        Thread.__init__(self)
+        self.daemon = True
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
-        self.led = pwd_hat.channels[channel]
+        self.led = self.hat.channels[channel]
         self.led.duty_cycle = duty_cycle
         self.current_brightness = duty_cycle
+        self.stop = False
+        self.animation = self.null_animation
+
+    def null_animation(self):
+        """
+        NUll animation the thread can chew on when we want to do nothing
+        """
+        sleep(.1)
+
+    def set_stop(self):
+        self.stop = True
 
     def set_brightness(self, brightness: int) -> bool:
         """
@@ -221,8 +237,35 @@ class DumbLEDController:
             ret = True
         return ret
 
+    def set_twinkle(self):
+        """
+        Set twinkle animation
+        """
+        self.animation = self.twinkle_animation
+
     def get_brightness(self) -> int:
         return self.current_brightness
+
+    def twinkle_animation(self):
+        """
+        pick a random number between the range and set the value
+        then sleep for a random amount of time before return
+        """
+        self.set_brightness(random.randrange(50, 500))
+        sleep(random.uniform(.1, 1))
+
+    def pulse_animation(self):
+        """
+        Pulse the led from low to high and back to low
+        """
+        # each iteration should take
+        for i in range(1, 800):
+            self.set_brightness(i)
+            sleep(0.0025)
+
+    def run(self):
+        while self.stop is False:
+            self.animation()
 
 
 class LedHead(MQTTClient):
