@@ -23,22 +23,16 @@ import regex as re
 from homeassistant_api import Client
 
 # glados imports
-from glog_conifig import setup_logger
-from GLaDOSBody import GBody
+from glados_modules.GlogConfig import setup_logger
 
 
-class GladosException(Exception):
+# silence some errors on the terminal
+def py_error_handler(filename, line, function, err, fmt):
     pass
 
 
 # silence some errors on the terminal
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
-
-
-def py_error_handler(filename, line, function, err, fmt):
-    pass
-
-
 c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
 
 
@@ -54,6 +48,10 @@ with noalsaerr():
     p = pyaudio.PyAudio()
 # stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
 stream = p.open(format=pyaudio.paFloat32, channels=2, rate=44100, output=1)
+
+
+class GladosException(Exception):
+    pass
 
 
 class GladosSTT(Thread):

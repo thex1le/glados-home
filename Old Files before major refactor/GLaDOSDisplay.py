@@ -9,7 +9,7 @@ import busio
 import board
 from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7735  # pylint: disable=unused-import
-from glados_modules.GladosLedHelper import LedHelper
+from ledhelper import LedHelper
 
 
 class GladosLCD(Thread):
@@ -83,13 +83,13 @@ class GladosLCD(Thread):
                 self.gcolor = 0
             else:
                 self.gcolor += 1
-        # Draw the circles, turning specific circles red based on on_positions
+        # Draw the circles, turning specific circles red based on dot_on_positions
         for x in range(1, num_circles_x + 1):
             for y in range(1, num_circles_y + 1):
                 cd = self.adjust_brightness(circle_color, random.choice([x / 10.0 for x in range(6, 9)]))
                 center_x = x * spacing_x
                 center_y = y * spacing_y
-                # Determine the color of the circle based on its position in on_positions list
+                # Determine the color of the circle based on its position in dot_on_positions list
                 if (x, y) in self.on_positions and x <= self.counter:
                     current_color = cd 
                 else:
@@ -113,9 +113,9 @@ class GladosLCD(Thread):
                 new_canvas = new_canvas.rotate(180)
             self.disp.image(new_canvas)
 
-    def aperture_animation(self, images_path='aperture_logo', ftype='.bmp'):
+    def aperture_animation(self, imagespath='aperture_logo', ftype='.bmp'):
         # play an animation of the aperture science logo
-        frame_filenames = sorted(glob(path.join(images_path, "*{}".format(ftype))))
+        frame_filenames = sorted(glob(path.join(imagespath, "*{}".format(ftype))))
         for filename in frame_filenames:
             self.__display_frame(filename)
             sleep(1/29.97)
@@ -164,20 +164,19 @@ class GladosLCD(Thread):
         # end all loops so you can join thread
         self.breathe_loop = False
 
-
 if __name__ == "__main__":
-    # glcd0 is the big right side
+    # glados_right_lcd is the big right side
     glcd0 = GladosLCD()
     # glcd1 is the little left side
-    #glcd1 = GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6, sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
-    #gl1t = Thread(target=glcd1.aperture_animation, args=())
-    #gl1t.start()
+    glcd1 = GladosLCD(cs=board.D23, rst=board.D5, dc=board.D6, sck=board.SCK_1, mosi=board.MOSI_1, flip=True)
+    gl1t = Thread(target=glcd1.aperture_animation, args=())
+    gl1t.start()
     glcd0.rainbow = True
     gl0t = Thread(target=glcd0.aperture_animation, args=())
     gl0t.start()
-    #gl1t.join()
+    gl1t.join()
     gl0t.join()
-    #glcd1.rainbow = True
-    #g0breath = Thread(target=glcd0.breathe, kwargs={"fast": False, "breathe": True})
-    #g0breath.start()
+    glcd1.rainbow = True
+    g1breath = Thread(target=glcd1.breathe, kwargs={"fast": False, "breathe": True})
+    g1breath.start()
     glcd0.breathe()

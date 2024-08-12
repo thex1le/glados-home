@@ -27,7 +27,9 @@ if __name__ == "__main__":
 
     mqtt_client = MQTTClient(broker, port, topic)
     mqtt_client.connect()
-    msglist = [{"servo": "body_left_right", "angle": 90, "speed": 10}]
+    msglist = [{"servo": "head_left_right", "angle":180, "speed": 10}]
+    #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 10}, {"servo": "body_up_down", "angle": 180,
+#                "speed": 10},  {"servo": "head_up_down", "angle": 180, "speed": 10}, {"servo": "head_left_right", "angle":180, "speed": 10}]
     for m in msglist:
         print(f"sending {m}")
         mqtt_client.client.publish(topic, json.dumps(m))

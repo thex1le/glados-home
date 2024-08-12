@@ -1,6 +1,6 @@
 import paho.mqtt.client as mqtt
 from typing import Dict, Callable
-from glog_conifig import setup_logger
+from GlogConfig import setup_logger
 
 
 class MQTTClient:
@@ -23,4 +23,3 @@ class MQTTClient:
     def on_message(self, client: mqtt.Client, userdata: object, msg: mqtt.MQTTMessage) -> None:
         if msg.topic in self.topic_handler:
             self.topic_handler[msg.topic](msg)
-

@@ -1,21 +1,206 @@
 import random
-from time import sleep, time
+from time import sleep
 from threading import Thread
 from json import loads, dumps
-from typing import Dict, Callable, Tuple, Optional
+from typing import Dict, Callable, Tuple
+from os import path
+from glob import glob
 
 # 3rd party
 import paho.mqtt.client as mqtt
 from adafruit_servokit import ServoKit
 import neopixel
-import ledhelper
 import adafruit_pca9685
 import busio
 import board
+from digitalio import DigitalInOut, Direction
+from PIL import Image, ImageDraw
+from adafruit_rgb_display import st7789
 
 # glados imports
-from glog_conifig import setup_logger
-from MqttClient import MQTTClient
+from glados_modules.GlogConfig import setup_logger
+from glados_modules.MqttClient import MQTTClient
+from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
+
+
+class GladosLCD(Thread):
+    def __init__(self, broker, location, port: int = 1883, cs=board.CE0, dc=board.D25, rst=board.D24,
+                 sck=board.SCK, mosi=board.MOSI, flip=False):
+        # Configuration for CS and DC pins (these are PiTFT defaults):
+        Thread.__init__(self)
+        Thread.daemon = True
+        self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
+        # TODO figure out broker port, config vs pass in...
+        MQTTClient.__init__(broker, port)
+        self.location: str = location
+        self.cmd_topic: str = "body/lcd"
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
+        cs_pin = DigitalInOut(cs)
+        dc_pin = DigitalInOut(dc)
+        reset_pin = DigitalInOut(rst)
+        baud_rate = 24000000
+        spi = busio.SPI(clock=sck, MOSI=mosi)
+        self.disp = st7789.ST7789(spi, rotation=0, width=240, height=198, x_offset=0,
+                                  y_offset=122, cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=baud_rate)
+        self.dot_on_positions: tuple = ((1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4),
+                                        (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (4, 4),
+                                        (5, 1), (5, 2), (5, 3), (5, 4), (6, 1), (6, 2), (6, 3), (6, 4),
+                                        (7, 1), (7, 2), (7, 3), (7, 4), (8, 2), (8, 4), (9, 1), (9, 3),
+                                        (9, 4), (10, 3), (11, 1), (11, 2), (11, 4), (12, 2))
+        self.rainbow = False
+        self.g_color = 0
+        self.counter = 1
+        self.disp.spi_device.cs_active_value = False
+        self.flip = flip
+        self.breath_fast = False
+        self.breathe_animation = True
+        self.breathe_loop = True
+
+    def handle_cmd(self, msg) -> None:
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("lcd", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
+            if j_msg.get("cmd", "") == "set_breath":
+                # command looks like nested {"cmd", "set_breath", options: { COMMAND DICT}}
+                self.set_breath_options(j_msg["options"])
+            elif j_msg.get("cmd", "") == "get_breath":
+                # mark the location of response
+                rsp = self.get_breath_options()
+                rsp["location"] = self.location
+                self.client.publish(rsp, dumps(self.get_breath_options()))
+
+    def set_breath_options(self, breath_dict: dict) -> None:
+        self.breath_fast = breath_dict['fast']
+        self.breathe_animation = breath_dict['animation']
+        self.rainbow = breath_dict['rainbow']
+
+    def get_breath_options(self) -> dict:
+        return {'fast': self.breath_fast, 'rainbow': self.rainbow,
+                'animation': self.breathe_animation}
+
+    def draw_image(self, times, color: tuple = (255, 0, 0)):
+        c = 0
+        while c <= times:
+            image = self.create_custom_circles_image(circle_color=color)
+            if self.flip is True:
+                image = image.rotate(180)
+            self.disp.image(image)
+            c += 1
+
+    def create_custom_circles_image(self, circle_color: tuple = (255, 0, 0)):
+        """
+        Creates an image with a 4x12 grid of circles where specific circles can be turned on (red) or off (black)
+        based on a list of positions provided.
+
+        Parameters:
+        - on_positions: A list of tuples, where each tuple represents the (x, y) position of a red circle in the grid.
+        """
+        # Adjusted image dimensions for the LCD screen
+        width, height = 240, 198
+        background_color = (0, 0, 0)  # Black
+        black_color = (0, 0, 0)  # Black
+        # Number of circles and circle radius
+        num_circles_x = 12
+        num_circles_y = 4
+        radius = 5
+        # Create a new black image
+        image = Image.new("RGB", (width, height), background_color)
+        draw = ImageDraw.Draw(image)
+        # Calculate spacing between circles
+        spacing_x = (width - 2 * radius) // (num_circles_x - 1) - 5
+        spacing_y = (height - 2 * radius) // (num_circles_y - 1) - 48
+        # Adjust vertical starting point to center the grid
+        start_x = (width - ((num_circles_x - 1) * spacing_x + 2 * radius)) // 2
+        start_y = (height - ((num_circles_y - 1) * spacing_y + 2 * radius)) // 2 - 15
+
+        if self.rainbow is True:
+            circle_color = LedHelper.color_wheel(self.g_color)
+            if self.g_color == 255:
+                self.g_color = 0
+            else:
+                self.g_color += 1
+
+        # Draw the circles, turning specific circles red based on on_positions
+        for x in range(num_circles_x):
+            for y in range(num_circles_y):
+                cd = LedHelper.adjust_brightness(circle_color, random.choice([x / 10.0 for x in range(6, 9)]))
+                center_x = start_x + radius + x * spacing_x
+                center_y = start_y + radius + y * spacing_y
+                # Determine the color of the circle based on its position in on_positions list
+                if (x + 1, y + 1) in self.dot_on_positions:
+                    current_color = cd
+                else:
+                    current_color = black_color
+                # Draw the circle with the determined color
+                draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius],
+                             fill=current_color)
+        return image
+
+    def __display_frame(self, filename):
+        image = Image.open(filename)
+        # Scale the image to the smaller screen dimension
+        image_ratio = image.width / image.height
+        image = image.resize((160, int((160 / image_ratio))), Image.BICUBIC)
+        if image.height < 80:
+            # create new canvas (color format, size, background color) default is aperture orange
+            new_canvas = Image.new("RGB", (160, 80), "#ff9a00")
+            vertical_offset = (80 - image.height) // 2
+            new_canvas.paste(image, (0, vertical_offset))
+            if self.flip is True:
+                new_canvas = new_canvas.rotate(180)
+            self.disp.image(new_canvas)
+
+    def aperture_animation(self, images_path='aperture_logo', ftype='.bmp'):
+        # play an animation of the aperture science logo
+        frame_filenames = sorted(glob(path.join(images_path, "*{}".format(ftype))))
+        for filename in frame_filenames:
+            self.__display_frame(filename)
+            sleep(1/29.97)
+
+    def breathe(self):
+        self.breathe_loop = True
+        up = True
+        self.counter = 1
+        slpm = 0.12
+        slptb = 0.18
+        tb = 12
+        mid = 5
+        if self.breath_fast is True:
+            slpm = 0.
+            slptb = 0
+            tb = 0
+            mid = 0
+        while self.breathe_loop is True:
+            self.draw_image(times=mid)
+            if self.breathe_animation is True:
+                if self.breath_fast is False:
+                    sleep(slpm)
+                if self.counter > 12:
+                    up = False
+                    self.draw_image(times=tb)
+                    if self.breath_fast is False:
+                        sleep(slptb)
+                if self.counter <= 1:
+                    up = True
+                    self.draw_image(times=tb)
+                    if self.breath_fast is False:
+                        sleep(slptb)
+                if up is True:
+                    self.counter += 1
+                else:
+                    self.counter -= 1
+            else:
+                self.counter = 12
+                sleep(.2)
+
+    def run(self):
+        self.aperture_animation()
+        self.breathe()
+
+    def stop(self):
+        # end all loops so you can join thread
+        self.breathe_loop = False
+
 
 class Gservo(Thread, MQTTClient):
     def __init__(self, location: str, skit: ServoKit, axis: str, servo_range: Tuple[int, int] = (),
@@ -48,11 +233,11 @@ class Gservo(Thread, MQTTClient):
             self.allowed_servo_range: Dict[str, int] = {"min_travel": servo_range[0], "max_travel": servo_range[1]}
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
-        jmsg = loads(msg.payload.decode())
-        if jmsg.get("servo", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
-            angle: int = int(jmsg.get("angle", self.middle_angle))
-            speed: int = int(jmsg.get("speed", self.speed))
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("servo", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
+            angle: int = int(j_msg.get("angle", self.middle_angle))
+            speed: int = int(j_msg.get("speed", self.speed))
             self.set_speed_angle((speed, angle), execute=True)
 
     def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
@@ -150,8 +335,8 @@ class LedShoulders(MQTTClient):
         self.logger = setup_logger(self.__name__)
         led_num: int = 64
         self.pixels = neopixel.NeoPixel(board.D12, led_num, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
-        self.lh = ledhelper.LedHelper
-        self.ani = ledhelper.NeoPixelAnimations(self.pixels, led_num)
+        self.lh = LedHelper
+        self.ani = NeoPixelAnimations(self.pixels, led_num)
         self.swap = self.lh.rgb2grb_swap
         self.intensity: Tuple[float, float] = (0.5, 0.5)
         self.stripes: list = list()
@@ -166,18 +351,18 @@ class LedShoulders(MQTTClient):
         self.twinkle_loop: bool = False
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
-        jmsg = loads(msg.payload.decode())
-        if jmsg.get("led", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
-            if jmsg[self.location]['command'] in self.animations.keys():
-                self.animations[jmsg[self.location]['command']]()
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
+            if j_msg[self.location]['command'] in self.animations.keys():
+                self.animations[j_msg[self.location]['command']]()
 
     def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
         # TODO figure out update commands
-        jmsg = loads(msg.payload.decode())
-        if jmsg.get("led", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
-            self.intensity = jmsg["intensity"]
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
+            self.intensity = j_msg["intensity"]
 
     def startup(self) -> None:
         self.twinkle_loop = False
@@ -273,9 +458,8 @@ class LedHead(MQTTClient):
         MQTTClient().__init__(broker, port)
         self.logger = setup_logger(self.__name__)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
-        self.lh = ledhelper.LedHelper
-        self.ani = ledhelper.NeoPixelAnimations(self.pixels, 1)
-        self.swap = self.lh.rgb2grb_swap
+        self.ani = NeoPixelAnimations(self.pixels, 1)
+        self.swap = LedHelper.rgb2grb_swap
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
         self.pwm_led = self.hat.channels[4]
         self.hat.frequency = 60
@@ -291,18 +475,18 @@ class LedHead(MQTTClient):
         self.yellow_eye: Tuple[int, int, int] = (246, 216, 121)
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
-        jmsg = loads(msg.payload.decode())
-        if jmsg.get("led", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
-            if jmsg[self.location]['command'] in self.animations.keys():
-                self.animations[jmsg[self.location]['command']]()
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
+            if j_msg[self.location]['command'] in self.animations.keys():
+                self.animations[j_msg[self.location]['command']]()
 
     def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
         # TODO figure out update commands
-        jmsg = loads(msg.payload.decode())
-        if jmsg.get("led", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {jmsg}")
-            self.intensity = jmsg["intensity"]
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
+            self.intensity = j_msg["intensity"]
 
     def startup(self) -> None:
         self.logger.debug("Startup Sequence")
@@ -345,7 +529,7 @@ class LedHead(MQTTClient):
         self.pwm_led.duty_cycle = 150
         self.pixels.brightness = self.intensity[0]
         self.pixels.autowrite = True
-        self.pixels[0] = self.lh.adjust_brightness(self.yellow_eye, self.intensity[1])
+        self.pixels[0] = LedHelper.adjust_brightness(self.yellow_eye, self.intensity[1])
         self.pixels.show()
 
 # NOTE you also need to code up a class for the Lamp portion its self...

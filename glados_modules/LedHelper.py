@@ -51,8 +51,9 @@ class LedHelper:
             color = (g, r, b)
             if order == "GRBW":
                 color = (g, r, b, 0)
-        elif order == "RGBW":
-            color = (r, g, b, w)
+        # no support for RGBW right now
+        # elif order == "RGBW":
+        #    color = (r, g, b, w)
         return color
 
 
@@ -110,7 +111,7 @@ class NeoPixelAnimations:
             self.pixels.brightness = intense
             sleep(st)
 
-    def fade_color(self, start_color, end_color, steps, order="RGB", intensity = (.1, .1)):
+    def fade_color(self, start_color, end_color, steps, order="RGB", intensity=(.1, .1)):
         # calculate intensity steps
         ic = steps / (intensity[0] * 10)
         ic_count = 1

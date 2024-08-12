@@ -9,11 +9,10 @@ import ledhelper
 import adafruit_pca9685
 import neopixel
 import busio
-import paho.mqtt.client as mqtt
 
 # glados imports
 from GLaDOSSenses import Camera as gleyes
-from glog_conifig import setup_logger
+from glados_modules.GlogConfig import setup_logger
 
 
 class Gservo(Thread):
