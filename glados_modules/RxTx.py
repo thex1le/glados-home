@@ -19,7 +19,7 @@ class DataSend(Thread):
         port = self.configfile["ZMQSenderPort"]
         self.context = zmq.Context()
         self.client_address = f"tcp://{ip}:{port}"
-        self.logger.debug(f"Data Sender listening on {self.client_address}")
+        self.logger.debug(f"Data Sender connecting too {self.client_address}")
         self.socket = self.context.socket(zmq.PUSH)
         self.socket.connect(self.client_address)
         self.stop = False
@@ -67,7 +67,7 @@ class DataRecv(Thread):
         self.socket = self.context.socket(zmq.PULL)  # Create a PULL socket
         self.client_address = f"tcp://{ip}:{port}"
         self.socket.bind(self.client_address)  # Bind to the TCP port 5555
-        self.logger.debug(f"Data Sender listening on {self.client_address}")
+        self.logger.debug(f"Data Receiver listening on {self.client_address}")
         self.data = None
         self.stop = False
 
