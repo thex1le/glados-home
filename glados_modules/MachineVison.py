@@ -10,7 +10,7 @@ from ultralytics.utils.plotting import Annotator
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.RxTx import DataRecv, DataSend
+from glados_modules.RxTx import DataRecv
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient
 
@@ -85,7 +85,6 @@ class YoloDetect(Thread):
                 annotator.box_label(b, self.model.names[int(c)])
                 self.logger.debug(f"Labeled image with, {self.model[int(c)]}")
         a_image = annotator.result()
-        # TODO fix next line
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 
