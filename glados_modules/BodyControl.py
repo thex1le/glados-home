@@ -24,15 +24,15 @@ from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 
 
 class GladosLCD(Thread):
-    def __init__(self, broker, location, port: int = 1883, cs=board.CE0, dc=board.D25, rst=board.D24,
+    def __init__(self, broker, location, port, animation_path, cs=board.CE0, dc=board.D25, rst=board.D24,
                  sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         Thread.__init__(self)
         Thread.daemon = True
         self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
-        # TODO figure out broker port, config vs pass in...
         MQTTClient.__init__(broker, port)
         self.location: str = location
+        self.animation_path: str = path.join(path.abspath(animation_path), "aperture_logo")
         self.cmd_topic: str = "body/lcd"
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         cs_pin = DigitalInOut(cs)
@@ -150,9 +150,9 @@ class GladosLCD(Thread):
                 new_canvas = new_canvas.rotate(180)
             self.disp.image(new_canvas)
 
-    def aperture_animation(self, images_path='aperture_logo', ftype='.bmp'):
+    def aperture_animation(self, ftype='.bmp'):
         # play an animation of the aperture science logo
-        frame_filenames = sorted(glob(path.join(images_path, "*{}".format(ftype))))
+        frame_filenames = sorted(glob(path.join(self.animation_path, "*{}".format(ftype))))
         for filename in frame_filenames:
             self.__display_frame(filename)
             sleep(1/29.97)
