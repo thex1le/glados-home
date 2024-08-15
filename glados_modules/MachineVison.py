@@ -91,7 +91,7 @@ class YoloDetect(Thread, MQTTClient):
         self.logger.debug(f"Wrote out sample debug image to {name}")
         self.sight = self.__yolo_process_image(image)
         self.logger.debug(f"Sending back process dict of seen data for camera {image['camera']}")
-        self.client.publish(json_dumps(self.__translate_results(self.sight)))
+        self.client.publish("vision/cameras", json_dumps(self.__translate_results(self.sight)))
 
     def run(self):
         self.client.publish("status", "Machine Vision Started")
