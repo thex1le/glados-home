@@ -1,6 +1,6 @@
 import paho.mqtt.client as mqtt
 from typing import Dict, Callable
-from GlogConfig import setup_logger
+from glados_modules.GlogConfig import setup_logger
 
 
 class MQTTClient:
