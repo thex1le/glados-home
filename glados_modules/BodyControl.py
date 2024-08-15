@@ -23,14 +23,14 @@ from glados_modules.MqttClient import MQTTClient
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 
 
-class GladosLCD(Thread):
+class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, port, animation_path, cs=board.CE0, dc=board.D25, rst=board.D24,
                  sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         Thread.__init__(self)
         Thread.daemon = True
         self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
-        MQTTClient.__init__(broker, port)
+        MQTTClient.__init__(self, broker, port)
         self.location: str = location
         self.animation_path: str = path.join(path.abspath(animation_path), "aperture_logo")
         self.cmd_topic: str = "body/lcd"
@@ -455,7 +455,7 @@ class DumbLEDController(Thread):
 
 class LedHead(MQTTClient):
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
-        MQTTClient().__init__(broker, port)
+        MQTTClient.__init__(self, broker, port)
         self.logger = setup_logger(self.__name__)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
