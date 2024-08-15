@@ -46,7 +46,7 @@ class YoloDetect(Thread):
         self.image_get = DataRecv(self.configfile)
         self.image_get.start()
         for key in cam_configs.keys():
-            msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}{key}"
+            msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}/{key}"
             self.client.publish("status", msg)
             self.logger.info(msg)
             print(msg)
