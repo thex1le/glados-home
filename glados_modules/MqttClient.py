@@ -6,7 +6,7 @@ from glados_modules.GlogConfig import setup_logger
 class MQTTClient:
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
         self.broker = broker
-        self.port = port
+        self.port = int(port)
         self.client: mqtt.Client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
