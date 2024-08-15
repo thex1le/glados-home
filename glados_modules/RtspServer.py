@@ -79,7 +79,7 @@ class RTSPServer(GstRtspServer.RTSPServer):
             self.logger.debug("Correct factory found")
             rtsp_system = self.factories[factory_path]
             data = cv2.resize(data, (rtsp_system.cam_x, rtsp_system.cam_y))
-            self.logger(f"Sending data on {factory_path}")
+            self.logger.debug(f"Sending data on {factory_path}")
             rtsp_system.send_data(data)
         else:
             self.logger.error(f"No factory found for path: {factory_path}")
