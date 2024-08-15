@@ -169,6 +169,21 @@ class HomeAssistantLink:
         watt = wdata.state.attributes
         return "The current temperature is {}".format(watt['temperature'])
 
+# TODO need to figure out how were going to sync the camera "scan / hunt" function for new people
+   """ stub code for camera body hunt
+    def target_scan(self, target="person", search_time=90, confidence=.70):
+        self.logger.debug(f"Camera Scanning for target: {target}")
+        target_found = False
+        t = time()
+        while (time() - t) < search_time and target_found is False:
+            if target in self.results.keys():
+                for p in self.results[target]['objects']:
+                    if p['confidence'] >= confidence:
+                        # found the target in the timeframe
+                        target_found = True
+                        self.logger.debug(f"Camera Found target: {target} , {p}")
+                        break
+"""
 
 class GladosLocal(Thread):
     def __init__(self, config_file, remote_llm):
@@ -185,6 +200,7 @@ class GladosLocal(Thread):
         self.last_cresponse = None
         self.timers = Queue()
         self.configFile = config_file
+        # TODO need to fix config file
         self.voiceurl = config_file["DEFAULT"]["VoiceUrl"]
         self.configp = config_file["LOCALSPEAK"]
         cam_res = self.configFile['DEFAULT']['camera_resolution'].split(',')
