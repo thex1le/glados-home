@@ -101,7 +101,7 @@ class YoloDetect(Thread, MQTTClient):
                 image_dict = pickle_loads(self.image_get.get_data(True))
             except UnpicklingError:
                 continue
-            msg = f"Got image from sender {image_dict.get('camera', "None")}"
+            msg = f"Got image from sender {image_dict.get('camera', 'None')}"
             self.logger.debug(msg)
             try:
                 self.process_image(image_dict)
