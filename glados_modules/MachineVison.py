@@ -86,7 +86,7 @@ class YoloDetect(Thread, MQTTClient):
         return results
 
     def process_image(self, image, debug_file_name='raw_rx.jpg'):
-        name = f"{image['camera']}_{debug_file_name}"
+        name = f".{image['camera']}_{debug_file_name}"
         cv2.imwrite(name, image["raw"])
         self.logger.debug(f"Wrote out sample debug image to {name}")
         self.sight = self.__yolo_process_image(image)
@@ -96,10 +96,7 @@ class YoloDetect(Thread, MQTTClient):
     def run(self):
         self.client.publish("status", "Machine Vision Started")
         while True:
-            try:
-                image_dict = self.image_get.get_data(True)
-            except UnpicklingError:
-                continue
+            image_dict = self.image_get.get_data(True)
             msg = f"Got image from sender {image_dict.get('camera', 'None')}"
             self.logger.debug(msg)
             try:
