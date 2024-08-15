@@ -27,8 +27,8 @@ class YoloDetect(Thread):
         self.__name__ = "yolo_detector"
         self.logger = setup_logger(name=self.__name__)
         self.configfile = configfile
-        broker = self.configfile['DEFAULT']['mqtt_server_ip']
-        port = self.configfile['DEFAULT']['mqtt_port']
+        broker = self.configfile['MQTT']['mqtt_server_ip']
+        port = self.configfile['MQTT']['mqtt_port']
         MQTTClient.__init__(broker, port)
         self.cmd_topic: str = "vision/camera_response"
         cam_conf = self.configfile['Cameras']
@@ -37,7 +37,6 @@ class YoloDetect(Thread):
             f"/{cam_conf['Camera_Left_Factory']}": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
             f"/{cam_conf['Camera_Right_Factory']}": tuple(cam_conf["Camera_Right_Resolution"].split(','))
         }
-        self.factory = self.configfile['RTSP']['rtsp_factory']
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
