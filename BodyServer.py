@@ -34,7 +34,7 @@ if __name__ == "__main__":
     mqtt_ip = config_p["MQTT"]["mqtt_server_ip"]
     mqtt_port = int(config_p["MQTT"]["mqtt_port"])
     animation_path = config_p["DEFAULT"]["animation_root"]
-    head_camera_location = config_p["CAMERA"]["Camera_Head_Factory"]
+    head_camera_location = config_p["CAMERAS"]["Camera_Head_Factory"]
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=mqtt_ip, port=mqtt_port)
     body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180,
