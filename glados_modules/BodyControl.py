@@ -29,7 +29,8 @@ class GladosLCD(Thread, MQTTClient):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         Thread.__init__(self)
         Thread.daemon = True
-        self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
+        self.__name__ =  f"{self.__class__.__name__}_{location}"
+        self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker, port)
         self.location: str = location
         self.animation_path: str = path.join(path.abspath(animation_path), "aperture_logo")
@@ -208,7 +209,9 @@ class Gservo(Thread, MQTTClient):
         Thread.__init__(self)
         MQTTClient.__init__(self, broker, port)
         Thread.daemon = True
-        self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
+        self.__name__ = f"{self.__class__.__name__}_{location}
+        self.logger = setup_logger(name=self.__name__)
+        MQTTClient.__init__(self, broker, port)
         self.location: str = location
         self.cmd_topic: str = "body/servo"
         self.intensity_topic: str = "intensity"
@@ -331,6 +334,7 @@ class Gservo(Thread, MQTTClient):
 
 class LedShoulders(MQTTClient):
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
+        self.__name__ = "LED_Shoulder_Controller"
         MQTTClient.__init__(self, broker, port)
         self.logger = setup_logger(self.__name__)
         led_num: int = 64
@@ -455,8 +459,9 @@ class DumbLEDController(Thread):
 
 class LedHead(MQTTClient):
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
+        self.__name__ = "Head_LED_Controller"
         MQTTClient.__init__(self, broker, port)
-        self.logger = setup_logger(self.__name__)
+        self.logger = setup_logger()
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
