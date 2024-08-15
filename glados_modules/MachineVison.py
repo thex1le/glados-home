@@ -24,6 +24,7 @@ class YoloDetect(Thread):
         # internal libs, import here so its deps are not needed on other devices
         Thread.__init__(self)
         self.daemon = True
+        self.__name__ = "yolo_detector"
         self.logger = setup_logger(name=self.__name__)
         self.configfile = configfile
         broker = self.configfile['DEFAULT']['mqtt_server_ip']
