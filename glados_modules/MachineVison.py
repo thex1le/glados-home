@@ -101,7 +101,7 @@ class YoloDetect(Thread, MQTTClient):
             self.logger.debug(msg)
             try:
                 self.process_image(image_dict)
-            except Exception:
-                msg = "Image Error"
+            except Exception as e:
+                msg = f"Image Error: {e}"
                 self.logger.error(msg)
 
