@@ -1,7 +1,6 @@
 from json import loads as json_loads
 from json import dumps as json_dumps
 from threading import Thread
-from pickle import loads as pickle_loads, UnpicklingError
 
 #3rd party
 import cv2
@@ -98,7 +97,7 @@ class YoloDetect(Thread, MQTTClient):
         self.client.publish("status", "Machine Vision Started")
         while True:
             try:
-                image_dict = pickle_loads(self.image_get.get_data(True))
+                image_dict = self.image_get.get_data(True)
             except UnpicklingError:
                 continue
             msg = f"Got image from sender {image_dict.get('camera', 'None')}"

@@ -1,5 +1,5 @@
 # built ins
-from json import dumps
+from pickle import dumps, loads
 from threading import Thread
 from time import sleep
 
@@ -74,10 +74,13 @@ class DataRecv(Thread):
         self.stop = False
 
     def get_data(self, blocking=False):
+        data = None
         if blocking is True:
             while self.data is None:
                 sleep(.1)
-        data = self.data
+        if self.data is not None:
+            # attempt to un pickle data
+            data = loads(self.data)
         self.data = None
         self.logger.debug(f"Data from zmq returned f{data}")
         return data
