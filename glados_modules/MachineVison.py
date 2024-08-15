@@ -100,12 +100,10 @@ class YoloDetect(Thread, MQTTClient):
         while True:
             image_dict = pickle_loads(self.image_get.get_data(True))
             msg = f"Got image from sender {image_dict['camera']}"
-            print(msg)
             self.logger.debug(msg)
             try:
                 self.process_image(image_dict)
             except Exception:
                 msg = "Image Error"
-                print(msg)
                 self.logger.error(msg)
 
