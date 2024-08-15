@@ -10,9 +10,10 @@ from glados_modules import GlogConfig
 
 class DataSend(Thread):
     # threaded zmq class for sending to clients
-    def __init__(self, configfile):
+    def __init__(self, configfile, location):
         Thread.__init__(self)
         Thread.daemon = True
+        self.__name__ = location
         self.logger = GlogConfig.setup_logger(name=self.__name__)
         self.configfile = configfile["DEFAULT"]
         ip = self.configfile["ZMQSenderAddress"]
@@ -56,9 +57,10 @@ class DataSend(Thread):
 
 
 class DataRecv(Thread):
-    def __init__(self, configfile):
+    def __init__(self, configfile, location):
         Thread.__init__(self)
         Thread.daemon = True
+        self.__name__ = location
         self.logger = GlogConfig.setup_logger(self.__name__)
         self.config = configfile["DEFAULT"]
         ip = self.config["ZMQListenAddress"]
