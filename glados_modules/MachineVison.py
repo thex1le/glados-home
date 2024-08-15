@@ -19,7 +19,7 @@ class GLaDOSServerException(Exception):
     pass
 
 
-class YoloDetect(Thread):
+class YoloDetect(Thread, MQTTClient):
     def __init__(self, configfile):
         # internal libs, import here so its deps are not needed on other devices
         Thread.__init__(self)
@@ -29,7 +29,7 @@ class YoloDetect(Thread):
         self.configfile = configfile
         broker = self.configfile['MQTT']['mqtt_server_ip']
         port = self.configfile['MQTT']['mqtt_port']
-        MQTTClient.__init__(broker, port)
+        MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = "vision/camera_response"
         cam_conf = self.configfile['Cameras']
         cam_configs = {
