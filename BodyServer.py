@@ -34,6 +34,7 @@ if __name__ == "__main__":
     mqtt_ip = config_p["MQTT"]["mqtt_server_ip"]
     mqtt_port = int(config_p["MQTT"]["mqtt_port"])
     animation_path = config_p["DEFAULT"]["animation_root"]
+    head_camera_location = config_p["CAMERA"]["Camera_Head_Factory"]
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=mqtt_ip, port=mqtt_port)
     body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180,
@@ -46,7 +47,7 @@ if __name__ == "__main__":
                      broker=mqtt_ip, port=mqtt_port)
     led_shoulders = LedShoulders(broker=mqtt_ip, port=mqtt_port)
     glados_right_lcd = GladosLCD(broker=mqtt_ip, port=mqtt_port, location="right_lcd", animation_path=animation_path)
-    head_camera = Camera(configfile=config_p, location="Camera_Head")
+    head_camera = Camera(configfile=config_p, location=head_camera_location)
     body_LR.start()
     body_UD.start()
     head_LR.start()
