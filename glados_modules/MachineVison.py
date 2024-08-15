@@ -49,7 +49,6 @@ class YoloDetect(Thread, MQTTClient):
             msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}/{key}"
             self.client.publish("status", msg)
             self.logger.info(msg)
-            print(msg)
         self.rtsp = RTSPServer(cam_configs)
 
     def get_sight(self):
