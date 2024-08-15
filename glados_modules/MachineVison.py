@@ -31,7 +31,7 @@ class YoloDetect(Thread, MQTTClient):
         port = self.configfile['MQTT']['mqtt_port']
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = "vision/camera_response"
-        cam_conf = self.configfile['Cameras']
+        cam_conf = self.configfile['CAMERAS']
         cam_configs = {
             f"/{cam_conf['Camera_Head_Factory']}": tuple(cam_conf["Camera_Head_Resolution"].split(',')),
             f"/{cam_conf['Camera_Left_Factory']}": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
