@@ -21,7 +21,7 @@ class Camera(Thread, MQTTClient):
         Thread.__init__(self)
         Thread.daemon = True
         self.location = location
-        self.__name__ =  f"{self.__class__.__name__}_{location}"
+        self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
         self.config = configfile
         broker = self.config['MQTT']['mqtt_server_ip']
@@ -54,7 +54,7 @@ class Camera(Thread, MQTTClient):
         self.image = None
         self.stop = False
         self.results = dict()
-        self.image_send = RxTx.DataSend(configfile)
+        self.image_send = RxTx.DataSend(configfile, self.location)
         self.image_send.start()
         self.client.publish("status", f"Camera {location} Started")
 
