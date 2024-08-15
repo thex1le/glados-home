@@ -21,7 +21,8 @@ class Camera(Thread, MQTTClient):
         Thread.__init__(self)
         Thread.daemon = True
         self.location = location
-        self.logger = setup_logger(name=f"{self.__class__.__name__}_{location}")
+        self.__name__ =  f"{self.__class__.__name__}_{location}"
+        self.logger = setup_logger(name=self.__name__)
         self.config = configfile
         broker = self.config['MQTT']['mqtt_server_ip']
         port = self.config['MQTT']['mqtt_port']
