@@ -51,6 +51,7 @@ if __name__ == "__main__":
     body_UD.start()
     head_LR.start()
     head_UD.start()
+    head_camera.start()
 
     # todo figure out how to pass images_path for the animation to pay
     glados_right_lcd.start()
