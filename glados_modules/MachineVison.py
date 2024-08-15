@@ -46,7 +46,7 @@ class YoloDetect(Thread, MQTTClient):
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx" )
         self.image_get.start()
         for key in cam_configs.keys():
-            msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}/{key}"
+            msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}{key}"
             self.client.publish("status", msg)
             self.logger.info(msg)
         self.rtsp = RTSPServer(cam_configs)
