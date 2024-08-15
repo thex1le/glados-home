@@ -207,7 +207,6 @@ class Gservo(Thread, MQTTClient):
     def __init__(self, location: str, skit: ServoKit, axis: str, servo_range: Tuple[int, int] = (),
                  max_angle: int = 90, broker: str = 'localhost', port: int = 1883) -> None:
         Thread.__init__(self)
-        MQTTClient.__init__(self, broker, port)
         Thread.daemon = True
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
