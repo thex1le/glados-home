@@ -11,8 +11,8 @@ from glados_modules.GlogConfig import setup_logger
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, cam_x, cam_y, **properties):
         super(RtspSystem, self).__init__(**properties)
-        self.cam_x = cam_x
-        self.cam_y = cam_y
+        self.cam_x = int(cam_x)
+        self.cam_y = int(cam_y)
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
