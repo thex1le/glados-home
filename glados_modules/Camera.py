@@ -16,7 +16,7 @@ class GLaDOSServerException(Exception):
     pass
 
 
-class Camera(Thread):
+class Camera(Thread, MQTTClient):
     def __init__(self, configfile, location):
         Thread.__init__(self)
         Thread.daemon = True
@@ -25,7 +25,7 @@ class Camera(Thread):
         self.config = configfile
         broker = self.config['MQTT']['mqtt_server_ip']
         port = self.config['MQTT']['mqtt_port']
-        MQTTClient.__init__(broker, port)
+        MQTTClient.__init__(self, broker, port)
         resolution = f"{self.location}_Resolution"
         picam = f"{self.location}_Picam"
         cam_res = self.config['CAMERAS'][resolution].split(',')
