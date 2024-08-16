@@ -71,6 +71,8 @@ class YoloDetect(Thread, MQTTClient):
     def __yolo_process_image(self, image_dict):
         # pass image to rtsp...
         image = image_dict["raw"]
+        image = cv2.cvtColor(image, cv2.COLOR_YUV420p2BGR)
+        #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
         results = self.model(image)
         self.logger.debug(f"Yolo has processed raw image")
         annotator = Annotator(image)
@@ -88,8 +90,11 @@ class YoloDetect(Thread, MQTTClient):
         return results
 
     def process_image(self, image, debug_file_name='raw_rx.jpg'):
-        name = f".{image['camera']}_{debug_file_name}"
-        cv2.imwrite(name, image["raw"])
+        name = f"{debug_file_name}"
+        image = image_dict["raw"]
+        image = cv2.cvtColor(image, cv2.COLOR_YUV420p2BGR)
+        expected_size = (width * height * 3) // 2
+        cv2.imwrite(name, image)
         self.logger.debug(f"Wrote out sample debug image to {name}")
         self.sight = self.__yolo_process_image(image)
         self.logger.debug(f"Sending back process dict of seen data for camera {image['camera']}")
