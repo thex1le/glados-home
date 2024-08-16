@@ -4,7 +4,6 @@ from argparse import ArgumentParser
 from configparser import ConfigParser
 import sys
 from os import path
-from threading import Thread
 
 # 3rd party
 from adafruit_servokit import ServoKit
