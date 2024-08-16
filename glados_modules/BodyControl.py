@@ -334,8 +334,8 @@ class Gservo(Thread, MQTTClient):
 class LedShoulders(MQTTClient):
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
         self.__name__ = "LED_Shoulder_Controller"
-        MQTTClient.__init__(self, broker, port)
         self.logger = setup_logger(self.__name__)
+        MQTTClient.__init__(self, broker, port)
         led_num: int = 64
         self.pixels = neopixel.NeoPixel(board.D12, led_num, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.lh = LedHelper
