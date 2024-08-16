@@ -460,7 +460,7 @@ class LedHead(MQTTClient):
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
         self.__name__ = "Head_LED_Controller"
         MQTTClient.__init__(self, broker, port)
-        self.logger = setup_logger()
+        self.logger = setup_logger(self.__name__)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
