@@ -39,7 +39,7 @@ class Camera(Thread, MQTTClient):
             self.logger.debug(f"Using PiCam for {self.location}")
             # pi cam
             self.cap = Picamera2(camera_num)
-            self.cap.configure(self.cap.create_preview_configuration({"size": (self.cam_res_x, self.cam_res_y),
+            self.cap.configure(self.cap.create_still_configuration({"size": (self.cam_res_x, self.cam_res_y),
                                                                       'format': 'RGB888'}))
             self.cap.start()
         else:
@@ -71,12 +71,18 @@ class Camera(Thread, MQTTClient):
         return self.image
 
     def run(self):
+        import time
+        count = 0
+        t = time.time()
         while self.stop is False:
             self.image = self.__capture_image()
             self.logger.debug("Sending image for processing")
             image_dict = {"camera": f"/{self.location}", "raw": self.get_image()}
             self.image_send.send_data(image_dict, json_send=False)
-            sleep(.02)
+            #sleep(.02)
+            count += 1
+            if count >= 60:
+                print(time.time() - t)
 
 
 
