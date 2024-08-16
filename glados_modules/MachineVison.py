@@ -31,7 +31,7 @@ class YoloDetect(Thread, MQTTClient):
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = "vision/camera_response"
         cam_conf = self.configfile['CAMERAS']
-        cam_configs = {
+        self.cam_configs = {
             f"/{cam_conf['Camera_Head_Factory']}": tuple(cam_conf["Camera_Head_Resolution"].split(',')),
             f"/{cam_conf['Camera_Left_Factory']}": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
             f"/{cam_conf['Camera_Right_Factory']}": tuple(cam_conf["Camera_Right_Resolution"].split(','))
@@ -44,11 +44,11 @@ class YoloDetect(Thread, MQTTClient):
         self.sight = None
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx" )
         self.image_get.start()
-        for key in cam_configs.keys():
+        for key in self.cam_configs.keys():
             msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}{key}"
             self.client.publish("status", msg)
             self.logger.info(msg)
-        self.rtsp = RTSPServer(cam_configs)
+        self.rtsp = RTSPServer(self.cam_configs)
 
     def get_sight(self):
         return self.sight
@@ -70,8 +70,10 @@ class YoloDetect(Thread, MQTTClient):
 
     def __yolo_process_image(self, image_dict):
         # pass image to rtsp...
-        image = image_dict["raw"]
-        image = cv2.cvtColor(image, cv2.COLOR_YUV420p2BGR)
+        raw = image_dict["raw"]
+        width, height = self.cam_configs[image_dict["camera"]]
+        yuv420_data = raw.reshape((height * 3) // 2, width)
+        image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
         #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
         results = self.model(image)
         self.logger.debug(f"Yolo has processed raw image")
