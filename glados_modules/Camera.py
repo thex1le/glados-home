@@ -60,12 +60,12 @@ class Camera(Process, MQTTClient):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
             self.cap.set(cv2.CAP_PROP_FPS, 30)
+            self.__capture_image = self.__capture_image_cv2
         self.image = None
         self.stop = False
         self.results = dict()
         self.image_send = RxTx.DataSend(self.config, self.location)
         self.image_send.start()
-        self.__capture_image = self.__capture_image_cv2
         self.client.publish("status", f"Camera {self.location} Started")
 
     def __capture_image_pi(self):
