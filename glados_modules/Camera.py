@@ -43,8 +43,9 @@ class Camera(Process, MQTTClient):
             self.logger.debug(f"Using PiCam for {self.location}")
             # pi cam
             self.cap = Picamera2(self.camera_num)
-            self.cap.configure(self.cap.create_still_configuration({"size": (self.cam_res_x, self.cam_res_y),
-                                                                      'format': 'RGB888'}))
+            config = self.cap.create_preview_configuration({"size": (640, 480)}, raw=self.cap.sensor_modes[2])
+            self.cap.configure(config)
+            self.cap.set_controls({"FrameRate": 40})
             self.cap.start()
         else:
             # usb webcam
@@ -63,7 +64,7 @@ class Camera(Process, MQTTClient):
 
     def __capture_image(self):
         if self.picam is True:
-            frame = self.cap.capture_array()
+            frame = self.cap.capture_array("raw")
         else:
             ret, frame = self.cap.read()
         return frame
