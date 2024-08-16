@@ -93,9 +93,6 @@ class YoloDetect(Thread, MQTTClient):
 
     def process_image(self, image, debug_file_name='raw_rx.jpg'):
         name = f"{debug_file_name}"
-        image = image_dict["raw"]
-        image = cv2.cvtColor(image, cv2.COLOR_YUV420p2BGR)
-        expected_size = (width * height * 3) // 2
         cv2.imwrite(name, image)
         self.logger.debug(f"Wrote out sample debug image to {name}")
         self.sight = self.__yolo_process_image(image)
