@@ -34,19 +34,22 @@ class Camera(Process, MQTTClient):
         self.cam_res_y = int(cam_res[1])
         self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
         self.picam = bool(self.config['CAMERAS'][picam].lower())
-        camera_num = int(self.config["CAMERAS"][self.location])
+        self.camera_num = int(self.config["CAMERAS"][self.location])
+        self.image = None
+
+    def __init_camera(self):
+        # allow us to init the camera inside the multiprocess thread
         if self.picam is True:
             self.logger.debug(f"Using PiCam for {self.location}")
             # pi cam
-            self.cap = Picamera2(camera_num)
+            self.cap = Picamera2(self.camera_num)
             self.cap.configure(self.cap.create_still_configuration({"size": (self.cam_res_x, self.cam_res_y),
                                                                       'format': 'RGB888'}))
             self.cap.start()
         else:
             # usb webcam
             self.logger.debug(f"Using USB Webcam for {self.location}")
-            camera_num = int(self.config["CAMERAS"][self.location])
-            self.cap = cv2.VideoCapture(camera_num)
+            self.cap = cv2.VideoCapture(self.camera_num)
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -54,9 +57,9 @@ class Camera(Process, MQTTClient):
         self.image = None
         self.stop = False
         self.results = dict()
-        self.image_send = RxTx.DataSend(configfile, self.location)
+        self.image_send = RxTx.DataSend(self.config, self.location)
         self.image_send.start()
-        self.client.publish("status", f"Camera {location} Started")
+        self.client.publish("status", f"Camera {self.location} Started")
 
     def __capture_image(self):
         if self.picam is True:
@@ -71,6 +74,7 @@ class Camera(Process, MQTTClient):
         return self.image
 
     def run(self):
+        self.__init_camera()
         import time
         count = 0
         t = time.time()
