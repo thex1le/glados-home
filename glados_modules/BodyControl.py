@@ -555,5 +555,6 @@ if __name__ == "__main__":
     body_UD.start()
     head_LR.start()
     head_UD.start()
+    led_head.startup()
     while True:
         sleep(1)
