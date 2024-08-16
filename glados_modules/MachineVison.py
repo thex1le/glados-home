@@ -72,6 +72,7 @@ class YoloDetect(Thread, MQTTClient):
         # pass image to rtsp...
         image = image_dict["raw"]
         results = self.model(image)
+        self.logger.debug(f"Yolo has processed raw image")
         annotator = Annotator(image)
         for r in results:
             annotator = Annotator(image)
@@ -80,8 +81,9 @@ class YoloDetect(Thread, MQTTClient):
                 b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
                 c = box.cls
                 annotator.box_label(b, self.model.names[int(c)])
-                self.logger.debug(f"Labeled image with, {self.model[int(c)]}")
+                self.logger.debug(f"Labeled image with, {self.model.names[int(c)]}")
         a_image = annotator.result()
+        self.logger.debug(f"Sending image to rstp server factory: {image_dict['camera']}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 

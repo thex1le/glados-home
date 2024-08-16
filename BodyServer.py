@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from configparser import ConfigParser
 import sys
 from os import path
-from threading import Thread
+from multiprocessing import Process
 
 # 3rd party
 from adafruit_servokit import ServoKit
@@ -52,7 +52,8 @@ if __name__ == "__main__":
     body_UD.start()
     head_LR.start()
     head_UD.start()
-    head_camera.start()
+    mp_camera = Process(target=head_camera.start)
+    mp_camera.start()
 
     # todo figure out how to pass images_path for the animation to pay
     glados_right_lcd.start()
