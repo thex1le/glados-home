@@ -25,34 +25,30 @@ class DataSend(Thread):
         self.socket = self.context.socket(zmq.PUSH)
         self.socket.connect(self.client_address)
         self.stop = False
-        self.data = list()
+        self.queue = Queue()
 
     def stop_thread(self):
         self.logger.debug("ZMQ Sending Thread Stop Called")
         self.stop = True
 
-    def send_data(self, data, json_send=True):
-        if json_send is True:
-            self.logger.debug("Sending JSON data")
-            self.data.append(dumps(data))
-        if json_send is False:
-            self.logger.debug("Sending PICKLE Data")
-            self.data.append(dumps(data))
+    def send_data(self, data):
+        self.logger.debug("Sending PICKLE Data")
+        self.queue.put(dumps(data))
 
     def run(self):
         msg = "Data Sending Loop Started"
-        print(msg)
         self.logger.debug(msg)
         while self.stop is False:
             try:
-                data = self.data.pop(0)
-                if type(data) is str:
-                    self.socket.send_string(data)
-                else:
-                    self.socket.send(data)
-            except IndexError:
+                data = self.queue.get()
+                self.socket.send(data)
+            except zmq.error.ZMQError as e:
+                self.logger.error(f"ZMQ Error: {e}")
+                break  # Break out of the loop if there is a ZMQ error
+            except Empty:
+                self.logger.debug("Empty Queue")
+                sleep(.1)
                 pass
-            sleep(.1)
         self.socket.close()
         self.context.term()
 
