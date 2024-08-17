@@ -1,7 +1,6 @@
 # built in
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 from time import sleep, time
-from json import loads
 # 3rd party
 import cv2
 from picamera2 import Picamera2
@@ -64,7 +63,8 @@ class Camera(Process, MQTTClient):
         self.image = None
         self.stop = False
         self.results = dict()
-        self.image_send = RxTx.DataSend(self.config, self.location)
+        self.queue = Queue()
+        self.image_send = RxTx.DataSend(self.config, self.location, mpqueue=self.queue)
         self.image_send.start()
         self.client.publish("status", f"Camera {self.location} Started")
 
@@ -89,7 +89,8 @@ class Camera(Process, MQTTClient):
             self.image = self.__capture_image()
             self.logger.debug("Sending image for processing")
             image_dict = {"camera": f"/{self.location}", "raw": self.get_image()}
-            self.image_send.send_data(image_dict)
+            #self.image_send.send_data(image_dict)
+            self.queue.put(image_dict)
             #sleep(.02)
             count += 1
             if count >= 60:

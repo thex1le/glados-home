@@ -11,7 +11,7 @@ from glados_modules import GlogConfig
 
 class DataSend(Process):
     # threaded zmq class for sending to clients
-    def __init__(self, configfile, location):
+    def __init__(self, configfile, location, mpqueue=None):
         Process.__init__(self)
         self.daemon = True
         self.__name__ = location
@@ -25,7 +25,11 @@ class DataSend(Process):
         self.socket = self.context.socket(zmq.PUSH)
         self.socket.connect(self.client_address)
         self.stop = False
-        self.queue = Queue()
+        # allow camera to pass a que object to pull from
+        if mpqueue is None:
+            self.queue = Queue()
+        else:
+            self.queue = mpqueue
 
     def stop_thread(self):
         self.logger.debug("ZMQ Sending Thread Stop Called")
