@@ -19,7 +19,7 @@ class GLaDOSServerException(Exception):
 class Camera(Process, MQTTClient):
     def __init__(self, configfile, location):
         Process.__init__(self)
-        self.daemon = True
+        #self.daemon = True
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
