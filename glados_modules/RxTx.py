@@ -1,9 +1,8 @@
 # built ins
 from pickle import dumps, loads
 from threading import Thread
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 from time import sleep
-from queue import Queue, Empty
 
 # 3rd party
 import zmq
@@ -47,10 +46,6 @@ class DataSend(Process):
             except zmq.error.ZMQError as e:
                 self.logger.error(f"ZMQ Error: {e}")
                 break  # Break out of the loop if there is a ZMQ error
-            except Empty:
-                self.logger.debug("Empty Queue")
-                sleep(.1)
-                pass
         self.socket.close()
         self.context.term()
 
