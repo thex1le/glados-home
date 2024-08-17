@@ -2,6 +2,7 @@
 from pickle import dumps, loads
 from threading import Thread
 from time import sleep
+from queue import Queue, Empty
 
 # 3rd party
 import zmq
@@ -59,43 +60,50 @@ class DataSend(Thread):
 class DataRecv(Thread):
     def __init__(self, configfile, location):
         Thread.__init__(self)
-        Thread.daemon = True
+        self.daemon = True
         self.__name__ = location
         self.logger = GlogConfig.setup_logger(self.__name__)
         self.config = configfile["DEFAULT"]
         ip = self.config["ZMQListenAddress"]
         port = self.config["ZMQSenderPort"]
         self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PULL)  # Create a PULL socket
+        self.socket = self.context.socket(zmq.PULL)
         self.client_address = f"tcp://{ip}:{port}"
-        self.socket.bind(self.client_address)  # Bind to the TCP port 5555
+        self.socket.bind(self.client_address)
         self.logger.debug(f"Data Receiver listening on {self.client_address}")
-        self.data = None
+        self.queue = Queue()  # Thread-safe queue for storing data
         self.stop = False
 
-    def get_data(self, blocking=False):
-        data = None
-        if blocking is True:
-            while self.data is None:
-                sleep(.1)
-        if self.data is not None:
-            # attempt to un pickle data
-            data = loads(self.data)
-        self.data = None
-        self.logger.debug(f"Data from zmq returned f{data}")
-        return data
+    def get_data_from_queue(self, blocking: bool = True, timeout: bool = None):
+        """
+        Pulls data from the queue. This method can be accessed by another thread.
+        :param blocking: If True, block until an item is available. Otherwise, return immediately.
+        :param timeout: How long to block before raising an Empty exception if no item is available.
+        :return: The data item, or None if not blocking and the queue is empty.
+        """
+        try:
+            data = self.queue.get(block=blocking, timeout=timeout)
+            return loads(data)  # Unpickle/deserialize the data
+        except Empty:
+            self.logger.debug("Queue is empty, no data to return.")
+            return None
 
-    def stop_thread(self):
+    def stop_thread(self) -> None:
+        """
+        Nicely Stop the thread
+        """
         self.logger.debug("ZMQ Receiving Thread Stop Called")
         self.stop = True
 
     def run(self):
-        while self.stop is False:
-            # TODO check if there is a timeout here or it will never close on exit?
-            self.data = self.socket.recv()  # Receive the data as a JSON string
-            msg = "Got data from ZMQ Listener"
-            print(msg)
-            self.logger.debug(msg)
+        while not self.stop:
+            try:
+                data = self.socket.recv()  # Receive data from the socket
+                self.queue.put(data)  # Put the data into the queue
+                msg = "Got data from ZMQ Listener and pushed to queue"
+                self.logger.debug(msg)
+            except zmq.error.ZMQError as e:
+                self.logger.error(f"ZMQ Error: {e}")
+                break  # Break out of the loop if there is a ZMQ error
         self.socket.close()
         self.context.term()
-

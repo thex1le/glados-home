@@ -102,7 +102,7 @@ class YoloDetect(Thread, MQTTClient):
     def run(self):
         self.client.publish("status", "Machine Vision Started")
         while True:
-            image_dict = self.image_get.get_data(True)
+            image_dict = self.image_get.get_data_from_queue(True)
             msg = f"Got image from sender {image_dict.get('camera', 'None')}"
             self.logger.debug(msg)
             try:
