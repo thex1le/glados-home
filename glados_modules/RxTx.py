@@ -41,7 +41,7 @@ class DataSend(Thread):
         while self.stop is False:
             try:
                 data = self.queue.get()
-                print(f"sending data {self.queue.qsize()}")
+                print(f"Sending Queue backlog is {self.queue.qsize()}")
                 self.socket.send(data)
             except zmq.error.ZMQError as e:
                 self.logger.error(f"ZMQ Error: {e}")
@@ -97,7 +97,7 @@ class DataRecv(Thread):
             try:
                 data = self.socket.recv()  # Receive data from the socket
                 self.queue.put(data)  # Put the data into the queue
-                print(f"sending data {self.queue.qsize()}")
+                print(f"Receive Queue Backlog is {self.queue.qsize()}")
                 msg = "Got data from ZMQ Listener and pushed to queue"
                 self.logger.debug(msg)
             except zmq.error.ZMQError as e:
