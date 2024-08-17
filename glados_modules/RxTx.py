@@ -36,6 +36,7 @@ class DataSend(Process):
         self.stop = True
 
     def send_data(self, data):
+        # TODO this may go away depending on how queue works
         self.logger.debug("Sending PICKLE Data")
         self.queue.put(dumps(data))
 
@@ -46,7 +47,7 @@ class DataSend(Process):
             try:
                 data = self.queue.get()
                 print(f"Sending Queue backlog is {self.queue.qsize()}")
-                self.socket.send(data)
+                self.socket.send(dumps(data))
             except zmq.error.ZMQError as e:
                 self.logger.error(f"ZMQ Error: {e}")
                 break  # Break out of the loop if there is a ZMQ error
