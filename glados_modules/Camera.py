@@ -89,12 +89,13 @@ class Camera(Process, MQTTClient):
             self.image = self.__capture_image()
             self.logger.debug("Sending image for processing")
             image_dict = {"camera": f"/{self.location}", "raw": self.get_image()}
-            self.image_send.send_data(image_dict, json_send=False)
+            self.image_send.send_data(image_dict)
             #sleep(.02)
             count += 1
             if count >= 60:
                 print(time.time() - t)
-
+                t = time.time()
+                count = 0
 
 if __name__ == "__main__":
     # imports only for testing
