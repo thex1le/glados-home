@@ -1,6 +1,7 @@
 # built ins
 from pickle import dumps, loads
 from threading import Thread
+from multiprocessing import Process
 from time import sleep
 from queue import Queue, Empty
 
@@ -9,11 +10,11 @@ import zmq
 from glados_modules import GlogConfig
 
 
-class DataSend(Thread):
+class DataSend(Process):
     # threaded zmq class for sending to clients
     def __init__(self, configfile, location):
-        Thread.__init__(self)
-        Thread.daemon = True
+        Process.__init__(self)
+        self.daemon = True
         self.__name__ = location
         self.logger = GlogConfig.setup_logger(name=self.__name__)
         self.configfile = configfile["DEFAULT"]
