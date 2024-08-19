@@ -18,7 +18,6 @@ class GLaDOSServerException(Exception):
 class Camera(Process, MQTTClient):
     def __init__(self, configfile, location):
         Process.__init__(self)
-        #self.daemon = True
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
@@ -27,11 +26,11 @@ class Camera(Process, MQTTClient):
         port = self.config['MQTT']['mqtt_port']
         MQTTClient.__init__(self, broker, port)
         resolution = f"{self.location}_Resolution"
+        self.fps = f"{self.location}_FPS"
         picam = f"{self.location}_Picam"
         cam_res = self.config['CAMERAS'][resolution].split(',')
         self.cam_res_x = int(cam_res[0])
         self.cam_res_y = int(cam_res[1])
-        self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
         self.picam = bool(self.config['CAMERAS'][picam].lower())
         self.camera_num = int(self.config["CAMERAS"][self.location])
         self.image = None
@@ -42,13 +41,15 @@ class Camera(Process, MQTTClient):
             self.logger.debug(f"Using PiCam for {self.location}")
             # pi cam
             self.cap = Picamera2(self.camera_num)
-            config = self.cap.create_video_configuration(
+            self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
+            self.logger.debug(f" Camera FPS set to {self.fps} and RBG888 and YUV420 MOdes")
+            self.config = self.cap.create_video_configuration(
                 main={"format": "RGB888", "size": (640, 480)},
                 lores={"format": "YUV420", "size": (640, 480)},
                 display="lores",
-                controls={"FrameRate": 60}
+                controls={"FrameRate": self.fps}
             )
-            self.cap.configure(config)
+            self.cap.configure(self.config)
             self.cap.start()
             self.__capture_image = self.__capture_image_pi
         else:
@@ -68,6 +69,19 @@ class Camera(Process, MQTTClient):
         self.image_send.start()
         self.client.publish("status", f"Camera {self.location} Started")
 
+    def get_camera_config(self):
+        """
+        Return the camera config
+        """
+        return self.config
+
+    def set_camera_conf(self, config) -> None:
+        """
+        Set config, no check is done to make sure it's correct
+        """
+        #TODO FIGURE OUT HOW TO SIGNAL RTSP SERVER TO UPDATE THIS
+        self.cap.configure(config)
+
     def __capture_image_pi(self):
         return self.cap.capture_buffer("lores")
 
@@ -76,27 +90,23 @@ class Camera(Process, MQTTClient):
         return frame
 
     def get_image(self, blocking=True):
+        """
+        Allow external call of the object to return an image
+        """
         while blocking is True and self.image is None:
             sleep(.02)
         return self.image
 
     def run(self):
+        # sub init of the camera object after the multiprocess memory copy
         self.__init_camera()
-        import time
-        count = 0
-        t = time.time()
         while self.stop is False:
             self.image = self.__capture_image()
             self.logger.debug("Sending image for processing")
             image_dict = {"camera": f"/{self.location}", "raw": self.get_image()}
-            #self.image_send.send_data(image_dict)
+            # load the shared TX object sending queue,
             self.queue.put(image_dict)
-            #sleep(.02)
-            count += 1
-            if count >= 60:
-                print(time.time() - t)
-                t = time.time()
-                count = 0
+
 
 if __name__ == "__main__":
     # imports only for testing
