@@ -29,6 +29,7 @@ class GladosLCD(Thread, MQTTClient):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         Thread.__init__(self)
         Thread.daemon = True
+        self.location = location
         self.__name__ =  f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker, port)
@@ -62,9 +63,7 @@ class GladosLCD(Thread, MQTTClient):
                 self.set_breath_options(j_msg["options"])
             elif j_msg.get("cmd", "") == "get_breath":
                 # mark the location of response
-                rsp = self.get_breath_options()
-                rsp["location"] = self.location
-                self.client.publish(rsp, dumps(self.get_breath_options()))
+                self.client.publish("body/LCD", dumps(self.get_breath_options()))
 
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
@@ -73,7 +72,7 @@ class GladosLCD(Thread, MQTTClient):
 
     def get_breath_options(self) -> dict:
         return {'fast': self.breath_fast, 'rainbow': self.rainbow,
-                'animation': self.breathe_animation}
+                'animation': self.breathe_animation, "location": self.location}
 
     def draw_image(self, times, color: tuple = (255, 0, 0)):
         c = 0
