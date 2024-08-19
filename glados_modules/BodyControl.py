@@ -151,14 +151,22 @@ class GladosLCD(Thread, MQTTClient):
                 new_canvas = new_canvas.rotate(180)
             self.disp.image(new_canvas)
 
-    def aperture_animation(self, ftype='.bmp'):
-        # play an animation of the aperture science logo
-        frame_filenames = sorted(glob(path.join(self.animation_path, "*{}".format(ftype))))
+    def aperture_animation(self, f_type: str = '.bmp') -> None:
+        """
+        Play a 30-second animation of the aperture logo on an orange background
+        """
+        apath = path.join(self.animation_path, "*{}".format(f_type))
+        self.logger.debug(f"Loading animations from {apath}")
+        frame_filenames = sorted(glob(apath))
         for filename in frame_filenames:
             self.__display_frame(filename)
             sleep(1/29.97)
 
-    def breathe(self):
+    def breathe(self) -> None:
+        """
+        A looping animation for the LCD screens where the circle grid pulses up and down like breathing
+        Can be set to fast or slow. Circle colors are changed else ware, blocking call
+        """
         self.breathe_loop = True
         up = True
         self.counter = 1
