@@ -72,7 +72,7 @@ class GladosSTT(Thread):
             text = None
         return text
 
-    def parse_command(self, user_prompt):
+    def parse_command(self, user_prompt: str) -> dict:
         glados_pattern = r'(hey glados){e<=3}'
         glados_match = re.search(glados_pattern, user_prompt, re.IGNORECASE | re.BESTMATCH)
         if glados_match:
@@ -446,7 +446,7 @@ class GladosLocal(Thread):
             level = re.findall(r'\b\d+\b', user_prompt)
             self.__change_volume(int(level[0]))
             self.current_vol = level[0]
-            msg = "I have set the volume to {} percent".format(level[0])
+            msg = f"I have set the volume to {level[0]} percent"
             self.logger.debug(msg)
             self.speak(msg)
         return check
