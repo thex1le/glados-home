@@ -36,13 +36,9 @@ class GladosLCD(Thread, MQTTClient):
         self.animation_path: str = path.join(path.abspath(animation_path), "aperture_logo")
         self.cmd_topic: str = "body/lcd"
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
-        cs_pin = DigitalInOut(cs)
-        dc_pin = DigitalInOut(dc)
-        reset_pin = DigitalInOut(rst)
-        baud_rate = 24000000
-        spi = busio.SPI(clock=sck, MOSI=mosi)
-        self.disp = st7789.ST7789(spi, rotation=0, width=240, height=198, x_offset=0,
-                                  y_offset=122, cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=baud_rate)
+        self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
+                                  y_offset=122, cs=DigitalInOut(cs), dc=DigitalInOut(dc),
+                                  rst=DigitalInOut(rst), baudrate=24000000)
         self.dot_on_positions: tuple = ((1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4),
                                         (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (4, 4),
                                         (5, 1), (5, 2), (5, 3), (5, 4), (6, 1), (6, 2), (6, 3), (6, 4),
