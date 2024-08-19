@@ -32,9 +32,15 @@ class YoloDetect(Thread, MQTTClient):
         self.cmd_topic: str = "vision/camera_response"
         cam_conf = self.configfile['CAMERAS']
         self.cam_configs = {
-            f"/{cam_conf['Camera_Head_Factory']}": tuple(cam_conf["Camera_Head_Resolution"].split(',')),
-            f"/{cam_conf['Camera_Left_Factory']}": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
-            f"/{cam_conf['Camera_Right_Factory']}": tuple(cam_conf["Camera_Right_Resolution"].split(','))
+            f"/{cam_conf['Camera_Head_Factory']}": {
+                "resolution": tuple(cam_conf["Camera_Head_Resolution"].split(',')),
+                "fps": cam_conf["Camera_Head_FPS"]},
+            f"/{cam_conf['Camera_Left_Factory']}": {
+                "resolution": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
+                "fps": cam_conf["Camera_Left_FPS"]},
+            f"/{cam_conf['Camera_Right_Factory']}": {
+                "resolution": tuple(cam_conf["Camera_Right_Resolution"].split(',')),
+                "fps": cam_conf["Camera_Right_FPS"]}
         }
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
@@ -87,13 +93,12 @@ class YoloDetect(Thread, MQTTClient):
                 annotator.box_label(b, self.model.names[int(c)])
                 self.logger.debug(f"Labeled image with, {self.model.names[int(c)]}")
         a_image = annotator.result()
-        self.logger.debug(f"Sending image to rstp server factory: {image_dict['camera']}")
+        self.logger.debug(f"Sending image to RTSP server factory: {image_dict['camera']}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 
     def process_image(self, image, debug_file_name='raw_rx.jpg'):
         name = f"{debug_file_name}"
-        #cv2.imwrite(name, image)
         self.logger.debug(f"Wrote out sample debug image to {name}")
         self.sight = self.__yolo_process_image(image)
         self.logger.debug(f"Sending back process dict of seen data for camera {image['camera']}")
@@ -103,11 +108,9 @@ class YoloDetect(Thread, MQTTClient):
         self.client.publish("status", "Machine Vision Started")
         while True:
             image_dict = self.image_get.get_data_from_queue(True)
-            msg = f"Got image from sender {image_dict.get('camera', 'None')}"
-            self.logger.debug(msg)
+            self.logger.debug(f"Got image from sender {image_dict.get('camera', 'None')}")
             try:
                 self.process_image(image_dict)
             except Exception as e:
-                msg = f"Image Error: {e}"
-                self.logger.error(msg)
+                self.logger.error(f"Image Error: {e}")
 
