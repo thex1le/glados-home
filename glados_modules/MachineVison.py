@@ -40,8 +40,7 @@ class YoloDetect(Thread, MQTTClient):
                 "fps": cam_conf["Camera_Left_FPS"]},
             f"/{cam_conf['Camera_Right_Factory']}": {
                 "resolution": tuple(cam_conf["Camera_Right_Resolution"].split(',')),
-                "fps": cam_conf["Camera_Right_FPS"]}
-        }
+                "fps": cam_conf["Camera_Right_FPS"]}}
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
@@ -80,7 +79,6 @@ class YoloDetect(Thread, MQTTClient):
         width, height = self.cam_configs[image_dict["camera"]]
         yuv420_data = raw.reshape((int(height) * 3) // 2, int(width))
         image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
-        #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
         results = self.model(image)
         self.logger.debug(f"Yolo has processed raw image")
         annotator = Annotator(image)
@@ -97,9 +95,7 @@ class YoloDetect(Thread, MQTTClient):
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 
-    def process_image(self, image, debug_file_name='raw_rx.jpg'):
-        name = f"{debug_file_name}"
-        self.logger.debug(f"Wrote out sample debug image to {name}")
+    def process_image(self, image):
         self.sight = self.__yolo_process_image(image)
         self.logger.debug(f"Sending back process dict of seen data for camera {image['camera']}")
         self.client.publish(self.cmd_topic, json_dumps({image['camera']: self.__translate_results(self.sight)}))
