@@ -208,8 +208,9 @@ class GladosLCD(Thread, MQTTClient):
 
 
 class Gservo(Thread, MQTTClient):
-    def __init__(self, location: str, skit: ServoKit, axis: str, servo_range: Tuple[int, int] = (),
-                 max_angle: int = 90, broker: str = 'localhost', port: int = 1883) -> None:
+    def __init__(self, location: str, servo_num: int, axis: str, servo_range: Tuple[int, int] = (),
+                 max_angle: int = 90, broker: str = 'localhost', port: int = 1883,
+                 pulse_max_min: Tuple = (0, 0)) -> None:
         Thread.__init__(self)
         Thread.daemon = True
         self.__name__ = f"{self.__class__.__name__}_{location}"
@@ -220,8 +221,12 @@ class Gservo(Thread, MQTTClient):
         self.intensity_topic: str = "intensity"
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
+
         self.min_angle: int = 0
-        self.skit: ServoKit = skit
+        sk = ServoKit(channels=16)
+        self.skit = sk[servo_num]
+        if pulse_max_min != (0, 0):
+            self.skit.set_pulse_width_range(min_pulse=pulse_max_min[0], max_pulse=pulse_max_min[1])
         self.speed: int = 5
         self.max_angle: int = max_angle
         self.middle_angle: int = int(self.max_angle / 2)
@@ -750,10 +755,10 @@ if __name__ == "__main__":
     ip = '192.168.86.52'
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=ip)
-    body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180, broker=ip)
-    body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=180, broker=ip)
-    head_UD = Gservo(location='head_left_right', skit=kit.servo[2], axis='y', max_angle=180, broker=ip)
-    head_LR = Gservo(location='head_up_down', skit=kit.servo[3], axis='x', max_angle=180, broker=ip)
+    body_LR = Gservo(location='body_left_right', servo_num=0, axis='x', max_angle=180, broker=ip)
+    body_UD = Gservo(location='body_up_down', servo_num=1, axis='y', max_angle=180, broker=ip)
+    head_UD = Gservo(location='head_left_right', servo_num=2, axis='y', max_angle=180, broker=ip)
+    head_LR = Gservo(location='head_up_down', servo_num=3, axis='x', max_angle=180, broker=ip)
     body_LR.start()
     body_UD.start()
     head_LR.start()
