@@ -62,9 +62,14 @@ class GladosLCD(Thread, MQTTClient):
             if j_msg.get("cmd", "") == "set_breath":
                 # command looks like nested {"cmd", "set_breath", options: { COMMAND DICT}}
                 self.set_breath_options(j_msg["options"])
+                self.client.publish("status", dumps({self.location: self.get_breath_options()}))
             elif j_msg.get("cmd", "") == "get_breath":
                 # mark the location of response
-                self.client.publish("body/LCD", dumps(self.get_breath_options()))
+                self.client.publish("body/LCD", dumps({self.location: self.get_breath_options()}))
+            elif j_msg.get("cmd", "") == "startup":
+                # trigger startup animation
+                self.__startup()
+                self.client.publish("status", dumps({self.location: {"cmd": "startup",  "status": "complete"}}))
 
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
@@ -198,9 +203,13 @@ class GladosLCD(Thread, MQTTClient):
                 self.counter = 12
                 sleep(.2)
 
-    def run(self):
+    def __startup(self):
+        # startup animation
         self.aperture_animation()
         self.breathe()
+
+    def run(self):
+        self.__startup()
 
     def stop(self):
         # end all loops so you can join thread
@@ -747,8 +756,6 @@ class MotionTrack(Thread, MQTTClient):
                 self.seen_data = self.eyes.get_results()
             self.move_servos()
             sleep(.2)
-
-
 
 
 if __name__ == "__main__":
