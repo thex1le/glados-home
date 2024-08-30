@@ -25,8 +25,8 @@ from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 
 
 class GladosLCD(Thread, MQTTClient):
-    def __init__(self, broker, location, port, animation_path, cs=board.CE0, dc=board.D25, rst=board.D24,
-                 sck=board.SCK, mosi=board.MOSI, flip=False):
+    def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
+                 sck=board.SCK, mosi=board.MOSI, flip=False, port: int = 1883):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         Thread.__init__(self)
         Thread.daemon = True
@@ -762,10 +762,12 @@ if __name__ == "__main__":
     ip = '192.168.86.52'
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=ip)
+    right_lcd = GladosLCD(broker=ip, location="right_lcd")
     body_LR = Gservo(location='body_left_right', servo_num=0, axis='x', max_angle=180, broker=ip)
     body_UD = Gservo(location='body_up_down', servo_num=1, axis='y', max_angle=180, broker=ip)
     head_UD = Gservo(location='head_left_right', servo_num=2, axis='y', max_angle=180, broker=ip)
     head_LR = Gservo(location='head_up_down', servo_num=3, axis='x', max_angle=180, broker=ip)
+    right_lcd.start()
     body_LR.start()
     body_UD.start()
     head_LR.start()
