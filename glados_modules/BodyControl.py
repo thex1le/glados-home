@@ -765,6 +765,8 @@ if __name__ == "__main__":
     right_lcd = GladosLCD(broker=ip, location="right_lcd")
     body_LR = Gservo(location='body_left_right', servo_num=0, axis='x', max_angle=180, broker=ip)
     body_UD = Gservo(location='body_up_down', servo_num=1, axis='y', max_angle=180, broker=ip)
+    # head limit 173 up, 6 down
+    #kit.servo[0].set_pulse_width_range(610, 2665) # MG90D, 92B 605, 2550
     head_UD = Gservo(location='head_left_right', servo_num=2, axis='y', max_angle=180, broker=ip)
     head_LR = Gservo(location='head_up_down', servo_num=3, axis='x', max_angle=180, broker=ip)
     right_lcd.start()
