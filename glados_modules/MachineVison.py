@@ -4,7 +4,7 @@ from threading import Thread
 
 #3rd party
 import cv2
-from ultralytics import YOLO
+from ultralytics import YOLOv10
 from ultralytics.utils.plotting import Annotator
 
 # glados imports
@@ -45,7 +45,7 @@ class YoloDetect(Thread, MQTTClient):
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
         self.logger.debug(f"YOLO model started with {model}")
-        self.model = YOLO(model)
+        self.model = YOLOv10(model)
         self.sight = None
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx" )
         self.image_get.start()
@@ -79,7 +79,8 @@ class YoloDetect(Thread, MQTTClient):
         width, height = self.cam_configs[image_dict["camera"]]
         yuv420_data = raw.reshape((int(height) * 3) // 2, int(width))
         image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
-        results = self.model(image)
+        #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
+        results = self.model(image, device="cuda")
         self.logger.debug(f"Yolo has processed raw image")
         annotator = Annotator(image)
         for r in results:
