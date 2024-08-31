@@ -143,11 +143,11 @@ class GladosLCD(Thread, MQTTClient):
         image = Image.open(filename)
         # Scale the image to the smaller screen dimension
         image_ratio = image.width / image.height
-        image = image.resize((160, int((160 / image_ratio))), Image.BICUBIC)
-        if image.height < 80:
+        image = image.resize((240, int((240 / image_ratio))), Image.BICUBIC)
+        if image.height < 198:
             # create new canvas (color format, size, background color) default is aperture orange
-            new_canvas = Image.new("RGB", (160, 80), "#ff9a00")
-            vertical_offset = (80 - image.height) // 2
+            new_canvas = Image.new("RGB", (240, 198), "#ff9a00")
+            vertical_offset = (198 - image.height) // 2
             new_canvas.paste(image, (0, vertical_offset))
             if self.flip is True:
                 new_canvas = new_canvas.rotate(180)
