@@ -130,7 +130,8 @@ class GladosLCD(Thread, MQTTClient):
                 center_x = start_x + radius + x * spacing_x
                 center_y = start_y + radius + y * spacing_y
                 # Determine the color of the circle based on its position in on_positions list
-                if (x + 1, y + 1) in self.dot_on_positions:
+                # if (x + 1, y + 1) in self.dot_on_positions:
+                if (x , y) in self.dot_on_positions and x <= self.counter:
                     current_color = cd
                 else:
                     current_color = black_color
@@ -535,7 +536,7 @@ class LedHead(MQTTClient):
             self.pwm_led.duty_cycle = 65535
             self.intensity = (0.9, 0.9)
         self.pixels.brightness = self.intensity[0]
-        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "RGB", self.intensity))
+        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "RB", self.intensity))
         eye_led_thread.start()
         eye_led_thread.join()
 
