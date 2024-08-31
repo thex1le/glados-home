@@ -471,14 +471,15 @@ class LedHead(MQTTClient):
         self.__name__ = "Head_LED_Controller"
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.logger = setup_logger(self.__name__)
-        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
+        #self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
+        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
         self.pwm_led = self.hat.channels[4]
         self.hat.frequency = 60
         self.pwm_led.duty_cycle = 250
-        self.intensity: Tuple[float, float] = (.1, .1)
+        self.intensity: Tuple[float, float] = (.1, .5)
         self.cmd_topic: str = "body/led"
         self.intensity_topic: str = "intensity"
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
@@ -486,7 +487,7 @@ class LedHead(MQTTClient):
         self.location: str = "eye_led"
         self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco,
                                                 "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
-        self.yellow_eye: Tuple[int, int, int] = (246, 216, 121)
+        self.yellow_eye: Tuple[int, int, int] = (255, 255, 0)
         self.yellow_eye = self.swap(self.yellow_eye)
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
