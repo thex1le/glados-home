@@ -9,14 +9,13 @@ from glados_modules.GlogConfig import setup_logger
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
-    def __init__(self, cam_x, cam_y, **properties):
+    def __init__(self, cam_x, cam_y, fps=30, **properties):
         super(RtspSystem, self).__init__(**properties)
         self.cam_x = int(cam_x)
         self.cam_y = int(cam_y)
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
-        fps = 59
         self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
@@ -65,8 +64,9 @@ class RTSPServer(GstRtspServer.RTSPServer):
 
     def _initialize_factories(self, cam_configs):
         mount_points = self.get_mount_points()
-        for factory_path, (cam_x, cam_y) in cam_configs.items():
-            rtsp_system = RtspSystem(cam_x, cam_y)
+        for factory_path in cam_configs.keys():
+            (cam_x, cam_y) = cam_configs[factory_path]["resolution"]
+            rtsp_system = RtspSystem(cam_x, cam_y, cam_configs[factory_path]["fps"])
             rtsp_system.set_shared(True)
             mount_points.add_factory(factory_path, rtsp_system)
             rtsp_system.start()
@@ -88,9 +88,9 @@ class RTSPServer(GstRtspServer.RTSPServer):
 # Example usage:
 if __name__ == "__main__":
     test_cam_configs = {
-        "/camera1": (640, 480),
-        "/camera2": (1280, 720),
-        "/camera3": (1920, 1080)
+        "/camera1": {"resolution": (640, 480), "fps": 30},
+        "/camera2": {"resolution": (1280, 720), "fps": 30},
+        "/camera3": {"resolution": (1920, 1080), "fps": 30}
     }
     server = RTSPServer(test_cam_configs)
     # Simulate sending data to cameras

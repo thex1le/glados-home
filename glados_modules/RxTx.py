@@ -1,19 +1,19 @@
 # built ins
 from pickle import dumps, loads
 from threading import Thread
+from multiprocessing import Process, Queue
 from time import sleep
-from queue import Queue, Empty
 
 # 3rd party
 import zmq
 from glados_modules import GlogConfig
 
 
-class DataSend(Thread):
+class DataSend(Process):
     # threaded zmq class for sending to clients
-    def __init__(self, configfile, location):
-        Thread.__init__(self)
-        Thread.daemon = True
+    def __init__(self, configfile, location, mpqueue=None):
+        Process.__init__(self)
+        self.daemon = True
         self.__name__ = location
         self.logger = GlogConfig.setup_logger(name=self.__name__)
         self.configfile = configfile["DEFAULT"]
@@ -25,13 +25,18 @@ class DataSend(Thread):
         self.socket = self.context.socket(zmq.PUSH)
         self.socket.connect(self.client_address)
         self.stop = False
-        self.queue = Queue()
+        # allow camera to pass a que object to pull from
+        if mpqueue is None:
+            self.queue = Queue()
+        else:
+            self.queue = mpqueue
 
     def stop_thread(self):
         self.logger.debug("ZMQ Sending Thread Stop Called")
         self.stop = True
 
     def send_data(self, data):
+        # TODO this may go away depending on how queue works
         self.logger.debug("Sending PICKLE Data")
         self.queue.put(dumps(data))
 
@@ -42,14 +47,10 @@ class DataSend(Thread):
             try:
                 data = self.queue.get()
                 print(f"Sending Queue backlog is {self.queue.qsize()}")
-                self.socket.send(data)
+                self.socket.send(dumps(data))
             except zmq.error.ZMQError as e:
                 self.logger.error(f"ZMQ Error: {e}")
                 break  # Break out of the loop if there is a ZMQ error
-            except Empty:
-                self.logger.debug("Empty Queue")
-                sleep(.1)
-                pass
         self.socket.close()
         self.context.term()
 

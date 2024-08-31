@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from configparser import ConfigParser
 import sys
 from os import path
+from collections import namedtuple
 
 # 3rd party
 from adafruit_servokit import ServoKit
@@ -30,30 +31,38 @@ if __name__ == "__main__":
     else:
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
 
-    mqtt_ip = config_p["MQTT"]["mqtt_server_ip"]
-    mqtt_port = int(config_p["MQTT"]["mqtt_port"])
-    animation_path = config_p["DEFAULT"]["animation_root"]
+    animation_path = path.abspath(config_p["DEFAULT"]["aperture_animation"])
     head_camera_location = config_p["CAMERAS"]["Camera_Head_Factory"]
+    max_min_tuple = namedtuple("max_min", ['max', 'min'])
+    Mqtt_tuple = namedtuple("service_address", ["ip", "port"])
+    mqtt_connect = Mqtt_tuple(config_p["MQTT"]["mqtt_server_ip"], int(config_p["MQTT"]["mqtt_port"]))
+    pulse_90 = config_p["SERVOS"]["mg90d_pulse"].split(',')
+    pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
+    default = config_p["SERVOS"]["default_max_min"].split(',')
+    head_min_max = config_p["SERVOS"]["head_min_max"].split(',')
+    mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
+    mg92b_pulse = max_min_tuple(int(pulse_92[0]), int(pulse_92[1]))
+    default_angle = max_min_tuple(int(default[0]), int(default[1]))
+    head_angle = max_min_tuple(int(head_min_max[0]), int(head_min_max[1]))
     kit = ServoKit(channels=16)
-    led_head = LedHead(broker=mqtt_ip, port=mqtt_port)
-    body_LR = Gservo(location='body_left_right', skit=kit.servo[0], axis='x', max_angle=180,
-                     broker=mqtt_ip, port=mqtt_port)
-    body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=180,
-                     broker=mqtt_ip, port=mqtt_port)
-    head_UD = Gservo(location='head_left_right', skit=kit.servo[2], axis='y', max_angle=180,
-                     broker=mqtt_ip, port=mqtt_port)
-    head_LR = Gservo(location='head_up_down', skit=kit.servo[3], axis='x', max_angle=180,
-                     broker=mqtt_ip, port=mqtt_port)
-    led_shoulders = LedShoulders(broker=mqtt_ip, port=mqtt_port)
-    glados_right_lcd = GladosLCD(broker=mqtt_ip, port=mqtt_port, location="right_lcd", animation_path=animation_path)
+    led_head = LedHead(broker=mqtt_connect)
+    body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
+                     broker=mqtt_connect)
+    body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', servo_range=default_angle,
+                     broker=mqtt_connect, pulse_max_min=mg92b_pulse)
+    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=default_angle,
+                     broker=mqtt_connect, pulse_max_min=mg92b_pulse)
+    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=head_angle,
+                     broker=mqtt_connect, pulse_max_min=mg92b_pulse)
+    led_shoulders = LedShoulders(broker=mqtt_connect)
+    glados_right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd", animation_path=animation_path)
+    glados_right_lcd.start()
+    led_head.startup()
     head_camera = Camera(configfile=config_p, location=head_camera_location)
     body_LR.start()
     body_UD.start()
     head_LR.start()
     head_UD.start()
     head_camera.start()
-
-    # todo figure out how to pass images_path for the animation to pay
-    glados_right_lcd.start()
     while True:
         sleep(1)
