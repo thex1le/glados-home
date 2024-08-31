@@ -27,14 +27,14 @@ from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 
 class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
-                 sck=board.SCK, mosi=board.MOSI, flip=False, port: int = 1883):
+                 sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         Thread.__init__(self)
         Thread.daemon = True
         self.location = location
-        self.__name__ =  f"{self.__class__.__name__}_{location}"
+        self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
-        MQTTClient.__init__(self, broker, port)
+        MQTTClient.__init__(self, broker.ip, broker.port)
         self.location: str = location
         self.animation_path: str = path.join(path.abspath(animation_path), "aperture_logo")
         self.cmd_topic: str = "body/lcd"
@@ -218,14 +218,13 @@ class GladosLCD(Thread, MQTTClient):
 
 
 class Gservo(Thread, MQTTClient):
-    def __init__(self, location: str, servo: ServoKit.servo, axis: str, servo_range: Tuple[int, int] = (),
-                 max_angle: int = 90, broker: str = 'localhost', port: int = 1883,
-                 pulse_max_min: Tuple = (0, 0)) -> None:
+    def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker, servo_range,
+                 pulse_max_min=None) -> None:
         Thread.__init__(self)
         Thread.daemon = True
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
-        MQTTClient.__init__(self, broker, port)
+        MQTTClient.__init__(self, broker.ip, broker.port)
         self.location: str = location
         self.cmd_topic: str = "body/servo"
         self.intensity_topic: str = "intensity"
@@ -234,11 +233,11 @@ class Gservo(Thread, MQTTClient):
 
         self.min_angle: int = 0
         self.servo = servo
-        if pulse_max_min != (0, 0):
-            self.servo.set_pulse_width_range(min_pulse=pulse_max_min[0], max_pulse=pulse_max_min[1])
+        if pulse_max_min is not None:
+            self.servo.set_pulse_width_range(min_pulse=pulse_max_min.min, max_pulse=pulse_max_min.max)
         self.speed: int = 5
-        self.max_angle: int = max_angle
-        self.middle_angle: int = int(self.max_angle / 2)
+        self.servo_range = servo_range
+        self.middle_angle: int = int((servo_range.max - servo_range.min) / 2)
         self.angle: int = self.middle_angle
         self.current_angle: int = self.angle
         self.first_boot: bool = True
@@ -247,10 +246,6 @@ class Gservo(Thread, MQTTClient):
         self.moving: bool = False
         self.axis: str = axis.lower()
         self.stop_bool: bool = False
-        if servo_range == ():
-            self.allowed_servo_range: Dict[str, int] = {"min_travel": 0, "max_travel": max_angle}
-        else:
-            self.allowed_servo_range: Dict[str, int] = {"min_travel": servo_range[0], "max_travel": servo_range[1]}
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
@@ -264,11 +259,8 @@ class Gservo(Thread, MQTTClient):
         # TODO figure out update commands
         pass
 
-    def get_max_angle(self) -> int:
-        return self.max_angle
-
-    def get_middle_angle(self) -> int:
-        return self.middle_angle
+    def get_angles(self) -> dict:
+        return {"max": self.servo_range.max, "min": self.servo_range.min, "middle": self.middle_angle}
 
     def set_speed(self, speed: int) -> None:
         if speed >= 10:
@@ -279,8 +271,8 @@ class Gservo(Thread, MQTTClient):
         self.logger.debug(f"Speed set to {self.speed}")
 
     def set_angle(self, angle: int) -> None:
-        max_angle = self.allowed_servo_range["max_travel"]
-        min_angle = self.allowed_servo_range["min_travel"]
+        max_angle = self.servo_range.max
+        min_angle = self.servo_range.min
         if angle >= max_angle:
             self.angle = max_angle
             self.logger.debug(f"{angle} is above {max_angle}, setting to {max_angle}")
@@ -350,10 +342,10 @@ class Gservo(Thread, MQTTClient):
 
 
 class LedShoulders(MQTTClient):
-    def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
+    def __init__(self, broker) -> None:
         self.__name__ = "LED_Shoulder_Controller"
         self.logger = setup_logger(self.__name__)
-        MQTTClient.__init__(self, broker, port)
+        MQTTClient.__init__(self, broker.ip, broker.port)
         led_num: int = 64
         self.pixels = neopixel.NeoPixel(board.D12, led_num, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.lh = LedHelper
@@ -475,9 +467,9 @@ class DumbLEDController(Thread):
 
 
 class LedHead(MQTTClient):
-    def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
+    def __init__(self, broker) -> None:
         self.__name__ = "Head_LED_Controller"
-        MQTTClient.__init__(self, broker, port)
+        MQTTClient.__init__(self, broker.ip, broker.port)
         self.logger = setup_logger(self.__name__)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
@@ -563,6 +555,7 @@ class LedHead(MQTTClient):
 
 class MotionTrack(Thread, MQTTClient):
     # class for motion tracking on a target
+    # TODO figure out if we want this here, or in teh Gbody class in the body server?
     def __init__(self, config_file):
         Thread.__init__(self)
         Thread.daemon = True
@@ -760,17 +753,25 @@ class MotionTrack(Thread, MQTTClient):
 
 if __name__ == "__main__":
     ip = '192.168.86.52'
-    angle = namedtuple("angle", ['max', 'min'])
-    pulse = namedtuple("pulse", ['max', 'min'])
+    Angle_tuple = namedtuple("angle", ['max', 'min'])
+    Pulse_tuple = namedtuple("pulse", ['max', 'min'])
+    Mqtt_tuple = namedtuple("mqtt", ["ip", "port"])
+    mqtt_connect = Mqtt_tuple(ip, 1883)
+    mg90d_pulse = Pulse_tuple(2665, 610)
+    mg92b_pulse = Pulse_tuple(2550, 605)
+    head_angle = Angle_tuple(173, 6)
+    default_angle = Angle_tuple(180, 0)
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=ip)
-    right_lcd = GladosLCD(broker=ip, location="right_lcd")
-    body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', max_angle=180, broker=ip)
-    body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', max_angle=180, broker=ip)
-    # head limit 173 up, 6 down
-    #kit.servo[0].set_pulse_width_range(610, 2665) # MG90D, 92B 605, 2550
-    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', max_angle=180, broker=ip)
-    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', max_angle=180, broker=ip)
+    right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd")
+    body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
+                     broker=mqtt_connect)
+    body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y',broker=mqtt_connect,
+                     pulse_max_min=mg92b_pulse, servo_range=default_angle)
+    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=default_angle,
+                     broker=mqtt_connect)
+    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=default_angle,
+                     broker=mqtt_connect)
     right_lcd.start()
     body_LR.start()
     body_UD.start()
