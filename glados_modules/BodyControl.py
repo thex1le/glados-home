@@ -6,6 +6,7 @@ from json import loads, dumps
 from typing import Dict, Callable, Tuple
 from os import path
 from glob import glob
+from collections import namedtuple
 
 # 3rd party
 import paho.mqtt.client as mqtt
@@ -217,7 +218,7 @@ class GladosLCD(Thread, MQTTClient):
 
 
 class Gservo(Thread, MQTTClient):
-    def __init__(self, location: str, servo_num: int, axis: str, servo_range: Tuple[int, int] = (),
+    def __init__(self, location: str, servo: ServoKit.servo, axis: str, servo_range: Tuple[int, int] = (),
                  max_angle: int = 90, broker: str = 'localhost', port: int = 1883,
                  pulse_max_min: Tuple = (0, 0)) -> None:
         Thread.__init__(self)
@@ -232,10 +233,9 @@ class Gservo(Thread, MQTTClient):
                                                    self.intensity_topic: self.handle_intensity}
 
         self.min_angle: int = 0
-        sk = ServoKit(channels=16)
-        self.skit = sk[servo_num]
+        self.servo = servo
         if pulse_max_min != (0, 0):
-            self.skit.set_pulse_width_range(min_pulse=pulse_max_min[0], max_pulse=pulse_max_min[1])
+            self.servo.set_pulse_width_range(min_pulse=pulse_max_min[0], max_pulse=pulse_max_min[1])
         self.speed: int = 5
         self.max_angle: int = max_angle
         self.middle_angle: int = int(self.max_angle / 2)
@@ -313,7 +313,7 @@ class Gservo(Thread, MQTTClient):
 
     def __increment(self) -> None:
         for s in self.__get_direction_speed():
-            self.skit.angle = s
+            self.servo.angle = s
             sleep(.1)
         self.current_angle = self.angle
 
@@ -322,7 +322,7 @@ class Gservo(Thread, MQTTClient):
 
     def move(self) -> None:
         if self.speed == 10 or self.first_boot is True:
-            self.skit.angle = self.angle
+            self.servo.angle = self.angle
             sleep(.3)
             self.moving = True
             self.logger.debug(f"moving to {self.angle}")
@@ -760,15 +760,17 @@ class MotionTrack(Thread, MQTTClient):
 
 if __name__ == "__main__":
     ip = '192.168.86.52'
+    angle = namedtuple("angle", ['max', 'min'])
+    pulse = namedtuple("pulse", ['max', 'min'])
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=ip)
     right_lcd = GladosLCD(broker=ip, location="right_lcd")
-    body_LR = Gservo(location='body_left_right', servo_num=0, axis='x', max_angle=180, broker=ip)
-    body_UD = Gservo(location='body_up_down', servo_num=1, axis='y', max_angle=180, broker=ip)
+    body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', max_angle=180, broker=ip)
+    body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', max_angle=180, broker=ip)
     # head limit 173 up, 6 down
     #kit.servo[0].set_pulse_width_range(610, 2665) # MG90D, 92B 605, 2550
-    head_UD = Gservo(location='head_left_right', servo_num=2, axis='y', max_angle=180, broker=ip)
-    head_LR = Gservo(location='head_up_down', servo_num=3, axis='x', max_angle=180, broker=ip)
+    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', max_angle=180, broker=ip)
+    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', max_angle=180, broker=ip)
     right_lcd.start()
     body_LR.start()
     body_UD.start()
