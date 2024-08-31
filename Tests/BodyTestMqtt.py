@@ -1,6 +1,7 @@
 import paho.mqtt.client as mqtt
 import json
 
+from glados_modules import MqttClient
 
 class MQTTClient:
     def __init__(self, broker, port, topic):
@@ -19,7 +20,6 @@ class MQTTClient:
         self.client.connect(self.broker, self.port, 60)
         #self.client.loop_forever()
 
-
 if __name__ == "__main__":
     broker = "192.168.86.52"
     port = 1883
@@ -27,9 +27,9 @@ if __name__ == "__main__":
 
     mqtt_client = MQTTClient(broker, port, topic)
     mqtt_client.connect()
-    msglist = [{"servo": "head_left_right", "angle":180, "speed": 10}]
+    msglist = [{"servo": "head_up_down", "angle":170, "speed": 10}]
     #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 10}, {"servo": "body_up_down", "angle": 180,
-#                "speed": 10},  {"servo": "head_up_down", "angle": 180, "speed": 10}, {"servo": "head_left_right", "angle":180, "speed": 10}]
+    #           "speed": 10}, {"servo": "head_up_down", "angle": 180, "speed": 10}, {"servo": "head_left_right", "angle":180, "speed": 10}]
     for m in msglist:
         print(f"sending {m}")
         mqtt_client.client.publish(topic, json.dumps(m))
