@@ -41,7 +41,7 @@ class GladosLCD(Thread, MQTTClient):
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
                                   y_offset=122, cs=DigitalInOut(cs), dc=DigitalInOut(dc),
-                                  rst=DigitalInOut(rst), baudrate=24000000)
+                                  rst=DigitalInOut(rst), baudrate=25000000)
         self.dot_on_positions: tuple = ((1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4),
                                         (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (4, 4),
                                         (5, 1), (5, 2), (5, 3), (5, 4), (6, 1), (6, 2), (6, 3), (6, 4),
@@ -124,14 +124,13 @@ class GladosLCD(Thread, MQTTClient):
                 self.g_color += 1
 
         # Draw the circles, turning specific circles red based on on_positions
-        for x in range(num_circles_x):
-            for y in range(num_circles_y):
+        for x in range(1, num_circles_x + 1):
+            for y in range(1, num_circles_y + 1):
                 cd = LedHelper.adjust_brightness(circle_color, random.choice([x / 10.0 for x in range(6, 9)]))
                 center_x = start_x + radius + x * spacing_x
                 center_y = start_y + radius + y * spacing_y
                 # Determine the color of the circle based on its position in on_positions list
-                # if (x + 1, y + 1) in self.dot_on_positions:
-                if (x , y) in self.dot_on_positions and x <= self.counter:
+                if (x, y) in self.dot_on_positions and x <= self.counter:
                     current_color = cd
                 else:
                     current_color = black_color
