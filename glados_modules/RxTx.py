@@ -1,6 +1,7 @@
 # built ins
 from pickle import dumps, loads
 from threading import Thread
+from queue import Queue as TQueue, Empty
 from multiprocessing import Process, Queue
 from time import sleep
 
@@ -69,7 +70,7 @@ class DataRecv(Thread):
         self.client_address = f"tcp://{ip}:{port}"
         self.socket.bind(self.client_address)
         self.logger.debug(f"Data Receiver listening on {self.client_address}")
-        self.queue = Queue()  # Thread-safe queue for storing data
+        self.queue = TQueue  # Thread-safe queue for storing data
         self.stop = False
 
     def get_data_from_queue(self, blocking: bool = True, timeout: bool = None):
