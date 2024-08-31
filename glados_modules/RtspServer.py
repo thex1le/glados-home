@@ -66,7 +66,7 @@ class RTSPServer(GstRtspServer.RTSPServer):
         mount_points = self.get_mount_points()
         for factory_path in cam_configs.keys():
             (cam_x, cam_y) = cam_configs[factory_path]["resolution"]
-            rtsp_system = RtspSystem(cam_x, cam_y, cam_configs[factory_path]["fps"])
+            rtsp_system = RtspSystem(cam_x, cam_y, int(cam_configs[factory_path]["fps"]))
             rtsp_system.set_shared(True)
             mount_points.add_factory(factory_path, rtsp_system)
             rtsp_system.start()
