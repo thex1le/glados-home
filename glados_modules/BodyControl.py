@@ -36,7 +36,7 @@ class GladosLCD(Thread, MQTTClient):
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.location: str = location
-        self.animation_path: str = path.join(path.abspath(animation_path), "aperture_logo")
+        self.animation_path: str = animation_path
         self.cmd_topic: str = "body/lcd"
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
