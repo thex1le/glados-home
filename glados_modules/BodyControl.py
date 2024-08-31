@@ -471,8 +471,7 @@ class LedHead(MQTTClient):
         self.__name__ = "Head_LED_Controller"
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.logger = setup_logger(self.__name__)
-        #self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
-        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True)
+        self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
@@ -487,8 +486,7 @@ class LedHead(MQTTClient):
         self.location: str = "eye_led"
         self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco,
                                                 "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
-        self.yellow_eye: Tuple[int, int, int] = (255, 255, 0)
-        self.yellow_eye = self.swap(self.yellow_eye)
+        self.glados_eye: Tuple[int, int, int] = (255, 165, 0)
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
@@ -506,7 +504,7 @@ class LedHead(MQTTClient):
 
     def startup(self) -> None:
         self.logger.debug("Startup Sequence")
-        eye_led_thread = Thread(target=self.ani.intensity, args=(10, self.yellow_eye))
+        eye_led_thread = Thread(target=self.ani.intensity, args=(10, self.glados_eye))
         pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
         eye_led_thread.start()
         pwm_led_thread.start()
@@ -517,7 +515,7 @@ class LedHead(MQTTClient):
     def disco(self) -> None:
         self.logger.debug("Triggered Disco Mode")
         self.pixels.brightness = self.intensity[0]
-        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "GRB"))
+        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "RGB"))
         pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
         eye_led_thread.start()
         pwm_led_thread.start()
@@ -537,7 +535,7 @@ class LedHead(MQTTClient):
             self.pwm_led.duty_cycle = 65535
             self.intensity = (0.9, 0.9)
         self.pixels.brightness = self.intensity[0]
-        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "GRB", self.intensity))
+        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "RGB", self.intensity))
         eye_led_thread.start()
         eye_led_thread.join()
 
@@ -545,7 +543,7 @@ class LedHead(MQTTClient):
         self.pwm_led.duty_cycle = 150
         self.pixels.brightness = self.intensity[0]
         self.pixels.autowrite = True
-        self.pixels[0] = LedHelper.adjust_brightness(self.yellow_eye, self.intensity[1])
+        self.pixels[0] = LedHelper.adjust_brightness(self.glados_eye, self.intensity[1])
         self.pixels.show()
 
 # NOTE you also need to code up a class for the Lamp portion its self...
