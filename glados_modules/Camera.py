@@ -26,7 +26,7 @@ class Camera(Process, MQTTClient):
         port = self.config['MQTT']['mqtt_port']
         MQTTClient.__init__(self, broker, port)
         resolution = f"{self.location}_Resolution"
-        self.fps = f"{self.location}_FPS"
+        self.fps = int(f"{self.location}_FPS")
         picam = f"{self.location}_Picam"
         cam_res = self.config['CAMERAS'][resolution].split(',')
         self.cam_res_x = int(cam_res[0])
