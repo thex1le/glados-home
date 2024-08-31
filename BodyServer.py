@@ -31,8 +31,7 @@ if __name__ == "__main__":
     else:
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
 
-    animation_path = path.abspath(path.join(config_p["DEFAULT"]["working_root"],
-                                            config_p["DEFAULT"]["aperture_animation"]))
+    animation_path = path.abspath(config_p["DEFAULT"]["aperture_animation"])
     head_camera_location = config_p["CAMERAS"]["Camera_Head_Factory"]
     max_min_tuple = namedtuple("max_min", ['max', 'min'])
     Mqtt_tuple = namedtuple("service_address", ["ip", "port"])
