@@ -487,6 +487,7 @@ class LedHead(MQTTClient):
         self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco,
                                                 "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
         self.yellow_eye: Tuple[int, int, int] = (246, 216, 121)
+        self.yellow_eye = self.swap(self.yellow_eye)
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
@@ -515,7 +516,7 @@ class LedHead(MQTTClient):
     def disco(self) -> None:
         self.logger.debug("Triggered Disco Mode")
         self.pixels.brightness = self.intensity[0]
-        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "RGB"))
+        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "GRB"))
         pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
         eye_led_thread.start()
         pwm_led_thread.start()
@@ -535,7 +536,7 @@ class LedHead(MQTTClient):
             self.pwm_led.duty_cycle = 65535
             self.intensity = (0.9, 0.9)
         self.pixels.brightness = self.intensity[0]
-        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "RGB", self.intensity))
+        eye_led_thread = Thread(target=self.ani.fade_color, args=((255, 255, 0), anger, steps, "GRB", self.intensity))
         eye_led_thread.start()
         eye_led_thread.join()
 
