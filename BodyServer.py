@@ -38,7 +38,7 @@ if __name__ == "__main__":
     Mqtt_tuple = namedtuple("service_address", ["ip", "port"])
     mqtt_connect = Mqtt_tuple(config_p["MQTT"]["mqtt_server_ip"], int(config_p["MQTT"]["mqtt_port"]))
     pulse_90 = config_p["SERVOS"]["mg90d_pulse"].split(',')
-    pulse_92 = config_p["SERVOS"]["mg92_pulse"].split(',')
+    pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
     default = config_p["SERVOS"]["default_max_min"].split(',')
     head_min_max = config_p["SERVOS"]["head_min_max"].split(',')
     mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
