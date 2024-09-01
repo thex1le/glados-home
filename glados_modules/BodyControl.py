@@ -68,12 +68,15 @@ class GladosLCD(Thread, MQTTClient):
             elif j_msg.get("cmd", "") == "get_breath":
                 # mark the location of response
                 self.client.publish("body/lcd", dumps({self.location: self.get_breath_options()}))
+            # comment this command out right now till we know if we need syncing between LCD's
+            # calling startup via mqtt causes a dead_lock that doesn't return and stops all other commands
+            """
             elif j_msg.get("cmd", "") == "startup":
                 # trigger startup animation
                 self.stop()
                 self.__startup()
                 self.client.publish("status", dumps({self.location: {"cmd": "startup",  "status": "complete"}}))
-
+            """
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
         self.breath_animation = breath_dict['animation']
