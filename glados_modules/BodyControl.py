@@ -173,16 +173,21 @@ class GladosLCD(Thread, MQTTClient):
         self.breathe_loop = True
         up = True
         self.counter = 1
-        slpm = 0.12
-        slptb = 0.18
-        tb = 12
-        mid = 5
-        if self.breath_fast is True:
-            slpm = 0.
-            slptb = 0
-            tb = 0
-            mid = 0
+        slpm = 0.
+        slptb = 0
+        tb = 0
+        mid = 0
         while self.breathe_loop is True:
+            if self.breath_fast is False:
+                slpm = 0.12
+                slptb = 0.18
+                tb = 12
+                mid = 5
+            elif self.breath_fast is True:
+                slpm = 0.
+                slptb = 0
+                tb = 0
+                mid = 0
             self.draw_image(times=mid)
             if self.breath_animation is True:
                 if self.breath_fast is False:
@@ -207,6 +212,7 @@ class GladosLCD(Thread, MQTTClient):
 
     def __startup(self):
         # startup animation
+        self.stop()
         self.aperture_animation()
         self.breathe()
 
