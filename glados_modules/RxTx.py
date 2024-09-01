@@ -23,8 +23,8 @@ class DataSend(Process):
         self.context = zmq.Context()
         self.client_address = f"tcp://{ip}:{port}"
         self.logger.debug(f"Data Sender connecting too {self.client_address}")
-        self.socket = self.context.socket(zmq.PUSH)
-        self.socket.connect(self.client_address)
+        #self.socket = self.context.socket(zmq.PUSH)
+        #self.socket.connect(self.client_address)
         self.stop = False
         # allow camera to pass a que object to pull from
         if mpqueue is None:
@@ -43,6 +43,9 @@ class DataSend(Process):
 
     def run(self):
         msg = "Data Sending Loop Started"
+        self.socket = self.context.socket(zmq.PUSH)
+        self.socket.connect(self.client_address)
+        self.stop = False
         self.logger.debug(msg)
         while self.stop is False:
             try:
