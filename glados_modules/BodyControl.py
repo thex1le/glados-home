@@ -55,6 +55,7 @@ class GladosLCD(Thread, MQTTClient):
         self.breath_fast = False
         self.breath_animation = True
         self.breathe_loop = True
+        self.stop_loop = False
 
     def handle_cmd(self, msg) -> None:
         j_msg = loads(msg.payload.decode())
@@ -212,16 +213,24 @@ class GladosLCD(Thread, MQTTClient):
 
     def __startup(self):
         # startup animation
-        self.stop()
+        self.stop_breath()
         self.aperture_animation()
         self.breathe()
 
     def run(self):
         self.__startup()
+        # note does this need to be a running thread?
+        while self.stop_loop is False:
+            sleep(1)
+
+    def stop_breath(self):
+        # end all loops so you can join thread
+        self.breathe_loop = False
 
     def stop(self):
         # end all loops so you can join thread
         self.breathe_loop = False
+        self.stop_loop = True
 
 
 class Gservo(Thread, MQTTClient):
