@@ -246,6 +246,7 @@ class Gservo(Thread, MQTTClient):
         self.moving: bool = False
         self.axis: str = axis.lower()
         self.stop_bool: bool = False
+        self.client.publish("status", f"{self.location} servo startup")
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
@@ -327,6 +328,7 @@ class Gservo(Thread, MQTTClient):
                 self.logger.debug(f"moving to {self.angle}")
                 self.__increment()
                 self.moving = False
+        self.client.publish("status", f"{self.location} servo, Set: {self.angle}")
 
     def run(self) -> None:
         while self.stop_bool is False:
