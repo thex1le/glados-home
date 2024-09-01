@@ -118,8 +118,8 @@ class GladosLCD(Thread, MQTTClient):
         spacing_x = (width - 2 * radius) // (num_circles_x - 1) - 5
         spacing_y = (height - 2 * radius) // (num_circles_y - 1) - 48
         # Adjust vertical starting point to center the grid
-        start_x = (width - ((num_circles_x - 1) * spacing_x + 2 * radius)) // 2
-        start_y = (height - ((num_circles_y - 1) * spacing_y + 2 * radius)) // 2 - 15
+        start_x = (width - ((num_circles_x - 1) * spacing_x + 2 * radius)) // 2 - 10
+        start_y = (height - ((num_circles_y - 1) * spacing_y + 2 * radius)) // 2 - 25
 
         if self.rainbow is True:
             circle_color = LedHelper.color_wheel(self.g_color)
