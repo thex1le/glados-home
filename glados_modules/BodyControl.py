@@ -73,9 +73,9 @@ class GladosLCD(Thread, MQTTClient):
                 self.client.publish("status", dumps({self.location: {"cmd": "startup",  "status": "complete"}}))
 
     def set_breath_options(self, breath_dict: dict) -> None:
-        self.breath_fast = breath_dict['fast']
-        self.breathe_animation = breath_dict['animation']
-        self.rainbow = breath_dict['rainbow']
+        self.breath_fast = breath_dict['fast'].lower() == "true"
+        self.breathe_animation = breath_dict['animation'].lower() == "true"
+        self.rainbow = breath_dict['rainbow'].lower() == "true"
 
     def get_breath_options(self) -> dict:
         return {'fast': self.breath_fast, 'rainbow': self.rainbow,
