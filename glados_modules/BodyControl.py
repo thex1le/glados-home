@@ -53,7 +53,7 @@ class GladosLCD(Thread, MQTTClient):
         self.disp.spi_device.cs_active_value = False
         self.flip = flip
         self.breath_fast = False
-        self.breathe_animation = True
+        self.breath_animation = True
         self.breathe_loop = True
 
     def handle_cmd(self, msg) -> None:
@@ -73,13 +73,13 @@ class GladosLCD(Thread, MQTTClient):
                 self.client.publish("status", dumps({self.location: {"cmd": "startup",  "status": "complete"}}))
 
     def set_breath_options(self, breath_dict: dict) -> None:
-        self.breath_fast = breath_dict['fast'].lower() == "true"
-        self.breathe_animation = breath_dict['animation'].lower() == "true"
-        self.rainbow = breath_dict['rainbow'].lower() == "true"
+        self.breath_fast = breath_dict['fast']
+        self.breath_animation = breath_dict['animation']
+        self.rainbow = breath_dict['rainbow']
 
     def get_breath_options(self) -> dict:
-        return {'fast': self.breath_fast, 'rainbow': self.rainbow,
-                'animation': self.breathe_animation, "location": self.location}
+        return {"response": {'fast': self.breath_fast, 'rainbow': self.rainbow,
+                'animation': self.breath_animation, "location": self.location}}
 
     def draw_image(self, times, color: tuple = (255, 0, 0)):
         c = 0
@@ -183,7 +183,7 @@ class GladosLCD(Thread, MQTTClient):
             mid = 0
         while self.breathe_loop is True:
             self.draw_image(times=mid)
-            if self.breathe_animation is True:
+            if self.breath_animation is True:
                 if self.breath_fast is False:
                     sleep(slpm)
                 if self.counter > 12:
