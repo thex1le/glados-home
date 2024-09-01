@@ -69,6 +69,7 @@ class GladosLCD(Thread, MQTTClient):
                 self.client.publish("body/lcd", dumps({self.location: self.get_breath_options()}))
             elif j_msg.get("cmd", "") == "startup":
                 # trigger startup animation
+                self.stop()
                 self.__startup()
                 self.client.publish("status", dumps({self.location: {"cmd": "startup",  "status": "complete"}}))
 
