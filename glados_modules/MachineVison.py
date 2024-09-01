@@ -72,6 +72,7 @@ class YoloDetect(Thread, MQTTClient):
                 else:
                     results_dict[name] = {"count": 1, "objects": [cname], "class_name": name}
         self.logger.debug(results_dict)
+        return results_dict
 
     def __yolo_process_image(self, image_dict):
         # pass image to rtsp...
