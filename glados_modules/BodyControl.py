@@ -326,7 +326,7 @@ class Gservo(Thread, MQTTClient):
     def __increment(self) -> None:
         for s in self.__get_direction_speed():
             self.servo.angle = s
-            sleep(.1)
+            sleep(.01)
         self.current_angle = self.angle
 
     def get_moving_status(self) -> bool:
@@ -790,7 +790,7 @@ if __name__ == "__main__":
                      broker=mqtt_connect)
     body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y',broker=mqtt_connect,
                      pulse_max_min=mg92b_pulse, servo_range=default_angle)
-    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=default_angle,
+    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=head_angle,
                      broker=mqtt_connect)
     head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=default_angle,
                      broker=mqtt_connect)
