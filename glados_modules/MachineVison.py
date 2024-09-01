@@ -34,13 +34,13 @@ class YoloDetect(Thread, MQTTClient):
         self.cam_configs = {
             f"/{cam_conf['Camera_Head_Factory']}": {
                 "resolution": tuple(cam_conf["Camera_Head_Resolution"].split(',')),
-                "fps": cam_conf["Camera_Head_FPS"]},
+                "fps": int(cam_conf["Camera_Head_FPS"])},
             f"/{cam_conf['Camera_Left_Factory']}": {
                 "resolution": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
-                "fps": cam_conf["Camera_Left_FPS"]},
+                "fps": int(cam_conf["Camera_Left_FPS"])},
             f"/{cam_conf['Camera_Right_Factory']}": {
                 "resolution": tuple(cam_conf["Camera_Right_Resolution"].split(',')),
-                "fps": cam_conf["Camera_Right_FPS"]}}
+                "fps": int(cam_conf["Camera_Right_FPS"])}}
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
@@ -76,7 +76,7 @@ class YoloDetect(Thread, MQTTClient):
     def __yolo_process_image(self, image_dict):
         # pass image to rtsp...
         raw = image_dict["raw"]
-        width, height = self.cam_configs[image_dict["camera"]]
+        width, height = self.cam_configs[image_dict["camera"]]['resolution']
         yuv420_data = raw.reshape((int(height) * 3) // 2, int(width))
         image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
         #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
