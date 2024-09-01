@@ -34,6 +34,7 @@ class Camera(Process, MQTTClient):
         self.picam = bool(self.config['CAMERAS'][picam].lower())
         self.camera_num = int(self.config["CAMERAS"][self.location])
         self.image = None
+        self.client.publish("status", f"Camera {self.location} Started")
 
     def __init_camera(self):
         # allow us to init the camera inside the multiprocess thread
@@ -67,7 +68,6 @@ class Camera(Process, MQTTClient):
         self.queue = Queue()
         self.image_send = RxTx.DataSend(self.config, self.location, mpqueue=self.queue)
         self.image_send.start()
-        self.client.publish("status", f"Camera {self.location} Started")
 
     def get_camera_config(self):
         """
