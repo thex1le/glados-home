@@ -265,6 +265,14 @@ class Gservo(Thread, MQTTClient):
         self.moving: bool = False
         self.axis: str = axis.lower()
         self.stop_bool: bool = False
+        DEGREE_PER_SECOND = 60 / 0.12
+        self.speed_settings = {
+            1: DEGREE_PER_SECOND * 0.2,  # Calm movement
+            2: DEGREE_PER_SECOND * 0.4,  # Neutral
+            3: DEGREE_PER_SECOND * 0.6,  # Slightly agitated
+            4: DEGREE_PER_SECOND * 0.8,  # Angry
+            5: DEGREE_PER_SECOND * 1.0  # Frustrated/fastest
+        }
         self.client.publish("status", f"{self.location} servo startup")
 
     def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
@@ -283,8 +291,8 @@ class Gservo(Thread, MQTTClient):
         return {"max": self.servo_range.max, "min": self.servo_range.min, "middle": self.middle_angle}
 
     def set_speed(self, speed: int) -> None:
-        if speed >= 10:
-            speed = 10
+        if speed >= 5:
+            speed = 5
         if speed <= 1:
             speed = 1
         self.speed = round(speed)
@@ -315,27 +323,34 @@ class Gservo(Thread, MQTTClient):
     def execute(self) -> None:
         self.exec_command = True
 
-    def __get_direction_speed(self) -> range:
-        rtn: range = range(0, 0)
-        if self.angle > self.current_angle:
-            rtn = range(self.current_angle, (self.angle + 1), self.speed)
-        if self.angle < self.current_angle:
-            rtn = range(self.current_angle, (self.angle + 1), (self.speed * -1))
-        return rtn
-
-    def __increment(self) -> None:
-        for s in self.__get_direction_speed():
-            self.servo.angle = s
-            sleep(.01)
+    def s_curve_move(self) -> None:
+        total_distance = abs(self.angle - self.current_angle)
+        if total_distance == 0:
+            return  # No movement needed
+        # Time for full move
+        full_time = total_distance / self.speed_settings[self.speed]
+        # Divide the movement into small steps
+        steps = 100
+        for i in range(steps + 1):
+            # Calculate S-curve (using a simple cosine-based ease-in and ease-out)
+            t = i / steps
+            if t < 0.5:
+                t = 2 * t ** 2
+            else:
+                t = -1 + (4 - 2 * t) * t
+            current_angle = self.current_angle + (self.angle - self.current_angle) * t
+            self.servo.angle = current_angle
+            sleep(full_time / steps)
+        # update current angle with new angle
         self.current_angle = self.angle
 
     def get_moving_status(self) -> bool:
         return self.moving
 
     def move(self) -> None:
-        if self.speed == 10 or self.first_boot is True:
+        if self.first_boot is True:
             self.servo.angle = self.angle
-            sleep(.3)
+            sleep(.5)
             self.moving = True
             self.logger.debug(f"moving to {self.angle}")
             self.current_angle = self.angle
@@ -345,7 +360,7 @@ class Gservo(Thread, MQTTClient):
             if self.angle != self.current_angle:
                 self.moving = True
                 self.logger.debug(f"moving to {self.angle}")
-                self.__increment()
+                self.s_curve_move()
                 self.moving = False
         self.client.publish("status", f"{self.location} servo, Set: {self.angle}")
 
