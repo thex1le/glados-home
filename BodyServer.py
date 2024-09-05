@@ -40,6 +40,8 @@ if __name__ == "__main__":
     pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
     default = config_p["SERVOS"]["default_max_min"].split(',')
     head_min_max = config_p["SERVOS"]["head_min_max"].split(',')
+    mg92d_speed = float(config_p["SERVOS"]["mg92d_speed"])
+    mg90d_speed = float(config_p["SERVOS"]["mg90d_speed"])
     mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
     mg92b_pulse = max_min_tuple(int(pulse_92[0]), int(pulse_92[1]))
     default_angle = max_min_tuple(int(default[0]), int(default[1]))
@@ -49,11 +51,11 @@ if __name__ == "__main__":
     body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
                      broker=mqtt_connect)
     body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', servo_range=default_angle,
-                     broker=mqtt_connect, pulse_max_min=mg92b_pulse)
-    head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=default_angle,
-                     broker=mqtt_connect, pulse_max_min=mg92b_pulse)
-    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=head_angle,
-                     broker=mqtt_connect, pulse_max_min=mg92b_pulse)
+                     broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
+    head_LR = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=default_angle,
+                     broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg90d_speed)
+    head_UD = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=head_angle,
+                     broker=mqtt_connect, pulse_max_min=mg90d_pulse, servo_speed=mg90d_speed)
     led_shoulders = LedShoulders(broker=mqtt_connect)
     glados_right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd", animation_path=animation_path)
     glados_right_lcd.start()

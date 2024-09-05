@@ -238,7 +238,7 @@ class GladosLCD(Thread, MQTTClient):
 
 class Gservo(Thread, MQTTClient):
     def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker, servo_range,
-                 pulse_max_min=None) -> None:
+                 pulse_max_min=None, servo_speed: float = 0.1) -> None:
         Thread.__init__(self)
         Thread.daemon = True
         self.__name__ = f"{self.__class__.__name__}_{location}"
@@ -249,7 +249,6 @@ class Gservo(Thread, MQTTClient):
         self.intensity_topic: str = "intensity"
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
-
         self.min_angle: int = 0
         self.servo = servo
         if pulse_max_min is not None:
@@ -265,13 +264,13 @@ class Gservo(Thread, MQTTClient):
         self.moving: bool = False
         self.axis: str = axis.lower()
         self.stop_bool: bool = False
-        DEGREE_PER_SECOND = 60 / 0.12
+        degree_per_second = 60 / servo_speed
         self.speed_settings = {
-            1: DEGREE_PER_SECOND * 0.2,  # Calm movement
-            2: DEGREE_PER_SECOND * 0.4,  # Neutral
-            3: DEGREE_PER_SECOND * 0.6,  # Slightly agitated
-            4: DEGREE_PER_SECOND * 0.8,  # Angry
-            5: DEGREE_PER_SECOND * 1.0  # Frustrated/fastest
+            1: degree_per_second * 0.2,  # Calm movement
+            2: degree_per_second * 0.4,  # Neutral
+            3: degree_per_second * 0.6,  # Slightly agitated
+            4: degree_per_second * 0.8,  # Angry
+            5: degree_per_second * 1.0  # Frustrated/fastest
         }
         self.client.publish("status", f"{self.location} servo startup")
 
