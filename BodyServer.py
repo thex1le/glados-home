@@ -40,7 +40,7 @@ if __name__ == "__main__":
     pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
     default = config_p["SERVOS"]["default_max_min"].split(',')
     head_min_max = config_p["SERVOS"]["head_min_max"].split(',')
-    mg92d_speed = float(config_p["SERVOS"]["mg92d_speed"])
+    mg92d_speed = float(config_p["SERVOS"]["mg92b_speed"])
     mg90d_speed = float(config_p["SERVOS"]["mg90d_speed"])
     mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
     mg92b_pulse = max_min_tuple(int(pulse_92[0]), int(pulse_92[1]))
