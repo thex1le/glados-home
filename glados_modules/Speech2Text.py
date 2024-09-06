@@ -15,6 +15,7 @@ class GladosSTT(Thread):
     def __init__(self, glocal: classmethod) -> None:
         Thread.__init__(self)
         Thread.daemon = True
+        self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
         self.text = None
         self.glocal = glocal
