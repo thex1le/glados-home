@@ -24,7 +24,7 @@ import regex as re
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GladosHomeAssistant import HomeAssistantLink
+#from glados_modules.GladosHomeAssistant import HomeAssistantLink
 from glados_modules.GLaDOSGpt import GladosGPT
 from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
@@ -100,8 +100,8 @@ class GladosLocal(Thread, MQTTClient):
         self.current_vol = int(self.mixer.getvolume()[0])
         self.sight_results = mp.Manager().dict()
         self.stop = False
-        self.homeass = HomeAssistantLink(config_file)
-        self.homeass.get_temp()
+        #self.homeass = HomeAssistantLink(config_file)
+        #self.homeass.get_temp()
         # TODO figure out how to implement the songs
         #self.portal1song()
         self.mp_lock = mp.Lock()
