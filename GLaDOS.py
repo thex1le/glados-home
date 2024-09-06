@@ -11,19 +11,25 @@ from ctypes import *
 from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
+from typing import Dict, Callable, Tuple
+from json import loads, dumps
 
 # 3rd party imports
 import requests
 import pyaudio
-import speech_recognition as sr
 from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
-from homeassistant_api import Client
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
+from glados_modules.GladosHomeAssistant import HomeAssistantLink
+from glados_modules.GLaDOSGpt import GladosGPT
+from glados_modules.EggTimer import EggTimer
+from glados_modules.Speech2Text import GladosSTT
+from glados_modules.MqttClient import MQTTClient
+from glados_modules.Camera import Camera
 
 
 # silence some errors on the terminal
@@ -54,142 +60,20 @@ class GladosException(Exception):
     pass
 
 
-class GladosSTT(Thread):
-    # glados speach to text
-    def __init__(self, glocal: classmethod) -> None:
-        Thread.__init__(self)
-        Thread.daemon = True
-        self.logger = setup_logger(name=self.__name__)
-        self.text = None
-        self.glocal = glocal
-        self.mplist = list()
-
-    def get_text(self):
-        # return the text and sent it back to none for next question
-        try:
-            text = self.mplist.pop()
-        except IndexError:
-            text = None
-        return text
-
-    def parse_command(self, user_prompt: str) -> dict:
-        glados_pattern = r'(hey glados){e<=3}'
-        glados_match = re.search(glados_pattern, user_prompt, re.IGNORECASE | re.BESTMATCH)
-        if glados_match:
-            split_index = glados_match.end()
-            greeting = user_prompt[:split_index].strip()
-            command = user_prompt[split_index:].strip()
-            has_extra_command = bool(command)
-            return {"greeting": greeting, "has_extra_command": has_extra_command, "command": command}
-        else:
-            return {"greeting": None, "has_extra_command": False, "command": None}
-
-    def record(self, mp_list):
-        # TODO, how do we keep things local so were not hitting google all the time...
-        while True:
-
-            msg = "Say 'Hey GLaDOS' to start recording your question"
-            print(msg)
-            self.logger.info(msg)
-            with sr.Microphone() as source:
-                recognizer = sr.Recognizer()
-                self.logger.debug("Adjusting for noise")
-                recognizer.adjust_for_ambient_noise(source, .5)
-                self.logger.debug("getting audio")
-                audio = recognizer.listen(source)
-                self.logger.debug("audio done")
-                try:
-                    transcription = recognizer.recognize_google(audio)
-                    self.logger.debug(f"transcribe done, {transcription.lower()}")
-                    pcommand = self.parse_command(transcription)
-                    self.logger.debug(f'parse command is {pcommand}')
-                    if pcommand["greeting"] is not None:
-                        # here is where we should pause and take a longer recording
-                        # for the command we need to trigger glados to talk here...
-                        # TODO reconsider how this works with multithreading
-                        self.logger.debug(pcommand)
-                        if pcommand["has_extra_command"] is False:
-                            greet = self.glocal.random_greeting(True)
-                            rq = self.glocal.random_question(True)
-                            self.glocal.speak(f"{greet}. {rq}")
-                            with sr.Microphone() as source:
-                                recognizer = sr.Recognizer()
-                                source.pause_threshold = 1
-                                audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
-                                transcription = recognizer.recognize_google(audio)
-                            self.logger.debug("good user_prompt")
-                            # transcript audio to test
-                            # check for cancel command
-                            # TODO work out how the cancel command works
-                            if self.glocal._gladosLocal__check_local_command(transcription.lower(),
-                                                                             re.compile(r'cancel?')) is True:
-                                self.logger.debug('cancel true')
-                                self.glocal.random_cancel_response()
-                                continue
-                        self.logger.debug(transcription)
-                        mp_list.append(pcommand['command'])
-                except Exception as e:
-                    self.logger.error("An unknown error occurred : {}".format(e))
-
-    def run(self):
-        # use manager to run management loop
-        with mp.Manager() as manager:
-            self.mplist = manager.list()
-            self.proc = mp.Process(target=self.record, args=(self.mplist,))
-            self.proc.start()
-            while True:
-                time.sleep(10)
-
-
-class HomeAssistantLink:
-    def __init__(self, config_file):
-        self.logger = setup_logger(name=self.__name__)
-        base = config_file['HOMEASSISTANT']
-        self.token = base['token']
-        self.api = base['api']
-        self.weather_entity_id = base['weather_entity']
-
-    def __get_weather(self) -> dict:
-        client = Client(self.api, self.token)
-        data = None
-        try:
-            # Fetch the state of the weather entity
-            weather_data = client.get_entity(entity_id=self.weather_entity_id)
-            if weather_data:
-                data = weather_data
-        except Exception as e:
-            self.logger.error(f"An error occurred: {e}")
-        return data      
-    
-    def get_temp(self) -> dict:
-        """
-        Return current temp highs and low's as a string
-        """
-        wdata = self.__get_weather()
-        watt = wdata.state.attributes
-        return "The current temperature is {}".format(watt['temperature'])
-
-# TODO need to figure out how were going to sync the camera "scan / hunt" function for new people
-   """ stub code for camera body hunt
-    def target_scan(self, target="person", search_time=90, confidence=.70):
-        self.logger.debug(f"Camera Scanning for target: {target}")
-        target_found = False
-        t = time()
-        while (time() - t) < search_time and target_found is False:
-            if target in self.results.keys():
-                for p in self.results[target]['objects']:
-                    if p['confidence'] >= confidence:
-                        # found the target in the timeframe
-                        target_found = True
-                        self.logger.debug(f"Camera Found target: {target} , {p}")
-                        break
-"""
-
-class GladosLocal(Thread):
+class GladosLocal(Thread, MQTTClient):
     def __init__(self, config_file, remote_llm):
         Thread.__init__(self)
         Thread.daemon = True
-        self.logger = setup_logger(name=self.__name__)
+        ip = configp["MQTT"]["mqtt_server_ip"]
+        port = int(configp["MQTT"]["mqtt_port"])
+        self.logger = setup_logger(name=self.__class__.__name__)
+        MQTTClient.__init__(self, broker=ip, port=port)
+        self.cmd_topic: str = "vision/camera_response"
+        self.intensity_topic: str = "intensity"
+        # TODO consider how we want to handle all 3 cameras...
+        self.main_camera = "Camera_Head"
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
+                                                   self.intensity_topic: self.handle_intensity}
         self.llm = remote_llm
         self.last_greeting = None
         self.last_insult = None
@@ -203,9 +87,6 @@ class GladosLocal(Thread):
         # TODO need to fix config file
         self.voiceurl = config_file["DEFAULT"]["VoiceUrl"]
         self.configp = config_file["LOCALSPEAK"]
-        cam_res = self.configFile['DEFAULT']['camera_resolution'].split(',')
-        cam_res_x = int(cam_res[0])
-        cam_res_y = int(cam_res[1])
         self.greetings = self.llp(self.configp.get("greetings", list()))
         self.processing = self.llp(self.configp.get("processing", list()))
         self.insults = self.llp(self.configp.get("insults", list()))
@@ -225,9 +106,18 @@ class GladosLocal(Thread):
         #self.portal1song()
         self.mp_lock = mp.Lock()
         self.seen = None
-        self.glados_body = GBody(self.configFile, cam_res_x, cam_res_y, self.mp_lock)
-        self.glados_body.start()
         self.last_seen_human = time.time()
+        # TODO setup LEFT LCD
+
+    def handle_intensity(self):
+        # TODO FIGURE OUT WHAT TO DO HERE
+        pass
+
+    def handle_cmd(self, msg) -> None:
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("Camera", "") == self.main_camera:
+            self.logger.debug(f"{self.main_camera}, {msg.topic}, {j_msg}")
+            self.sight_results = j_msg.get("Results")
 
     def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
         proc = self.__dedupe(choice, last, options_list)
@@ -237,48 +127,40 @@ class GladosLocal(Thread):
             setattr(self, last_attr_name, proc)
         return proc
 
+    def random_response(self, category: str, last_response: str, responses: list, last_response_attr: str,
+                        just_text: bool = False) -> str:
+        response = self.__random_audio(random.choice(responses), last_response,
+                                       responses, last_response_attr, just_text)
+        self.logger.debug(f"Random {category}: {response}")
+        return response
+
     def random_cancel_response(self, just_text: bool = False) -> str:
-        cancel = self.__random_audio(random.choice(self.cancel),
-                                     self.last_cresponse, self.cancel, 'last_cresponse', just_text)
-        self.logger.debug(f"Cancel Command response: {cancel}")
-        return  cancel
+        return self.random_response('Cancel Command response', self.last_cresponse,
+                                    self.cancel, 'last_cresponse', just_text)
 
     def random_question_response(self, just_text: bool = False) -> str:
-        rqr = self.__random_audio(random.choice(self.qresponse),
-                                  self.last_qresponse, self.qresponse,'last_qresponse', just_text)
-        self.logger.debug(f"Random Question Response {rqr}")
-        return rqr
+        return self.random_response('Question Response', self.last_qresponse,
+                                    self.qresponse, 'last_qresponse', just_text)
 
     def random_question(self, just_text: bool = False) -> str:
-        rq = self.__random_audio(random.choice(self.questions),
-                                 self.last_question, self.questions, 'last_question', just_text)
-        self.logger.debug(f"Random Question: {rq}")
-        return rq
+        return self.random_response('Question', self.last_question,
+                                    self.questions, 'last_question', just_text)
 
     def random_insult(self, just_text: bool = False) -> str:
-        ri = self.__random_audio(random.choice(self.insults),
-                                  self.last_insult, self.insults, 'last_insult', just_text)
-
-        self.logger.debug(f"Random Insult: {ri}")
-        return ri
+        return self.random_response('Insult', self.last_insult,
+                                    self.insults, 'last_insult', just_text)
 
     def random_processing(self, just_text: bool = False) -> str:
-        rp = self.__random_audio(random.choice(self.processing),
-                                 self.last_process, self.processing, 'last_process', just_text)
-        self.logger.debug(f"Random Processing: {rp}")
-        return rp
+        return self.random_response('Processing', self.last_process,
+                                    self.processing, 'last_process', just_text)
 
     def random_fuck_response(self, just_text: bool = False) -> str:
-        rfr = self.__random_audio(random.choice(self.fuck),
-                                  self.last_fresponse, self.fuck, 'last_fresponse', just_text)
-        self.logger.debug(f"Random Fuck Off Response: {rfr}")
-        return  rfr
+        return self.random_response('Fuck Off Response', self.last_fresponse,
+                                    self.fuck, 'last_fresponse', just_text)
 
     def random_greeting(self, just_text: bool = False) -> str:
-        rg = self.__random_audio(random.choice(self.greetings),
-                                   self.last_greeting, self.greetings, 'last_greeting', just_text)
-        self.logger.debug(f"Random Greeting: {rg}")
-        return rg
+        return self.random_response('Greeting', self.last_greeting,
+                                    self.greetings, 'last_greeting', just_text)
 
     def __dedupe(self, current, last, options):
         while current == last:
@@ -295,7 +177,7 @@ class GladosLocal(Thread):
                 clines.append(i.strip())
             return clines
         else:
-            msg = "Unable to load file {}".format(file)
+            msg = f"Unable to load file {file}"
             self.logger.error(msg)
             raise GladosException(msg)
         # load local phrases
@@ -310,10 +192,12 @@ class GladosLocal(Thread):
         return self.seen
     
     def portal1song(self):
+        # TODO fix filepath here
         with open('./wav/portal_still_alive.wav', 'rb') as wav:
             self.__play_audio(wav.read())
     
     def portal2song(self):
+        # TODO fix filepath here
         with open('./wav/portal2_want_you_gone.wav', 'rb') as wav:
             self.__play_audio(wav.read())
     
@@ -379,15 +263,13 @@ class GladosLocal(Thread):
         self.last_seen_human = time.time()
         scan_room = 0
         while self.stop is False:
-            with self.mp_lock:
-                self.sight_results = self.glados_body.eyes.get_results()
             self.seen = self.process_sight(self.sight_results)
             if self.sight_results.get("person", None) is None:
                 # TODO this where you will do human detector millimeter wave
                 # TODO set scan config time and number of times to look in conf file
                 # TODO consider scanning for other things?
                 if (time.time() - self.last_seen_human) < 120 and scan_room <= 2:
-                    self.glados_body.scan_room()
+                    # PUT SCANNING FUNCTION HERE...
                     scan_room += 1
                 else:
                     time.sleep(5)
@@ -450,103 +332,6 @@ class GladosLocal(Thread):
             self.logger.debug(msg)
             self.speak(msg)
         return check
-
-
-class EggTimer(Thread):
-    def __init__(self, duration_in_seconds, speak):
-        Thread.__init__(self)
-        Thread.daemon = True
-        self.logger = setup_logger(name=self.__name__)
-        self.duration = duration_in_seconds
-        self.start_time = None
-        self.is_running = False
-        self.speak = speak
-
-    def timer_start(self):
-        if not self.is_running:
-            self.start_time = time.time()
-            self.is_running = True
-            msg = f"Egg timer started for {self.duration} seconds."
-            self.logger.debug(msg)
-
-    def stop(self):
-        if self.is_running:
-            elapsed_time = time.time() - self.start_time
-            remaining_time = max(0, self.duration - elapsed_time)
-            self.is_running = False
-            msg = "Timer stopped. Remaining time: {:.2f} seconds.".format(remaining_time)
-            self.speak(msg)
-
-    def check_remaining_time(self):
-        rtn = {"remain": 0, "complete":False}
-        if self.is_running:
-            elapsed_time = time.time() - self.start_time
-            remaining_time = max(0, self.duration - elapsed_time)
-            rtn["remain"] = remaining_time
-            if remaining_time == 0:
-                rtn["remian"] = 0
-                rtn["complete"] = True
-                msg = "Your Timer is complete"
-                self.logger.debug(msg)
-                self.speak(msg)
-        else:
-            rtn["remain"] = 0
-            rtn["complete"] = True
-        return rtn
-    
-    def run(self):
-        self.timer_start()
-        while True:    
-            r = self.check_remaining_time()
-            self.logger.debug(r)
-            if r["complete"] is True:
-                break
-            time.sleep(.2)
-            
-
-class GladosGPT(Thread):
-    def __init__(self, configp, prompt):
-        Thread.__init__(self)
-        Thread.daemon = True
-        self.logger = setup_logger(name=self.__name__)
-        self.real_response = None
-        self.prompt = prompt
-        self.configp = configp["OPENAI"]
-        self.model = self.configp["model"]
-        self.api_key = self.configp["apikey"]
-        self.api_endpoint = self.configp["endpoint"]
-        self.content = self.configp["user_prompt"]
-        self.updated_content = None
-
-    def add_prompt(self, content):
-        # allow extra info to be added to the user_prompt
-        self.updated_content = content
-
-    def generate_text(self):
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",}
-        if self.updated_content is None:
-            local_content = self.content
-        else:
-            local_content = f"{self.content}. {self.updated_content}"
-        print(local_content)
-        data = {
-                "model": self.model,
-                "messages": [{"role": "system", "content": local_content},
-                    {"role": "user", "content": self.prompt}],
-                "max_tokens": 1500}
-        response = requests.post(self.api_endpoint, headers=headers, json=data)
-        if response.status_code == 200:
-            response_json = response.json()
-            self.real_response = response_json['choices'][0]['message']['content'].strip()
-            msg = f"Response Done: {self.real_response}"
-            self.logger.debug(msg)
-            print(msg)
-        else:
-            self.logger.error(f"Failed to call the API. Status code: {response.status_code}")
-            self.logger.debug(response.text)
-
-    def run(self):
-        self.generate_text()
 
 
 if __name__ == "__main__":
