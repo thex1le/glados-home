@@ -46,7 +46,6 @@ class GladosSTT(Thread):
         while True:
 
             msg = "Say 'Hey GLaDOS' to start recording your question"
-            print(msg)
             self.logger.info(msg)
             with sr.Microphone() as source:
                 recognizer = sr.Recognizer()
@@ -86,7 +85,7 @@ class GladosSTT(Thread):
                         self.logger.debug(transcription)
                         mp_list.append(pcommand['command'])
                 except Exception as e:
-                    self.logger.error("An unknown error occurred : {}".format(e))
+                    self.logger.error(f"An unknown error occurred: {e}")
 
     def run(self):
         # use manager to run management loop
