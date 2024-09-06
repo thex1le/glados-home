@@ -91,10 +91,10 @@ class DataRecv(Thread):
             return loads(data)  # Unpickle/deserialize the data
         except Empty:
             self.logger.debug("Queue is empty, no data to return.")
-            return None
+            return dict()
         except UnpicklingError:
             self.logger.debug("Invalid Data, no data to return.")
-            return None
+            return dict()
 
     def stop_thread(self) -> None:
         """
