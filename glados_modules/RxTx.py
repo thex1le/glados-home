@@ -1,5 +1,5 @@
 # built ins
-from pickle import dumps, loads
+from pickle import dumps, loads, UnpicklingError, PicklingError
 from threading import Thread
 from queue import Queue as TQueue, Empty
 from multiprocessing import Process, Queue
@@ -39,7 +39,10 @@ class DataSend(Process):
     def send_data(self, data):
         # TODO this may go away depending on how queue works
         self.logger.debug("Sending PICKLE Data")
-        self.queue.put(dumps(data))
+        try:
+            self.queue.put(dumps(data))
+        except PicklingError:
+            self.logger.debug("Error trying to pickle data")
 
     def run(self):
         msg = "Data Sending Loop Started"
@@ -88,6 +91,9 @@ class DataRecv(Thread):
             return loads(data)  # Unpickle/deserialize the data
         except Empty:
             self.logger.debug("Queue is empty, no data to return.")
+            return None
+        except UnpicklingError:
+            self.logger.debug("Invalid Data, no data to return.")
             return None
 
     def stop_thread(self) -> None:
