@@ -355,6 +355,7 @@ if __name__ == "__main__":
         raise GladosException("Unable to load file {}".format(args.conf[0]))
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
+    gl.speak("Oh Its you! Its been a long time...")
     gstt = GladosSTT(gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
