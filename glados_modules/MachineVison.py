@@ -109,7 +109,7 @@ class YoloDetect(Thread, MQTTClient):
         self.client.publish("status", "Machine Vision Started")
         while True:
             image_dict = self.image_get.get_data_from_queue(True)
-            self.logger.debug(f"Got image from sender {image_dict.get('camera', {}})}")
+            self.logger.debug(f"Got image from sender {image_dict.get('camera', 'None')}")
             try:
                 self.process_image(image_dict)
             except Exception as e:
