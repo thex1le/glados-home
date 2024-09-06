@@ -1,9 +1,10 @@
 
-#3rd Party Imports
+# 3rd Party Imports
 from homeassistant_api import Client
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
+
 
 class HomeAssistantLink:
     def __init__(self, config_file):
@@ -13,7 +14,7 @@ class HomeAssistantLink:
         self.api = base['api']
         self.weather_entity_id = base['weather_entity']
 
-    def __get_weather(self) -> dict:
+    def __get_weather(self) -> (None, dict):
         client = Client(self.api, self.token)
         data = None
         try:
@@ -25,13 +26,13 @@ class HomeAssistantLink:
             self.logger.error(f"An error occurred: {e}")
         return data
 
-    def get_temp(self) -> dict:
+    def get_temp(self) -> str:
         """
         Return current temp highs and low's as a string
         """
         wdata = self.__get_weather()
         watt = wdata.state.attributes
-        return "The current temperature is {}".format(watt['temperature'])
+        return f"The current temperature is {watt['temperature']}"
 
     # TODO need to figure out how were going to sync the camera "scan / hunt" function for new people
 
