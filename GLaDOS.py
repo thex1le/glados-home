@@ -66,7 +66,8 @@ class GladosLocal(Thread, MQTTClient):
         Thread.daemon = True
         ip = configp["MQTT"]["mqtt_server_ip"]
         port = int(configp["MQTT"]["mqtt_port"])
-        self.logger = setup_logger(name=self.__class__.__name__)
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker=ip, port=port)
         self.cmd_topic: str = "vision/camera_response"
         self.intensity_topic: str = "intensity"
