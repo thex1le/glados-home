@@ -88,14 +88,15 @@ class GladosLocal(Thread, MQTTClient):
         # TODO need to fix config file
         self.voiceurl = config_file["DEFAULT"]["VoiceUrl"]
         self.configp = config_file["LOCALSPEAK"]
-        self.greetings = self.llp(self.configp.get("greetings", list()))
-        self.processing = self.llp(self.configp.get("processing", list()))
-        self.insults = self.llp(self.configp.get("insults", list()))
-        self.questions = self.llp(self.configp.get("questions", list()))
-        self.qresponse = self.llp(self.configp.get("qresponses", list()))
-        self.cancel = self.llp(self.configp.get('cancel', list()))
+        root_path = self.configp.get("localpath", "./txt_responses")
+        self.greetings = self.llp(self.configp.get("greetings", list()), root_path)
+        self.processing = self.llp(self.configp.get("processing", list()), root_path)
+        self.insults = self.llp(self.configp.get("insults", list()), root_path)
+        self.questions = self.llp(self.configp.get("questions", list()), root_path)
+        self.qresponse = self.llp(self.configp.get("qresponses", list()), root_path)
+        self.cancel = self.llp(self.configp.get('cancel', list()), root_path)
         self.vision_confidence = float(self.configp.get("VisionConfidence", 0.0))
-        self.fuck = self.llp(self.configp.get("fuck", list()))
+        self.fuck = self.llp(self.configp.get("fuck", list()), root_path)
         self.mixer = Mixer("Speaker")
         self.__change_volume(int(config_file["DEFAULT"]["VolumeLevel"]))
         self.current_vol = int(self.mixer.getvolume()[0])
@@ -168,7 +169,8 @@ class GladosLocal(Thread, MQTTClient):
             current = random.choice(options)
         return current
 
-    def llp(self, file):
+    def llp(self, file, root_path):
+        file = path.abspath(path.join(root_path, file))
         if path.isfile(file) is True:
             with open(file, 'r') as f:
                 lines = f.readlines()
