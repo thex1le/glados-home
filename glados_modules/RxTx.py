@@ -3,7 +3,7 @@ from pickle import dumps, loads, UnpicklingError, PicklingError
 from threading import Thread
 from queue import Queue as TQueue, Empty
 from multiprocessing import Process, Queue
-from time import sleep
+
 
 # 3rd party
 import zmq
