@@ -365,7 +365,6 @@ if __name__ == "__main__":
             cmd_bool = False
             # check for local commands
             # TODO load commands from config?
-            print(f"user_prompt is in main {prompt}")
             for cmd in local_commands:
                 cmd_bool = cmd(user_prompt=prompt)
                 if cmd_bool is True:
