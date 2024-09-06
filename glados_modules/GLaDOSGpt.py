@@ -11,6 +11,7 @@ class GladosGPT(Thread):
     def __init__(self, configp, prompt):
         Thread.__init__(self)
         Thread.daemon = True
+        self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
         self.real_response = None
         self.prompt = prompt

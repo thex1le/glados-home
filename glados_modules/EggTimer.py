@@ -9,6 +9,7 @@ class EggTimer(Thread):
     def __init__(self, duration_in_seconds, speak):
         Thread.__init__(self)
         self.daemon = True
+        self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__class__.__name__)
         self.duration = duration_in_seconds
         self.start_time = None

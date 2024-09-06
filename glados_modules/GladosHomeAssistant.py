@@ -8,6 +8,7 @@ from glados_modules.GlogConfig import setup_logger
 
 class HomeAssistantLink:
     def __init__(self, config_file):
+        self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
         base = config_file['HOMEASSISTANT']
         self.token = base['token']
