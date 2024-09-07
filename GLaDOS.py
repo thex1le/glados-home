@@ -1,5 +1,6 @@
 import io
 import base64
+import json
 import random
 from threading import Thread
 import time
@@ -120,6 +121,31 @@ class GladosLocal(Thread, MQTTClient):
         if j_msg.get("Camera", "") == self.main_camera:
             self.logger.debug(f"{self.main_camera}, {msg.topic}, {j_msg}")
             self.sight_results = j_msg.get("Results")
+        if j_msg.get("Camera", "") == "Camera_Left":
+            self.logger.debug(f"Camera_Left, {msg.topic}, {j_msg}")
+            sight_results = j_msg.get("Results")
+            if "person" in sight_results.keys():
+                for p in sight_results["person"]["objects"]:
+                    if p["confidence"] >= 0.8:
+                        # move the robot to the left to start tracking
+                        # TODO gonna need to do location checks to make sure if we are already tracking
+                        # on the left quad we dont move there
+                        # maybe a bool true false on quadreants of where we are pointed?
+                        self.client.publish("body/servo",
+                                            json.dumps({"servo": "body_left_right", "angle": 135, "speed": 1}))
+        if j_msg.get("Camera", "") == "Camera_Right":
+            self.logger.debug(f"Camera_Left, {msg.topic}, {j_msg}")
+            sight_results = j_msg.get("Results")
+            if "person" in sight_results.keys():
+                for p in sight_results["person"]["objects"]:
+                    if p["confidence"] >= 0.8:
+                        # move the robot to the left to start tracking
+                        # TODO gonna need to do location checks to make sure if we are already tracking
+                        # on the left quad we dont move there
+                        # maybe a bool true false on quadreants of where we are pointed?
+                        self.client.publish("body/servo",
+                                            json.dumps({"servo": "body_left_right", "angle": 45, "speed": 1}))
+
 
     def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
         proc = self.__dedupe(choice, last, options_list)
