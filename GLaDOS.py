@@ -329,6 +329,7 @@ class GladosLocal(Thread, MQTTClient):
         scheck = self.__check_local_command(user_prompt, re.compile(r'%'))
         if scheck is True:
             level = re.findall(r'\b\d+\b', user_prompt)
+            # TODO figure out why vol level doesn't set correctly
             self.__change_volume(int(level[0]))
             self.current_vol = level[0]
             msg = f"I have set the volume to {level[0]} percent"
