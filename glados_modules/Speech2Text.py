@@ -12,7 +12,7 @@ from glados_modules.GlogConfig import setup_logger
 
 class GladosSTT(Thread):
     # glados speach to text
-    def __init__(self, glocal: classmethod) -> None:
+    def __init__(self, glocal) -> None:
         Thread.__init__(self)
         Thread.daemon = True
         self.__name__ = self.__class__.__name__
@@ -44,7 +44,6 @@ class GladosSTT(Thread):
     def record(self, mp_list):
         # TODO, how do we keep things local so were not hitting google all the time...
         while True:
-
             msg = "Say 'Hey GLaDOS' to start recording your question"
             self.logger.info(msg)
             with sr.Microphone() as source:
