@@ -255,7 +255,7 @@ class Gservo(Thread, MQTTClient):
             self.servo.set_pulse_width_range(min_pulse=pulse_max_min.min, max_pulse=pulse_max_min.max)
         self.speed: int = 5
         self.servo_range = servo_range
-        self.middle_angle: int = int((servo_range.max - servo_range.min) / 2)
+        self.middle_angle = int(self.servo_range.center)
         self.angle: int = self.middle_angle
         self.current_angle: int = self.angle
         self.first_boot: bool = True
@@ -789,14 +789,15 @@ class MotionTrack(Thread, MQTTClient):
 
 if __name__ == "__main__":
     ip = '192.168.86.52'
-    Angle_tuple = namedtuple("angle", ['max', 'min'])
+    Angle_tuple = namedtuple("angle", ['max', 'min', 'center'])
     Pulse_tuple = namedtuple("pulse", ['max', 'min'])
     Mqtt_tuple = namedtuple("mqtt", ["ip", "port"])
     mqtt_connect = Mqtt_tuple(ip, 1883)
     mg90d_pulse = Pulse_tuple(2665, 610)
     mg92b_pulse = Pulse_tuple(2550, 605)
-    head_angle = Angle_tuple(173, 6)
-    default_angle = Angle_tuple(180, 0)
+    head_angle = Angle_tuple(173, 6, 83)
+    neck_angle = Angle_tuple(120, 52, 92)
+    default_angle = Angle_tuple(180, 0, 90)
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=ip)
     right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd")
@@ -806,7 +807,7 @@ if __name__ == "__main__":
                      pulse_max_min=mg92b_pulse, servo_range=default_angle)
     head_UD = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=head_angle,
                      broker=mqtt_connect)
-    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=default_angle,
+    head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=neck_angle,
                      broker=mqtt_connect)
     right_lcd.start()
     body_LR.start()

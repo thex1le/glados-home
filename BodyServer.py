@@ -34,25 +34,28 @@ if __name__ == "__main__":
     animation_path = path.abspath(config_p["DEFAULT"]["aperture_animation"])
     head_camera_location = config_p["CAMERAS"]["Camera_Head_Factory"]
     max_min_tuple = namedtuple("max_min", ['max', 'min'])
+    max_min_center_tuple = namedtuple("max_min_center", ['max', 'min', 'center'])
     Mqtt_tuple = namedtuple("service_address", ["ip", "port"])
     mqtt_connect = Mqtt_tuple(config_p["MQTT"]["mqtt_server_ip"], int(config_p["MQTT"]["mqtt_port"]))
     pulse_90 = config_p["SERVOS"]["mg90d_pulse"].split(',')
     pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
-    default = config_p["SERVOS"]["default_max_min"].split(',')
-    head_min_max = config_p["SERVOS"]["head_min_max"].split(',')
+    default = config_p["SERVOS"]["default_max_min_center"].split(',')
+    head_min_max = config_p["SERVOS"]["head_min_max_center"].split(',')
+    neck_min_max = config_p["SERVOS"]["head_min_max_center"].split(',')
     mg92d_speed = float(config_p["SERVOS"]["mg92b_speed"])
     mg90d_speed = float(config_p["SERVOS"]["mg90d_speed"])
     mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
     mg92b_pulse = max_min_tuple(int(pulse_92[0]), int(pulse_92[1]))
-    default_angle = max_min_tuple(int(default[0]), int(default[1]))
-    head_angle = max_min_tuple(int(head_min_max[0]), int(head_min_max[1]))
+    default_angle = max_min_center_tuple(int(default[0]), int(default[1]), int(default[2]))
+    head_angle = max_min_center_tuple(int(head_min_max[0]), int(head_min_max[1]), int(head_min_max[2]))
+    neck_angle = max_min_center_tuple(int(neck_min_max[0]), int(neck_min_max[1]), int(neck_min_max[2]))
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=mqtt_connect)
     body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
                      broker=mqtt_connect)
     body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', servo_range=default_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
-    head_LR = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=default_angle,
+    head_LR = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=neck_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg90d_speed)
     head_UD = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=head_angle,
                      broker=mqtt_connect, pulse_max_min=mg90d_pulse, servo_speed=mg90d_speed)
