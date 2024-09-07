@@ -360,6 +360,12 @@ if __name__ == "__main__":
     gstt = GladosSTT(gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
+    left_camera_location = configp["CAMERAS"]["Camera_Left_Factory"]
+    right_camera_location = configp["CAMERAS"]["Camera_Right_Factory"]
+    left_camera = Camera(configfile=configp, location=left_camera_location)
+    right_camera = Camera(configfile=configp, location=right_camera_location)
+    left_camera.start()
+    right_camera.start()
     while True:
         prompt = gstt.get_text()
         if prompt is not None:
