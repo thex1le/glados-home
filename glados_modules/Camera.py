@@ -38,6 +38,7 @@ class Camera(Process, MQTTClient):
 
     def __init_camera(self):
         # allow us to init the camera inside the multiprocess thread
+        self.logger.debug(f"Starting sub init for {self.location}")
         if self.picam is True:
             self.logger.debug(f"Using PiCam for {self.location}")
             # pi cam
@@ -68,6 +69,7 @@ class Camera(Process, MQTTClient):
         self.queue = Queue()
         self.image_send = RxTx.DataSend(self.config, self.location, mpqueue=self.queue)
         self.image_send.start()
+        self.logger.debug(f"Sub init for {self.location} Complete")
 
     def get_camera_config(self):
         """
@@ -102,7 +104,7 @@ class Camera(Process, MQTTClient):
         self.__init_camera()
         while self.stop is False:
             self.image = self.__capture_image()
-            self.logger.debug("Sending image for processing")
+            self.logger.debug(f"Sending image from {self.location} for processing")
             image_dict = {"camera": f"/{self.location}", "raw": self.get_image()}
             # load the shared TX object sending queue,
             self.queue.put(image_dict)
