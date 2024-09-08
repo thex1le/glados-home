@@ -126,7 +126,7 @@ class GladosLocal(Thread, MQTTClient):
             sight_results = j_msg.get("Results")
             if "person" in sight_results.keys():
                 for p in sight_results["person"]["objects"]:
-                    if p["confidence"] >= 0.8:
+                    if float(p["confidence"]) >= 0.3:
                         # move the robot to the left to start tracking
                         # TODO gonna need to do location checks to make sure if we are already tracking
                         # on the left quad we dont move there
@@ -138,7 +138,7 @@ class GladosLocal(Thread, MQTTClient):
             sight_results = j_msg.get("Results")
             if "person" in sight_results.keys():
                 for p in sight_results["person"]["objects"]:
-                    if p["confidence"] >= 0.8:
+                    if float(p["confidence"]) >= 0.3:
                         # move the robot to the left to start tracking
                         # TODO gonna need to do location checks to make sure if we are already tracking
                         # on the left quad we dont move there
