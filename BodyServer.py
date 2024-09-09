@@ -56,7 +56,7 @@ if __name__ == "__main__":
     body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', servo_range=default_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
     head_LR = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=neck_angle,
-                     broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg90d_speed)
+                     broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
     head_UD = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=head_angle,
                      broker=mqtt_connect, pulse_max_min=mg90d_pulse, servo_speed=mg90d_speed)
     led_shoulders = LedShoulders(broker=mqtt_connect)
