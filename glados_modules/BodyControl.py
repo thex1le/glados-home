@@ -377,7 +377,7 @@ class Gservo(Thread, MQTTClient):
                 self.move()
                 self.exec_command = False
             else:
-                sleep(.1)
+                sleep(.05)
         self.client.loop_stop()
 
     def stop(self) -> None:
