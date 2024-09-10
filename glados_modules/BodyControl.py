@@ -513,6 +513,7 @@ class LedHead(MQTTClient):
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
+        # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
         self.logger = setup_logger(self.__name__)
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
