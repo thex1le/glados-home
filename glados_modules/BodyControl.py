@@ -497,7 +497,7 @@ class DumbLEDController(Thread):
 
     def pulse_animation(self):
         """
-        Pulse the led from low to high and back to low
+        Pulse the LED from low to high and back to low
         """
         # each iteration should take
         for i in range(1, 800):
