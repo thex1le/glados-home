@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class GLaDOSEnums(Enum):
+class SystemEnums(Enum):
     MQTT_INTENSITY_TOPIC = "intensity"
 
 

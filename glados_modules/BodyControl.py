@@ -23,7 +23,7 @@ from adafruit_rgb_display import st7789
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, GLaDOSEnums
+from glados_modules.GLaDosEnums import ServoEnum, SystemEnums
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -248,7 +248,7 @@ class Gservo(Thread, MQTTClient):
         self.location: str = location
         self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC.value
         self.status_topic = ServoEnum.MQTT_STATUS_TOPIC.value
-        self.intensity_topic = GLaDOSEnums.MQTT_INTENSITY_TOPIC.value
+        self.intensity_topic = SystemEnums.MQTT_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         self.min_angle: int = 0
