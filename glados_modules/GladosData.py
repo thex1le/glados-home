@@ -19,7 +19,7 @@ class ServoLocation(MQTTClient):
         self.__name__ = self.__class__.__name__
         MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.logger = setup_logger(name=self.__name__)
-        self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC
+        self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
         self.topic_handler: Dict[ServoEnum, Callable] = {self.cmd_topic: self.handle_cmd}
         self.body_map = dict()
 
@@ -28,7 +28,7 @@ class ServoLocation(MQTTClient):
         Command Handler
         """
         j_msg = loads(msg.payload.decode())
-        if ServoEnum.MSG_LOCATION_KEY in j_msg.keys():
+        if ServoEnum.MSG_LOCATION_KEY.value in j_msg.keys():
             # found a servo status, update the dict
             with Lock:
                 self.body_map = j_msg
@@ -49,7 +49,7 @@ class VisionResults(MQTTClient):
         self.__name__ = self.__class__.__name__
         MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.logger = setup_logger(name=self.__name__)
-        self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC
+        self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.topic_handler: Dict[CameraEnum, Callable] = {self.cmd_topic: self.handle_cmd}
         self.response_map = dict()
 
@@ -58,7 +58,7 @@ class VisionResults(MQTTClient):
         Command Handler
         """
         j_msg = loads(msg.payload.decode())
-        if CameraEnum.MSG_LOCATION_KEY in j_msg.keys():
+        if CameraEnum.MSG_LOCATION_KEY.value in j_msg.keys():
             # found a servo status, update the dict
             with Lock:
                 self.response_map = j_msg

@@ -25,6 +25,7 @@ from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 from glados_modules.GLaDosEnums import ServoEnum, GLaDOSEnums
 
+
 class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
                  sck=board.SCK, mosi=board.MOSI, flip=False):
@@ -245,9 +246,9 @@ class Gservo(Thread, MQTTClient):
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.location: str = location
-        self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC
-        self.status_topic: ServoEnum.MQTT_STATUS_TOPIC
-        self.intensity_topic: GLaDOSEnums.MQTT_INTENSITY_TOPIC
+        self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC.value
+        self.status_topic = ServoEnum.MQTT_STATUS_TOPIC.value
+        self.intensity_topic = GLaDOSEnums.MQTT_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         self.min_angle: int = 0
@@ -282,10 +283,10 @@ class Gservo(Thread, MQTTClient):
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
-        if j_msg.get(ServoEnum.MSG_LOCATION_KEY, "") == self.location:
+        if j_msg.get(ServoEnum.MSG_LOCATION_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
-            angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE, self.middle_angle))
-            speed: int = int(j_msg.get(ServoEnum.MSG_SPEED, self.speed))
+            angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
+            speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
             self.set_speed_angle((speed, angle), execute=True)
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
@@ -293,9 +294,9 @@ class Gservo(Thread, MQTTClient):
         pass
 
     def get_angles(self) -> dict:
-        return {ServoEnum.MSG_MAX: self.servo_range.max, ServoEnum.MSG_MIN: self.servo_range.min,
-                ServoEnum.MSG_MIDDLE: self.middle_angle, ServoEnum.MSG_CURRENT_ANGLE: self.current_angle,
-                ServoEnum.MSG_AXIS: self.axis}
+        return {ServoEnum.MSG_MAX.value: self.servo_range.max, ServoEnum.MSG_MIN.value: self.servo_range.min,
+                ServoEnum.MSG_MIDDLE.value: self.middle_angle, ServoEnum.MSG_CURRENT_ANGLE.value: self.current_angle,
+                ServoEnum.MSG_AXIS.value: self.axis}
 
     def set_speed(self, speed: int) -> None:
         if speed >= 5:
