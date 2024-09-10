@@ -8,7 +8,8 @@ from picamera2 import Picamera2
 # glados config
 from glados_modules.GlogConfig import setup_logger
 from glados_modules import RxTx
-from glados_modules.MqttClient import MQTTClient
+from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
+from glados_modules.GLaDosEnums import CameraEnum
 
 
 class GLaDOSServerException(Exception):
@@ -34,7 +35,9 @@ class Camera(Process, MQTTClient):
         self.picam = bool(self.config['CAMERAS'][picam].lower())
         self.camera_num = int(self.config["CAMERAS"][self.location])
         self.image = None
-        self.client.publish("status", f"Camera {self.location} Started")
+        self.status_topic = CameraEnum.MQTT_STATUS_TOPIC.value
+        status = CameraMessageBuilder.send_status(self.location, f"Camera {self.location} Started")
+        self.send_command(status, CameraEnum.MQTT_STATUS_TOPIC.value)
 
     def __init_camera(self):
         # allow us to init the camera inside the multiprocess thread
@@ -44,10 +47,10 @@ class Camera(Process, MQTTClient):
             # pi cam
             self.cap = Picamera2(self.camera_num)
             self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
-            self.logger.debug(f" Camera FPS set to {self.fps} and RBG888 and YUV420 MOdes")
+            self.logger.debug(f" Camera FPS set to {self.fps} and RBG888 and YUV420 Modes")
             self.cam_config = self.cap.create_video_configuration(
-                main={"format": "RGB888", "size": (640, 480)},
-                lores={"format": "YUV420", "size": (640, 480)},
+                main={"format": "RGB888", "size": (self.cam_res_x, self.cam_res_y)},
+                lores={"format": "YUV420", "size": (self.cam_res_x, self.cam_res_y)},
                 display="lores",
                 controls={"FrameRate": self.fps}
             )
@@ -105,7 +108,8 @@ class Camera(Process, MQTTClient):
         while self.stop is False:
             self.image = self.__capture_image()
             self.logger.debug(f"Sending image from {self.location} for processing")
-            image_dict = {"camera": f"/{self.location}", "raw": self.get_image()}
+            image_dict = {CameraEnum.MSG_LOCATION_KEY.value: f"/{self.location}",
+                          CameraEnum.MSG_RAW_IMAGE: self.get_image()}
             # load the shared TX object sending queue,
             self.queue.put(image_dict)
 

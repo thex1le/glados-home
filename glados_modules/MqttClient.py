@@ -7,7 +7,7 @@ import paho.mqtt.client as mqtt
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import ServoEnum
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum
 
 
 class MQTTClient:
@@ -43,6 +43,19 @@ class MQTTClient:
             self.client.publish(topic, dumps(m))
 
 # TODO flesh out message classes for easy update in one place
+
+
+class CameraMessageBuilder:
+    @staticmethod
+    def send_status(location, status):
+        return {CameraEnum.MSG_LOCATION_KEY.value: location,
+                CameraEnum.MSG_COMMAND_KEY.value: CameraEnum.MSG_COMMAND_STATUS.value,
+                CameraEnum.MSG_RESULTS.value: status}
+
+    @staticmethod
+    def send_results(location, results):
+        return {CameraEnum.MSG_LOCATION_KEY.value: location,
+                CameraEnum.MSG_RESULTS.value: results}
 
 
 class ServoMessageBuilder:
