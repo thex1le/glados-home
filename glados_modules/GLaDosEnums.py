@@ -26,3 +26,11 @@ class ServoEnum(Enum):
     MSG_AXIS: str = "axis"
     MQTT_COMMAND_TOPIC: str = "body/servo"
     MQTT_STATUS_TOPIC: str = "body/servo/status"
+
+
+class CameraEnum(Enum):
+    """
+    Enum of camera location names for use in mqtt topics and other interactions with them
+    """
+    MSG_LOCATION_KEY: str = "camera"
+    MQTT_RESPONSE_TOPIC: str = "vision/camera_response"
