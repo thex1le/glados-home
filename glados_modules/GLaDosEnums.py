@@ -13,6 +13,7 @@ class ServoEnum(Enum):
     LOCATION_HEAD_LEFT_RIGHT: str = "head_left_right"
     LOCATION_BODY_UP_DOWN: str = "body_up_down"
     LOCATION_BODY_LEFT_RIGHT: str = "body_left_right"
+    SERVO_DEFAULT_SPEED: int = 1
     MSG_LOCATION_KEY: str = "servo"
     MSG_COMMAND_KEY: str = "cmd"
     MSG_COMMAND_STATUS: str = "status"
