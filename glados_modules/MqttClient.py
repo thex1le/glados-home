@@ -31,7 +31,7 @@ class MQTTClient:
         if msg.topic in self.topic_handler:
             self.topic_handler[msg.topic](msg)
 
-    def send_command(self, command: dict| list| tuple, topic) -> None:
+    def send_command(self, command: dict | list | tuple, topic) -> None:
         """
         Generic mqtt sending function for single or multiple messages
         """
@@ -43,7 +43,6 @@ class MQTTClient:
             self.client.publish(topic, dumps(m))
 
 # TODO flesh out message classes for easy update in one place
-# should thees be enums?
 
 
 class ServoMessageBuilder:
@@ -51,22 +50,22 @@ class ServoMessageBuilder:
     Build and return servo messages based on enums
     """
     @staticmethod
-    def head_up_down(angle: int, speed: int = 1) -> dict:
+    def head_up_down(angle: int, speed: int = ServoEnum.SERVO_DEFAULT_SPEED) -> dict:
         return {ServoEnum.MSG_LOCATION_KEY: ServoEnum.LOCATION_HEAD_UP_DOWN,
                 ServoEnum.MSG_ANGLE: angle, ServoEnum.MSG_SPEED: speed}
 
     @staticmethod
-    def body_left_right(angle: int, speed: int = 1) -> dict:
+    def body_left_right(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED) -> dict:
         return {ServoEnum.MSG_LOCATION_KEY: ServoEnum.LOCATION_BODY_LEFT_RIGHT,
                 ServoEnum.MSG_ANGLE: angle, ServoEnum.MSG_SPEED: speed}
 
     @staticmethod
-    def body_up_down(angle: int, speed: int = 1) -> dict:
+    def body_up_down(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED) -> dict:
         return {ServoEnum.MSG_LOCATION_KEY: ServoEnum.LOCATION_BODY_UP_DOWN,
                 ServoEnum.MSG_ANGLE: angle, ServoEnum.MSG_SPEED: speed}
 
     @staticmethod
-    def head_left_right(angle: int, speed: int = 1) -> dict:
+    def head_left_right(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED) -> dict:
         return {ServoEnum.MSG_LOCATION_KEY: ServoEnum.LOCATION_HEAD_LEFT_RIGHT,
                 ServoEnum.MSG_ANGLE: angle, ServoEnum.MSG_SPEED: speed}
 
