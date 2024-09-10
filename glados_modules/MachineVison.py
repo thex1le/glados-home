@@ -1,5 +1,4 @@
 from json import loads as json_loads
-from json import dumps as json_dumps
 from threading import Thread
 
 #3rd party
@@ -11,7 +10,8 @@ from ultralytics.utils.plotting import Annotator
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.RxTx import DataRecv
 from glados_modules.RtspServer import RTSPServer
-from glados_modules.MqttClient import MQTTClient
+from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
+from glados_modules.GLaDosEnums import CameraEnum
 
 
 class GLaDOSServerException(Exception):
@@ -29,18 +29,19 @@ class YoloDetect(Thread, MQTTClient):
         broker = self.configfile['MQTT']['mqtt_server_ip']
         port = self.configfile['MQTT']['mqtt_port']
         MQTTClient.__init__(self, broker, port)
-        self.cmd_topic: str = "vision/camera_response"
+        self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
+        self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
         cam_conf = self.configfile['CAMERAS']
         self.cam_configs = {
-            f"/{cam_conf['Camera_Head_Factory']}": {
-                "resolution": tuple(cam_conf["Camera_Head_Resolution"].split(',')),
-                "fps": int(cam_conf["Camera_Head_FPS"])},
-            f"/{cam_conf['Camera_Left_Factory']}": {
-                "resolution": tuple(cam_conf["Camera_Left_Resolution"].split(',')),
-                "fps": int(cam_conf["Camera_Left_FPS"])},
-            f"/{cam_conf['Camera_Right_Factory']}": {
-                "resolution": tuple(cam_conf["Camera_Right_Resolution"].split(',')),
-                "fps": int(cam_conf["Camera_Right_FPS"])}}
+            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value])},
+            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value])},
+            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value])}}
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
@@ -51,7 +52,8 @@ class YoloDetect(Thread, MQTTClient):
         self.image_get.start()
         for key in self.cam_configs.keys():
             msg = f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}{key}"
-            self.client.publish("status", msg)
+            status = CameraMessageBuilder.send_status(key, msg)
+            self.send_command(status, self.status_topic)
             self.logger.info(msg)
         self.rtsp = RTSPServer(self.cam_configs)
 
@@ -64,6 +66,7 @@ class YoloDetect(Thread, MQTTClient):
             if y_class is None:
                 continue
             self.logger.debug(f"Translating {y_class} with type {type(y_class)}")
+            # TODO This object should also likely become an enum
             for cname in json_loads(y_class.tojson()):
                 name = cname["name"]
                 if name in list(results_dict.keys()):
@@ -76,8 +79,8 @@ class YoloDetect(Thread, MQTTClient):
 
     def __yolo_process_image(self, image_dict):
         # pass image to rtsp...
-        raw = image_dict["raw"]
-        width, height = self.cam_configs[image_dict["camera"]]['resolution']
+        raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
+        width, height = self.cam_configs[image_dict[CameraEnum.MSG_LOCATION_KEY.value]][CameraEnum.MSG_RESOLUTION.value]
         yuv420_data = raw.reshape((int(height) * 3) // 2, int(width))
         image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
         #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
@@ -93,23 +96,25 @@ class YoloDetect(Thread, MQTTClient):
                 annotator.box_label(b, self.model.names[int(c)])
                 self.logger.debug(f"Labeled image with, {self.model.names[int(c)]}")
         a_image = annotator.result()
-        self.logger.debug(f"Sending image to RTSP server factory: {image_dict['camera']}")
+        self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 
     def process_image(self, image):
         self.sight = self.__yolo_process_image(image)
-        self.logger.debug(f"Sending back process dict of seen data for camera {image['camera']}")
+        self.logger.debug(f"Sending back process dict of seen data for camera {image[
+            CameraEnum.MSG_LOCATION_KEY.value]}")
         # cut off the slash at the front
-        cam_name = image['camera'][1:]
-        self.client.publish(self.cmd_topic, json_dumps({"Camera": cam_name,
-                                                        "Results": self.__translate_results(self.sight)}))
+        cam_name = image[CameraEnum.MSG_LOCATION_KEY.value][1:]
+        results = CameraMessageBuilder.send_results(cam_name, self.__translate_results(self.sight))
+        self.send_command(results, self.cmd_topic)
 
     def run(self):
-        self.client.publish("status", "Machine Vision Started")
+        status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
+        self.send_command(status, self.status_topic)
         while True:
             image_dict = self.image_get.get_data_from_queue(True)
-            self.logger.debug(f"Got image from sender {image_dict.get('camera', 'None')}")
+            self.logger.debug(f"Got image from sender {image_dict.get(CameraEnum.MSG_LOCATION_KEY.value, 'None')}")
             try:
                 self.process_image(image_dict)
             except Exception as e:

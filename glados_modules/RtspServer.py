@@ -5,7 +5,10 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 import cv2
+
+# glados modules
 from glados_modules.GlogConfig import setup_logger
+from glados_modules.GLaDosEnums import CameraEnum
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
@@ -65,8 +68,8 @@ class RTSPServer(GstRtspServer.RTSPServer):
     def _initialize_factories(self, cam_configs):
         mount_points = self.get_mount_points()
         for factory_path in cam_configs.keys():
-            (cam_x, cam_y) = cam_configs[factory_path]["resolution"]
-            rtsp_system = RtspSystem(cam_x, cam_y, int(cam_configs[factory_path]["fps"]))
+            (cam_x, cam_y) = cam_configs[factory_path][CameraEnum.MSG_RESOLUTION.value]
+            rtsp_system = RtspSystem(cam_x, cam_y, int(cam_configs[factory_path][CameraEnum.MSG_FPS]))
             rtsp_system.set_shared(True)
             mount_points.add_factory(factory_path, rtsp_system)
             rtsp_system.start()
