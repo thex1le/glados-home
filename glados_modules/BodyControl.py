@@ -237,7 +237,7 @@ class GladosLCD(Thread, MQTTClient):
 
 
 class Gservo(Thread, MQTTClient):
-    def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker, servo_range,
+    def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple, servo_range: NamedTuple,
                  pulse_max_min=None, servo_speed: float = 0.1) -> None:
         Thread.__init__(self)
         Thread.daemon = True
@@ -385,7 +385,7 @@ class Gservo(Thread, MQTTClient):
 
 
 class LedShoulders(MQTTClient):
-    def __init__(self, broker) -> None:
+    def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = "LED_Shoulder_Controller"
         self.logger = setup_logger(self.__name__)
         MQTTClient.__init__(self, broker.ip, broker.port)
@@ -406,14 +406,14 @@ class LedShoulders(MQTTClient):
         self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco, "twinkle": self.twinkle}
         self.twinkle_loop: bool = False
 
-    def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
+    def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
         if j_msg.get("led", "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
             if j_msg[self.location]['command'] in self.animations.keys():
                 self.animations[j_msg[self.location]['command']]()
 
-    def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
+    def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         j_msg = loads(msg.payload.decode())
         if j_msg.get("led", "") == self.location:
@@ -510,7 +510,7 @@ class DumbLEDController(Thread):
 
 
 class LedHead(MQTTClient):
-    def __init__(self, broker) -> None:
+    def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         self.logger = setup_logger(self.__name__)
@@ -532,14 +532,14 @@ class LedHead(MQTTClient):
                                                 "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
         self.glados_eye: Tuple[int, int, int] = (255, 165, 0)
 
-    def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
+    def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
         if j_msg.get("led", "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
             if j_msg[self.location]['command'] in self.animations.keys():
                 self.animations[j_msg[self.location]['command']]()
 
-    def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
+    def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         j_msg = loads(msg.payload.decode())
         if j_msg.get("led", "") == self.location:
