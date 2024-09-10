@@ -21,7 +21,7 @@ from adafruit_rgb_display import st7789
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient
+from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 from glados_modules.GLaDosEnums import ServoEnum, GLaDOSEnums
 
