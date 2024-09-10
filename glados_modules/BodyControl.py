@@ -3,13 +3,13 @@ import random
 from time import sleep, time
 from threading import Thread
 from json import loads, dumps
-from typing import Dict, Callable, Tuple
+from typing import Dict, Callable, Tuple, NamedTuple
 from os import path
 from glob import glob
 from collections import namedtuple
 
 # 3rd party
-import paho.mqtt.client as mqtt
+from  paho.mqtt.client import MQTTMessage
 from adafruit_servokit import ServoKit
 import neopixel
 import adafruit_pca9685
@@ -23,7 +23,7 @@ from adafruit_rgb_display import st7789
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-
+from glados_modules.GLaDosEnums import ServoEnum, GLaDOSEnums
 
 class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
@@ -245,8 +245,9 @@ class Gservo(Thread, MQTTClient):
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.location: str = location
-        self.cmd_topic: str = "body/servo"
-        self.intensity_topic: str = "intensity"
+        self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC
+        self.status_topic: ServoEnum.MQTT_STATUS_TOPIC
+        self.intensity_topic: GLaDOSEnums.MQTT_INTENSITY_TOPIC
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         self.min_angle: int = 0
@@ -272,22 +273,29 @@ class Gservo(Thread, MQTTClient):
             4: degree_per_second * 0.8,  # Angry
             5: degree_per_second * 1.0  # Frustrated/fastest
         }
-        self.client.publish("status", f"{self.location} servo startup")
+        self.client.publish(topic=self.status_topic, payload=json.dumps(f"{self.location} servo startup complete"))
 
-    def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
+    def send_status(self):
+        # Send current
+        status = ServoMessageBuilder.send_status(self.location, self.get_angles())
+        self.client.publish(topic=self.status_topic, payload=json.dumps(status))
+
+    def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("servo", "") == self.location:
+        if j_msg.get(ServoEnum.MSG_LOCATION_KEY, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
-            angle: int = int(j_msg.get("angle", self.middle_angle))
-            speed: int = int(j_msg.get("speed", self.speed))
+            angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE, self.middle_angle))
+            speed: int = int(j_msg.get(ServoEnum.MSG_SPEED, self.speed))
             self.set_speed_angle((speed, angle), execute=True)
 
-    def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
+    def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         pass
 
     def get_angles(self) -> dict:
-        return {"max": self.servo_range.max, "min": self.servo_range.min, "middle": self.middle_angle}
+        return {ServoEnum.MSG_MAX: self.servo_range.max, ServoEnum.MSG_MIN: self.servo_range.min,
+                ServoEnum.MSG_MIDDLE: self.middle_angle, ServoEnum.MSG_CURRENT_ANGLE: self.current_angle,
+                ServoEnum.MSG_AXIS: self.axis}
 
     def set_speed(self, speed: int) -> None:
         if speed >= 5:
@@ -361,7 +369,7 @@ class Gservo(Thread, MQTTClient):
                 self.logger.debug(f"moving to {self.angle}")
                 self.s_curve_move()
                 self.moving = False
-        self.client.publish("status", f"{self.location} servo, Set: {self.angle}")
+        self.send_status()
 
     def run(self) -> None:
         while self.stop_bool is False:
@@ -587,204 +595,6 @@ class LedHead(MQTTClient):
 # on the pi5 code, need to have classes to read from LIDAR sensor to channel..
 # also need class to read temp senders and have them take action
 # bird detection to kill external power? how will that work...
-
-
-class MotionTrack(Thread, MQTTClient):
-    # class for motion tracking on a target
-    # TODO figure out if we want this here, or in teh Gbody class in the body server?
-    def __init__(self, config_file):
-        Thread.__init__(self)
-        Thread.daemon = True
-        self.__name__ = "motion_tracker"
-        self.location = self.__name__
-        self.configfile = config_file
-        broker = self.configfile['MQTT']['mqtt_server_ip']
-        port = self.configfile['MQTT']['mqtt_port']
-        MQTTClient.__init__(self, broker, port)
-        self.logger = setup_logger(self.__name__)
-        # TODO read cam with from config file
-        # head camera resolution
-        self.cam_x, self.cam_y = self.configfile["CAMERAS"]["Camera_Head_Resolution"].split(",")
-        self.cam_x = int(self.cam_x)
-        self.cam_y = int(self.cam_y)
-        self.cmd_topic: str = "system/track"
-        self.intensity_topic: str = "intensity"
-        self.track_commands = {"scan_room": self.scan_room, "stop_body": self.stop_body}
-        self.intensity: Tuple[float, float] = (.1, .1)
-        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
-                                                   self.intensity_topic: self.handle_intensity}
-        # access the servos
-        # find the x1 x2, y1, y2 of the target,
-        # figure out if the head can look at it...
-        # if we can then head / neck moves to it...
-        # then recalculate so the head and neck can move back to center
-        # and the body will rotate and middle_angle will move up or down
-        # order of off center is self.body_LR > self.body_UD,> self.head.UP> self, head left right
-        # TODO figure out how we are going to track anger intensity over various body parts
-        self.scan_success = False
-
-    def handle_cmd(self, msg: mqtt.MQTTMessage) -> None:
-        j_msg = loads(msg.payload.decode())
-        if j_msg.get("tracker", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            if j_msg[self.location]['command'] in self.track_commands.keys():
-                self.track_commands[j_msg[self.location]['command']]()
-
-    def handle_intensity(self, msg: mqtt.MQTTMessage) -> None:
-        # TODO figure out update commands
-        j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            self.intensity = j_msg["intensity"]
-
-    def scan_room(self, scan_speed=3, search_time=90, confidence=.70):
-        #TODO consider how this will change with left and right cameras...,
-        self.logger.debug("Scanning Room for Target")
-        t = time()
-        while (time() - t) < search_time and self.scan_success is False:
-            if self.scan_success is False:
-                # TODO FIGURE OUT WHRERE WE GET THE MIN MAX ANGLE HERE.. FROM STATUS MQTT?
-                msglist = [{"servo": "body_left_right", "angle": 180, "speed": scan_speed},
-                           {"servo": "body_up_down", "angle": 180, "speed": scan_speed},
-                           {"servo": "head_up_down", "angle": 180, "speed": scan_speed},
-                           {"servo": "head_left_right", "angle": 180, "speed": scan_speed}]
-                self.client.publish("body/servo", json.dumps(msglist))
-            else:
-                break
-            # block till head and body are at min
-            # TODO DO WE KEEP SENDING STATUS MESSAGES TO CHECK? HOW OFFTEN?
-            while (self.body_LR.get_angle() != self.body_LR.min_angle and
-                   self.head_LR.get_angle() != self.head_LR.min_angle or self.scan_success is True):
-                sleep(.2)
-            # HOW DO WE KNOW SCAN WAS SUCESSFULL?
-            if self.scan_success is False:
-                self.head_LR.set_speed_angle((scan_speed, self.head_LR.max_angle), execute=True)
-                self.body_LR.set_speed_angle((scan_speed, self.body_LR.max_angle), execute=True)
-                # TODO change when threading is enabled
-                self.head_LR.move()
-                self.body_LR.move()
-            else:
-                break
-            # block till head and body are at max
-            while (self.body_LR.get_angle() != self.body_LR.max_angle and
-                   self.head_LR.get_angle() != self.head_LR.max_angle or self.scan_success is True):
-                sleep(.2)
-        if self.scan_success is True:
-            with self.lock:
-                self.seen_data = self.eyes.get_results()
-            self.scan_success = False
-            self.move_servos()
-        self.logger.debug("Scanning For Target Complete")
-
-    def stop_body(self):
-        """
-        Stop body movement
-        """
-        self.stop = True
-
-    def __find_person(self, target='person', confidence=.7) -> dict:
-        """
-        Find the highest confidence person and return their bounding box from current data set
-        self.seen_data expected to be YOLO8 data response object
-        """
-        # TODO where do we get the bounding box data from? MQTT?
-        with self.lock:
-            rtn = dict()
-            if target in self.seen_data and self.seen_data[target]['count'] > 0:
-                highest_confidence = 0
-                highest_confidence_person = None
-                for p in self.seen_data[target]['objects']:
-                    if p['confidence'] > highest_confidence:
-                        highest_confidence = p['confidence']
-                        highest_confidence_person = p
-                if highest_confidence_person is not None:
-                    if highest_confidence >= confidence:
-                        # take the highest confidence and return the bounding box
-                        rtn = highest_confidence_person['box']
-        self.logger.debug(f"Confidence box found {rtn} with confidence score of {confidence}")
-        return rtn
-
-    def __calc_servo(self, servo: Gservo, bbox: dict) -> int:
-        """
-        Calculate servo angle correction to target
-        """
-        # TODO determine if we need current_angle? does it matter?
-        if servo.axis == 'x':
-            bbox_edge_1 = bbox['x1']
-            bbox_edge_2 = bbox['x2']
-            axis_size = self.cam_x
-        else:
-            bbox_edge_1 = bbox['y1']
-            bbox_edge_2 = bbox['y2']
-            axis_size = self.cam_y
-        # Calculate the center of the new person's bounding box on the x-axis
-        center_updated = (bbox_edge_1 + bbox_edge_2) / 2
-        # Calculate the offset of the person's center from the image center with the updated data
-        offset_from_center = center_updated - (axis_size / 2)
-        # Calculate the new servo angle to center on the person with the updated data
-        new_servo_angle_updated = servo.middle_angle - (offset_from_center / axis_size * servo.max_angle)
-        # Round to nearest whole
-        return round(new_servo_angle_updated)
-
-    def __level_servos(self, servo1: Gservo, servo2: Gservo) -> None:
-        # bring servo1 to midpoint by moving servo2
-        # ensure servos are on the same axis
-        self.logger.debug(f"Leveling Servos {servo1.location} & {servo2.location}")
-        if servo1.axis != servo2.axis:
-            msg = "Servers are not on same axsis"
-            self.logger.error(msg)
-            raise Exception(msg)
-        servo2.set_angle(servo1.get_angle())
-        servo1.set_angle(servo1.get_middle_angle())
-        servo1.move()
-        servo2.move()
-
-    def __distance_check(self, servo, new_angle, degree_diff=2):
-        # TODO get degrees of difference from config file
-        move = False
-        current_angle = servo.get_angle()
-        if new_angle > current_angle:
-            if (new_angle - current_angle) > degree_diff:
-                self.logger.debug(f"Going up, {new_angle} is greater than current {current_angle}, moving")
-                move = True
-            else:
-                self.logger.debug(f"Going up, {new_angle} is less than current {current_angle}, not moving")
-        elif new_angle < current_angle:
-            if (current_angle - new_angle) > degree_diff:
-                self.logger.debug(f"Going Down, {new_angle} is less than current {current_angle}, moving")
-                move = True
-            else:
-                self.logger.debug(f"Going Down, {new_angle} is more than current {current_angle}, not moving")
-        return move
-
-    def move_servos(self):
-        #TODO LIKELY CAN BE DELETED
-        target = self.__find_person()
-        if target != {}:
-            # move "shoulders" first
-            head_lr = self.__calc_servo(self.head_LR, target)
-            head_ud = self.__calc_servo(self.head_UD, target)
-            if self.__distance_check(self.head_LR, head_lr ) is True:
-                self.head_LR.set_angle(head_lr)
-                # don't use threading for now
-                self.head_LR.move()
-            if self.__distance_check(self.head_UD, head_ud) is True:
-                self.head_UD.set_angle(head_ud)
-                # dont use threading for now
-                self.head_UD.move()
-            # head should now be centered on the target
-            # level the head and arm with body and rotation
-            # x-axis
-            self.__level_servos(self.head_LR, self.body_LR)
-            self.__level_servos(self.head_UD, self.body_UD)
-
-    def run(self):
-        #TODO LIKELY CAN BE DELETED
-        while self.stop is False:
-            with self.lock:
-                self.seen_data = self.eyes.get_results()
-            self.move_servos()
-            sleep(.2)
 
 
 if __name__ == "__main__":
