@@ -13,6 +13,7 @@ class ServoEnum(Enum):
     LOCATION_HEAD_LEFT_RIGHT: str = "head_left_right"
     LOCATION_BODY_UP_DOWN: str = "body_up_down"
     LOCATION_BODY_LEFT_RIGHT: str = "body_left_right"
+    LOCATION_CORE: str = "body"
     SERVO_DEFAULT_SPEED: int = 1
     MSG_LOCATION_KEY: str = "servo"
     MSG_COMMAND_KEY: str = "cmd"
@@ -22,11 +23,11 @@ class ServoEnum(Enum):
     MSG_SPEED: str = "speed"
     MSG_MAX: str = "max"
     MSG_MIN: str = "min"
-    MSG_MIDDLE: str= "middle"
+    MSG_MIDDLE: str = "middle"
     MSG_CURRENT_ANGLE: str = "current"
     MSG_AXIS: str = "axis"
-    MQTT_COMMAND_TOPIC: str = "body/servo"
-    MQTT_STATUS_TOPIC: str = "body/servo/status"
+    MQTT_COMMAND_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}"
+    MQTT_STATUS_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
 
 
 class CameraEnum(Enum):
