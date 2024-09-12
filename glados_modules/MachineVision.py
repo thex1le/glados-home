@@ -108,8 +108,8 @@ class YoloDetect(Thread, MQTTClient):
 
     def process_image(self, image):
         self.sight = self.__yolo_process_image(image)
-        self.logger.debug(f"Sending back process dict of seen data for camera {image[
-            CameraEnum.MSG_LOCATION_KEY.value]}")
+        self.logger.debug(f"Sending back process dict of seen data for camera \
+                           {image[CameraEnum.MSG_LOCATION_KEY.value]}")
         # cut off the slash at the front
         cam_name = image[CameraEnum.MSG_LOCATION_KEY.value][1:]
         results = CameraMessageBuilder.send_results(cam_name, self.__translate_results(self.sight))
