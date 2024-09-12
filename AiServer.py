@@ -5,7 +5,7 @@ import sys
 from os import path
 
 # glados imports
-from glados_modules.MachineVison import YoloDetect, GLaDOSServerException
+from glados_modules.MachineVision import YoloDetect, GLaDOSServerException
 from gladosTTS import engine as glados_voice
 
 if __name__ == "__main__":
