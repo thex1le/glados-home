@@ -27,13 +27,13 @@ class Camera(Process, MQTTClient):
         port = self.config['MQTT']['mqtt_port']
         MQTTClient.__init__(self, broker, port)
         resolution = f"{self.location}_Resolution"
-        self.fps = int(self.config['CAMERAS'][f"{self.location}_FPS"])
+        self.fps = int(self.config[CameraEnum.CONFIG_HEAD.value][f"{self.location}_{CameraEnum.MSG_FPS.value}"])
         picam = f"{self.location}_Picam"
         cam_res = self.config['CAMERAS'][resolution].split(',')
         self.cam_res_x = int(cam_res[0])
         self.cam_res_y = int(cam_res[1])
-        self.picam = bool(self.config['CAMERAS'][picam].lower())
-        self.camera_num = int(self.config["CAMERAS"][self.location])
+        self.picam = bool(self.config[CameraEnum.CONFIG_HEAD.value][picam].lower())
+        self.camera_num = int(self.config[CameraEnum.CONFIG_HEAD.value][self.location])
         self.image = None
         self.status_topic = CameraEnum.MQTT_STATUS_TOPIC.value
         status = CameraMessageBuilder.send_status(self.location, f"Camera {self.location} Started")
