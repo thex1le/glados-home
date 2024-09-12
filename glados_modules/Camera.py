@@ -29,7 +29,7 @@ class Camera(Process, MQTTClient):
         resolution = f"{self.location}_Resolution"
         self.fps = int(self.config[CameraEnum.CONFIG_HEAD.value][f"{self.location}_{CameraEnum.MSG_FPS.value}"])
         picam = f"{self.location}_Picam"
-        cam_res = self.config['CAMERAS'][resolution].split(',')
+        cam_res = self.config[CameraEnum.CONFIG_HEAD.value][resolution].split(',')
         self.cam_res_x = int(cam_res[0])
         self.cam_res_y = int(cam_res[1])
         self.picam = bool(self.config[CameraEnum.CONFIG_HEAD.value][picam].lower())
