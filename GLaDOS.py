@@ -638,12 +638,11 @@ if __name__ == "__main__":
     head_cam_resolution = cam_resolution(int(r_x), int(r_y))
     broker = mqtt_broker(configp["MQTT"]["mqtt_server_ip"], configp["MQTT"]["mqtt_port"])
     confidence = float(configp["REACTIONS"]["VisionConfidence"])
-    MotionTrack(broker=broker, camera_resolution=head_cam_resolution, target="person", confidence=confidence)
+    mt = MotionTrack(broker=broker, camera_resolution=head_cam_resolution, target="person", confidence=confidence)
     left_camera = Camera(configfile=configp, location=left_camera_location)
     right_camera = Camera(configfile=configp, location=right_camera_location)
     left_camera.start()
     right_camera.start()
-    MotionTrack()
     while True:
         prompt = gstt.get_text()
         if prompt is not None:
