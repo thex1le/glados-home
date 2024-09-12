@@ -2,7 +2,7 @@ import io
 import base64
 import json
 import random
-from threading import Thread
+from threading import Thread, Lock
 import time
 from os import path
 import argparse
@@ -12,8 +12,9 @@ from ctypes import *
 from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
-from typing import Dict, Callable, Tuple
-from json import loads, dumps
+from typing import Dict, Callable, Tuple, NamedTuple
+from json import loads
+from collections import namedtuple
 
 # 3rd party imports
 import requests
@@ -22,6 +23,7 @@ from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
+from paho.mqtt.client import MQTTMessage
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -29,8 +31,10 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.GLaDOSGpt import GladosGPT
 from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
-from glados_modules.MqttClient import MQTTClient
+from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.Camera import Camera
+from glados_modules.GladosData import ServoLocation, VisionTracker
+from glados_modules.GLaDosEnums import CameraEnum, ServoEnum, SystemEnums, TrackingEnums, VisionResultsEnum
 
 
 # silence some errors on the terminal
@@ -59,6 +63,245 @@ stream = p.open(format=pyaudio.paFloat32, channels=2, rate=44100, output=1)
 
 class GladosException(Exception):
     pass
+
+
+class MotionTrack(MQTTClient):
+    # class for motion tracking on a target
+    # TODO figure out if we want this here, or in teh Gbody class in the body server?
+    def __init__(self, broker: NamedTuple,  camera_resolution: NamedTuple, target: str = "person",
+                 confidence: float = 0.65):
+        self.__name__ = self.__class__.__name__
+        self.location = self.__name__
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
+        self.logger = setup_logger(self.__name__)
+        # head camera resolution
+        self.cam_x = int(camera_resolution.x)
+        self.cam_y = int(camera_resolution.y)
+        self.main_camera = CameraEnum.CAMERA_HEAD.value
+        self.left_camera = CameraEnum.CAMERA_LEFT.value
+        self.right_camera = CameraEnum.CAMERA_RIGHT.value
+        servo = namedtuple("servo", ["name", "move"])
+        # servo names
+        self.head_LR = servo(ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, ServoMessageBuilder.head_left_right)
+        self.head_UD = servo(ServoEnum.LOCATION_HEAD_UP_DOWN.value, ServoMessageBuilder.head_up_down)
+        self.body_LR = servo(ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoMessageBuilder.body_left_right)
+        self.body_UD = servo(ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoMessageBuilder.body_up_down)
+        self.target = target
+        self.confidence = confidence
+        self.servos = dict()
+        # default movement speed
+        self.dms: int = 3
+        # bool if movement on left or right cameras, true we move, false we dont
+        self.peripheral_hunt = True
+        # Create Servo Location Tracker
+        self.servo_status = ServoLocation(broker)
+        # Vision seen Tracker
+        self.vision_tracker = VisionTracker(broker, self.target, self.confidence)
+        self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+        # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
+        self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value
+        self.cmd_trigger: str = TrackingEnums.MSG_COMMAND_TRACK.value
+        self.intensity_topic: str = SystemEnums.MQTT_INTENSITY_TOPIC.value
+        self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
+        self.intensity: Tuple[float, float] = (.1, .1)
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
+                                                   self.intensity_topic: self.handle_intensity}
+        # access the servos
+        # find the x1 x2, y1, y2 of the target,
+        # figure out if the head can look at it...
+        # if we can then head / neck moves to it...
+        # then recalculate so the head and neck can move back to center
+        # and the body will rotate and middle_angle will move up or down
+        # order of off center is self.body_LR > self.body_UD,> self.head.UP> self, head left right
+        # TODO figure out how we are going to track anger intensity over various body parts
+        # TODO likely remove this next line
+        self.scan_success = False
+
+    def check_periph(self, camera: str):
+        # confidence to move is already high enough, determine the direction and how close we already are
+        angle = None
+        if camera == CameraEnum.CAMERA_RIGHT:
+            angle = TrackingEnums.BODY_RIGHT_CAMERA_ANGLE.value
+        elif camera == CameraEnum.CAMERA_LEFT:
+            angle = TrackingEnums.BODY_LEFT_CAMERA_ANGLE.value
+        if angle is not None:
+            msg = ServoMessageBuilder.body_left_right(angle=angle, speed=self.dms)
+            self.send_command(command=msg, topic=ServoEnum.MQTT_COMMAND_TOPIC)
+
+    def handle_cmd(self, msg: MQTTMessage) -> None:
+        """
+        Trigger the loop that hunts and locks onto target...
+        """
+        j_msg = loads(msg.payload.decode())
+        # make sure it's a track command
+        if j_msg.get(self.cmd_trigger, "") == self.cmd_trigger:
+            self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
+            # TODO DO SOMETHING IF MAIN SEES SOMETHING
+
+    def track_loop(self):
+        # main tracking loop
+
+        vision_map = self.vision_tracker.get_vision_map()
+        # find target
+        if vision_map[self.main_camera].get(self.count, 0) != 0:
+            # target
+            while vision_map[self.main_camera][self.count] >= 1:
+                target_bounding = self.__find_person(vision_map[self.main_camera][self.objects])
+                self.move_servos(target_bounding)
+
+    def move_servos(self, target: dict):
+        # get current servo position
+        self.servos = self.servo_status.get_angle_map()
+        mv_list = list()
+        if target != {}:
+            # move "shoulders" first
+            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
+            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
+            if self.__distance_check(self.servos[self.head_LR.name], head_lr) is True:
+                # send command to move the servo
+                mv_list.append(self.head_LR.move(head_lr))
+            if self.__distance_check(self.servos[self.head_UD.name], head_ud) is True:
+                mv_list.append(self.head_UD.move(head_ud))
+            if mv_list != list():
+                self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+            # head should now be centered on the target
+            # level the head and arm with body and rotation
+            # x-axis
+            self.__level_servos(self.head_LR, self.body_LR)
+            self.__level_servos(self.head_UD, self.body_UD)
+
+    def __find_person(self, seen_data) -> dict:
+        """
+        Find the highest confidence target and return their bounding box from current data set
+        """
+        confidence = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+        bbox = VisionResultsEnum.VISION_RESULTS_BOX_KEY.value
+        with Lock:
+            rtn = dict()
+            highest_confidence = 0
+            for p in seen_data:
+                if p[confidence] > highest_confidence:
+                    highest_confidence = p[confidence]
+                    rtn = seen_data[bbox]
+        self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
+        return rtn
+
+    def __calc_servo(self, servo, bbox: dict) -> int:
+        """
+        Calculate servo angle correction to target
+        """
+        # TODO determine if we need current_angle? does it matter?
+        if servo.axis == 'x':
+            bbox_edge_1 = bbox['x1']
+            bbox_edge_2 = bbox['x2']
+            axis_size = self.cam_x
+        else:
+            bbox_edge_1 = bbox['y1']
+            bbox_edge_2 = bbox['y2']
+            axis_size = self.cam_y
+        # Calculate the center of the new person's bounding box on the x-axis
+        center_updated = (bbox_edge_1 + bbox_edge_2) / 2
+        # Calculate the offset of the person's center from the image center with the updated data
+        offset_from_center = center_updated - (axis_size / 2)
+        # Calculate the new servo angle to center on the person with the updated data
+        new_servo_angle_updated = servo.middle - (offset_from_center / axis_size * servo.max)
+        # Round to nearest whole
+        return round(new_servo_angle_updated)
+
+    def __distance_check(self, servo, new_angle, degree_diff=2):
+        # TODO get degrees of difference from config file
+        move = False
+        current_angle = servo.current
+        if new_angle > current_angle:
+            if (new_angle - current_angle) > degree_diff:
+                self.logger.debug(f"Going up, {new_angle} is greater than current {current_angle}, moving")
+                move = True
+            else:
+                self.logger.debug(f"Going up, {new_angle} is less than current {current_angle}, not moving")
+        elif new_angle < current_angle:
+            if (current_angle - new_angle) > degree_diff:
+                self.logger.debug(f"Going Down, {new_angle} is less than current {current_angle}, moving")
+                move = True
+            else:
+                self.logger.debug(f"Going Down, {new_angle} is more than current {current_angle}, not moving")
+        return move
+
+    def __level_servos(self, servo1, servo2) -> None:
+        # bring servo1 to midpoint by moving servo2
+        # ensure servos are on the same axis
+        self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2].location}")
+        if self.servos[servo1.name].axis != self.servos[servo2.name].axis:
+            msg = "Servers are not on same axis"
+            self.logger.error(msg)
+            raise Exception(msg)
+        mv_list = [servo2.move(self.servos[servo1.name].current),
+                   servo1.move(self.servos[servo1.name].middle)]
+        self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+
+    # detection logic loop...
+    # done triggered by a high confidence of target in vision tracker.. each vision tracker can track a different target..
+    # done how long to we track for .5?
+    # if detection is on head camera move into tracking and keep target in frame. how often do we move and correct?
+    # done every second? .5
+    # if it's a trigger of left and right camera, swing to fixed degree, then trigger hunt with main camera..
+    # if find right target with head camera, move into tracking... track till person gone...
+    # need to stop spin if find target... how?
+    # how long after?
+    # say good buy?
+
+    def handle_intensity(self, msg: MQTTMessage) -> None:
+        # TODO figure out update commands
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get("led", "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
+            self.intensity = j_msg["intensity"]
+
+    """
+    def scan_room(self, scan_speed=3, search_time=90, confidence=.70):
+        #TODO consider how this will change with left and right cameras...,
+        self.logger.debug("Scanning Room for Target")
+        t = time.time()
+        while (time.time() - t) < search_time and self.scan_success is False:
+            if self.scan_success is False:
+                # TODO FIGURE OUT WHRERE WE GET THE MIN MAX ANGLE HERE.. FROM STATUS MQTT?
+                msglist = [{"servo": "body_left_right", "angle": 180, "speed": scan_speed},
+                           {"servo": "body_up_down", "angle": 180, "speed": scan_speed},
+                           {"servo": "head_up_down", "angle": 180, "speed": scan_speed},
+                           {"servo": "head_left_right", "angle": 180, "speed": scan_speed}]
+                self.client.publish("body/servo", json.dumps(msglist))
+            else:
+                break
+            # block till head and body are at min
+            # TODO DO WE KEEP SENDING STATUS MESSAGES TO CHECK? HOW OFFTEN?
+            while (self.body_LR.get_angle() != self.body_LR.min_angle and
+                   self.head_LR.get_angle() != self.head_LR.min_angle or self.scan_success is True):
+                time.sleep(.2)
+            # HOW DO WE KNOW SCAN WAS SUCESSFULL?
+            if self.scan_success is False:
+                self.head_LR.set_speed_angle((scan_speed, self.head_LR.max_angle), execute=True)
+                self.body_LR.set_speed_angle((scan_speed, self.body_LR.max_angle), execute=True)
+                # TODO change when threading is enabled
+                self.head_LR.move()
+                self.body_LR.move()
+            else:
+                break
+            # block till head and body are at max
+            while (self.body_LR.get_angle() != self.body_LR.max_angle and
+                   self.head_LR.get_angle() != self.head_LR.max_angle or self.scan_success is True):
+                time.sleep(.2)
+        if self.scan_success is True:
+            with self.lock:
+                self.seen_data = self.eyes.get_results()
+            self.scan_success = False
+            self.move_servos()
+        self.logger.debug("Scanning For Target Complete")
+    """
+    def stop_body(self):
+        """
+        Stop body movement
+        """
+        # TODO how do we signal to stop moving? do we need to?
+        self.stop = True
 
 
 class GladosLocal(Thread, MQTTClient):
@@ -121,9 +364,9 @@ class GladosLocal(Thread, MQTTClient):
         if j_msg.get("Camera", "") == self.main_camera:
             self.logger.debug(f"{self.main_camera}, {msg.topic}, {j_msg}")
             self.sight_results = j_msg.get("Results")
-        if j_msg.get("Camera", "") == "Camera_Left":
+        if j_msg.get("camera", "") == "Camera_Left":
             self.logger.debug(f"Camera_Left, {msg.topic}, {j_msg}")
-            sight_results = j_msg.get("Results")
+            sight_results = j_msg.get("results")
             if "person" in sight_results.keys():
                 for p in sight_results["person"]["objects"]:
                     if float(p["confidence"]) >= 0.3:
@@ -133,9 +376,9 @@ class GladosLocal(Thread, MQTTClient):
                         # maybe a bool true false on quadreants of where we are pointed?
                         self.client.publish("body/servo",
                                             json.dumps({"servo": "body_left_right", "angle": 135, "speed": 1}))
-        if j_msg.get("Camera", "") == "Camera_Right":
+        if j_msg.get("camera", "") == "Camera_Right":
             self.logger.debug(f"Camera_Left, {msg.topic}, {j_msg}")
-            sight_results = j_msg.get("Results")
+            sight_results = j_msg.get("results")
             if "person" in sight_results.keys():
                 for p in sight_results["person"]["objects"]:
                     if float(p["confidence"]) >= 0.3:
@@ -382,12 +625,12 @@ if __name__ == "__main__":
         raise GladosException("Unable to load file {}".format(args.conf[0]))
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    gl.speak("Oh Its you....., Its been a long time...")
+    gl.speak("Oh Its you! , , Its been a long time...")
     gstt = GladosSTT(gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
-    left_camera_location = configp["CAMERAS"]["Camera_Left_Factory"]
-    right_camera_location = configp["CAMERAS"]["Camera_Right_Factory"]
+    left_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_FACTORY.value]
+    right_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_FACTORY.value]
     left_camera = Camera(configfile=configp, location=left_camera_location)
     right_camera = Camera(configfile=configp, location=right_camera_location)
     left_camera.start()

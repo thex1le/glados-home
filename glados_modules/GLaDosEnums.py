@@ -2,7 +2,29 @@ from enum import Enum
 
 
 class SystemEnums(Enum):
-    MQTT_INTENSITY_TOPIC = "intensity"
+    MQTT_INTENSITY_TOPIC: str = "intensity"
+
+
+class TrackingEnums(Enum):
+    MSG_LOCATION_KEY: str = "system"
+    MSG_COMMAND_TRACK: str = "track"
+    MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_TRACK}"
+    BODY_LEFT_CAMERA_ANGLE: int = 135
+    BODY_RIGHT_CAMERA_ANGLE: int = 45
+
+
+class VisionResultsEnum(Enum):
+    """
+    Enum for dict that tracks objects found by yolo
+    """
+    VISION_RESULTS_COUNT_KEY = "count"
+    VISION_RESULTS_RESULTS_KEY = "results"
+    VISION_RESULTS_OBJECTS_KEY = "objects"
+    VISION_RESULTS_CLASS_KEY = "class_name"
+    VISION_RESULTS_CONFIDENCE_KEY = "confidence"
+    VISION_RESULTS_TS_KEY = "ts"
+    VISION_RESULTS_BOX_KEY = "box"
+    YOLO_CLASS_NAME_KEY = "name"
 
 
 class ServoEnum(Enum):
@@ -34,6 +56,7 @@ class CameraEnum(Enum):
     """
     Enum of camera location names for use in mqtt topics and other interactions with them
     """
+    CONFIG_HEAD: str = "CAMERAS"
     LOCATION_CORE: str = "vision"
     MSG_LOCATION_KEY: str = "camera"
     MSG_COMMAND_STATUS: str = "status"

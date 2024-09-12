@@ -11,7 +11,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.RxTx import DataRecv
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum
+from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum
 
 
 class GLaDOSServerException(Exception):
@@ -61,6 +61,11 @@ class YoloDetect(Thread, MQTTClient):
         return self.sight
 
     def __translate_results(self, results):
+        name = VisionResultsEnum.YOLO_CLASS_NAME_KEY.value
+        count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
+        class_name = VisionResultsEnum.VISION_RESULTS_CLASS_KEY.value
+        objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+        ts = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
         results_dict = {}
         for y_class in results:
             if y_class is None:
@@ -68,12 +73,13 @@ class YoloDetect(Thread, MQTTClient):
             self.logger.debug(f"Translating {y_class} with type {type(y_class)}")
             # TODO This object should also likely become an enum
             for cname in json_loads(y_class.tojson()):
-                name = cname["name"]
+                name = cname[name]
                 if name in list(results_dict.keys()):
-                    results_dict[name]["count"] += 1
-                    results_dict[name]["objects"].append(cname)
+                    results_dict[name][count] += 1
+                    results_dict[name][ts] += 1
+                    results_dict[name][objects].append(cname)
                 else:
-                    results_dict[name] = {"count": 1, "objects": [cname], "class_name": name}
+                    results_dict[name] = {count: 1, objects: [cname], class_name: name}
         self.logger.debug(results_dict)
         return results_dict
 
