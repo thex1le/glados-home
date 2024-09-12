@@ -20,8 +20,8 @@ class ServoLocation(MQTTClient):
     """
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = self.__class__.__name__
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.logger = setup_logger(name=self.__name__)
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
         self.topic_handler: Dict[ServoEnum, Callable] = {self.cmd_topic: self.handle_cmd}
         self.body_map = dict()
@@ -62,8 +62,8 @@ class VisionTracker(MQTTClient):
     """
     def __init__(self, broker: NamedTuple, target: str, confidence: float) -> None:
         self.__name__ = self.__class__.__name__
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.logger = setup_logger(name=self.__name__)
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.target = target
         self.confidence_score = confidence
         self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
