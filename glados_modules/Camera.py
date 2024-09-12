@@ -109,8 +109,8 @@ class Camera(Process, MQTTClient):
             self.image = self.__capture_image()
             self.logger.debug(f"Sending image from {self.location} for processing")
             image_dict = {CameraEnum.MSG_LOCATION_KEY.value: f"/{self.location}",
-                          CameraEnum.MSG_RAW_IMAGE: self.get_image(),
-                          CameraEnum.MSG_RESOLUTION: {"x": self.cam_res_x, "y": self.cam_res_y}}
+                          CameraEnum.MSG_RAW_IMAGE.value: self.get_image(),
+                          CameraEnum.MSG_RESOLUTION.value: {"x": self.cam_res_x, "y": self.cam_res_y}}
             # load the shared TX object sending queue,
             self.queue.put(image_dict)
 
