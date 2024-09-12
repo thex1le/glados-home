@@ -72,8 +72,8 @@ class MotionTrack(MQTTClient):
                  confidence: float = 0.65):
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.logger = setup_logger(self.__name__)
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         # head camera resolution
         self.cam_x = int(camera_resolution.x)
         self.cam_y = int(camera_resolution.y)
