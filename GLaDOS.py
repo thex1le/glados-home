@@ -633,8 +633,7 @@ if __name__ == "__main__":
     right_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_FACTORY.value]
     mqtt_broker = namedtuple("mqtt_broker", ["ip", "port"])
     cam_resolution = namedtuple("cam_resolution", ['x', 'y'])
-    r_x, r_y = configp[CameraEnum.CONFIG_HEAD.value][
-                       CameraEnum.CAMERA_HEAD.value][CameraEnum.MSG_RESOLUTION.value].split(',')
+    r_x, r_y = configp[CameraEnum.CONFIG_HEAD.value][f"{CameraEnum.CAMERA_HEAD.value}_{CameraEnum.MSG_RESOLUTION.value}"].split(',')
     head_cam_resolution = cam_resolution(int(r_x), int(r_y))
     broker = mqtt_broker(configp["MQTT"]["mqtt_server_ip"], configp["MQTT"]["mqtt_port"])
     confidence = float(configp["REACTIONS"]["VisionConfidence"])
