@@ -261,10 +261,10 @@ class Gservo(Thread, MQTTClient):
         self.angle: int = self.middle_angle
         self.current_angle: int = self.angle
         self.first_boot: bool = True
+        self.axis: str = axis.lower()
         self.move()
         self.exec_command: bool = False
         self.moving: bool = False
-        self.axis: str = axis.lower()
         self.stop_bool: bool = False
         degree_per_second = 60 / servo_speed
         self.speed_settings = {
