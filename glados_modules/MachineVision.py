@@ -84,8 +84,10 @@ class YoloDetect(Thread, MQTTClient):
 
     def __yolo_process_image(self, image_dict):
         # pass image to rtsp...
+        print(image_dict)
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
-        width, height = self.cam_configs[image_dict[CameraEnum.MSG_LOCATION_KEY.value]][CameraEnum.MSG_RESOLUTION.value]
+        width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
+        print(width, height)
         yuv420_data = raw.reshape((int(height) * 3) // 2, int(width))
         image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
         #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)

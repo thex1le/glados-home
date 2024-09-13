@@ -91,8 +91,12 @@ class DataRecv(Thread):
             self.logger.debug("Queue is empty, no data to return.")
             return dict()
         except UnpicklingError:
-            self.logger.debug("Invalid Data, no data to return.")
+            self.logger.debug("Unpickling Error: Invalid Data, no data to return.")
             return dict()
+        except EOFError:
+            self.logger.debug("EOF Error: Invalid Data, no data to return.")
+            return dict()
+
 
     def stop_thread(self) -> None:
         """
