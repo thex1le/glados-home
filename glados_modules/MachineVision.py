@@ -71,7 +71,6 @@ class YoloDetect(Thread, MQTTClient):
             if y_class is None:
                 continue
             self.logger.debug(f"Translating {y_class} with type {type(y_class)}")
-            # TODO This object should also likely become an enum
             for cname in json_loads(y_class.tojson()):
                 name = cname[name]
                 if name in list(results_dict.keys()):
