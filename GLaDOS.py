@@ -144,6 +144,7 @@ class MotionTrack(MQTTClient):
         # main tracking loop
         # find target
         # don't double call
+        self.logger.debug(f"Moving To track {self.target}")
         if self.head_tracking is False:
             self.head_tracking = True
             vision_map = self.vision_tracker.get_vision_map()
