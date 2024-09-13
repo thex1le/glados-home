@@ -37,7 +37,7 @@ class MQTTClient:
         """
         if type(command) not in (tuple, list):
             # make it an object we can iterate on
-            command = (command)
+            command = (command, )
         print("******************", command)
         for m in command:
             self.logger.debug(f"{self.__name__} sending {m} command")
