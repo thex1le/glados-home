@@ -100,7 +100,7 @@ class MotionTrack(MQTTClient):
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value
-        self.cmd_trigger: str = TrackingEnums.MSG_COMMAND_TRACK.value
+        self.cmd_trigger: str = TrackingEnums.MSG_COMMAND_KEY.value
         self.intensity_topic: str = SystemEnums.MQTT_INTENSITY_TOPIC.value
         self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         self.intensity: Tuple[float, float] = (.1, .1)
@@ -134,13 +134,14 @@ class MotionTrack(MQTTClient):
         """
         j_msg = loads(msg.payload.decode())
         # make sure it's a track command
-        if j_msg.get(self.cmd_trigger, "") == self.cmd_trigger:
+        if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START:
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
             # TODO DO SOMETHING IF MAIN SEES SOMETHING
 
     def track_loop(self):
         # main tracking loop
         # find target
+        vision_map = self.vision_tracker.get_vision_map()
         if vision_map[self.main_camera].get(self.count, 0) != 0:
             # target
             while vision_map[self.main_camera][self.count] >= 1:

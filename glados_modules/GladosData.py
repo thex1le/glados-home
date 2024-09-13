@@ -10,8 +10,8 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum
+from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums
 
 
 class ServoLocation(MQTTClient):
@@ -130,6 +130,7 @@ class VisionTracker(MQTTClient):
                         # add a new camera to the cache
                     else:
                         self.response_cache[camera] = {sight_results[self.ts_key]: sight_results}
+                    self.send_command(TargetMessageBuilder.send_track_command_start(), TrackingEnums.MQTT_COMMAND_TOPIC)
 
     def get_vision_map(self) -> dict:
         """
