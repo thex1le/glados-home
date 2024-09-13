@@ -93,6 +93,8 @@ class MotionTrack(MQTTClient):
         self.dms: int = 3
         # bool if movement on left or right cameras, true we move, false we dont
         self.peripheral_hunt = True
+        # bool if the head is currently tracking something
+        self.head_tracking = False
         # Create Servo Location Tracker
         self.servo_status = ServoLocation(broker)
         # Vision seen Tracker
@@ -136,17 +138,21 @@ class MotionTrack(MQTTClient):
         # make sure it's a track command
         if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START:
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
-            # TODO DO SOMETHING IF MAIN SEES SOMETHING
+            self.track_loop()
 
     def track_loop(self):
         # main tracking loop
         # find target
-        vision_map = self.vision_tracker.get_vision_map()
-        if vision_map[self.main_camera].get(self.count, 0) != 0:
-            # target
-            while vision_map[self.main_camera][self.count] >= 1:
-                target_bounding = self.__find_person(vision_map[self.main_camera][self.objects])
-                self.move_servos(target_bounding)
+        # don't double call
+        if self.head_tracking is False:
+            self.head_tracking = True
+            vision_map = self.vision_tracker.get_vision_map()
+            if vision_map[self.main_camera].get(self.count, 0) != 0:
+                # target
+                while vision_map[self.main_camera][self.count] >= 1:
+                    target_bounding = self.__find_person(vision_map[self.main_camera][self.objects])
+                    self.move_servos(target_bounding)
+            self.head_tracking = False
 
     def move_servos(self, target: dict):
         # get current servo position
