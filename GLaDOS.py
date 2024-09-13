@@ -140,8 +140,6 @@ class MotionTrack(MQTTClient):
 
     def track_loop(self):
         # main tracking loop
-
-        vision_map = self.vision_tracker.get_vision_map()
         # find target
         if vision_map[self.main_camera].get(self.count, 0) != 0:
             # target
