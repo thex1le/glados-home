@@ -40,6 +40,7 @@ class ServoEnum(Enum):
     SERVO_DEFAULT_SPEED: int = 1
     MSG_LOCATION_KEY: str = "servo"
     MSG_COMMAND_KEY: str = "cmd"
+    MSG_COMMAND_MOVE: str = "move"
     MSG_COMMAND_STATUS: str = "status"
     MSG_RESULTS: str = "results"
     MSG_ANGLE: str = "angle"

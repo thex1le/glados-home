@@ -284,10 +284,14 @@ class Gservo(Thread, MQTTClient):
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
         if j_msg.get(ServoEnum.MSG_LOCATION_KEY.value, "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
-            angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
-            speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
-            self.set_speed_angle((speed, angle), execute=True)
+            # move command
+            if j_msg.get(ServoEnum.MSG_COMMAND_KEY.value, "") == ServoEnum.MSG_COMMAND_MOVE.value:
+                self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
+                angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
+                speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
+                self.set_speed_angle((speed, angle), execute=True)
+            elif j_msg.get(ServoEnum.MSG_COMMAND_KEY.value, "") == ServoEnum.MSG_COMMAND_STATUS.value:
+                self.send_status()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands

@@ -68,24 +68,31 @@ class ServoMessageBuilder:
     Build and return servo messages based on enums
     """
     @staticmethod
-    def head_up_down(angle: int, speed: int = ServoEnum.SERVO_DEFAULT_SPEED.value) -> dict:
-        return {ServoEnum.MSG_LOCATION_KEY.value: ServoEnum.LOCATION_HEAD_UP_DOWN.value,
+    def move(location, angle, speed):
+        return {ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_MOVE.value,
+                ServoEnum.MSG_LOCATION_KEY.value: location,
                 ServoEnum.MSG_ANGLE.value: angle, ServoEnum.MSG_SPEED.value: speed}
+
+    @staticmethod
+    def head_up_down(angle: int, speed: int = ServoEnum.SERVO_DEFAULT_SPEED.value) -> dict:
+        return ServoMessageBuilder.move(ServoEnum.LOCATION_HEAD_UP_DOWN.value, angle, speed)
 
     @staticmethod
     def body_left_right(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED.value) -> dict:
-        return {ServoEnum.MSG_LOCATION_KEY.value: ServoEnum.LOCATION_BODY_LEFT_RIGHT.value,
-                ServoEnum.MSG_ANGLE.value: angle, ServoEnum.MSG_SPEED.value: speed}
+        return ServoMessageBuilder.move(ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, angle, speed)
 
     @staticmethod
     def body_up_down(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED.value) -> dict:
-        return {ServoEnum.MSG_LOCATION_KEY.value: ServoEnum.LOCATION_BODY_UP_DOWN.value,
-                ServoEnum.MSG_ANGLE.value: angle, ServoEnum.MSG_SPEED.value: speed}
+        return ServoMessageBuilder.move(ServoEnum.LOCATION_BODY_UP_DOWN.value, angle, speed)
 
     @staticmethod
     def head_left_right(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED.value) -> dict:
-        return {ServoEnum.MSG_LOCATION_KEY.value: ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value,
-                ServoEnum.MSG_ANGLE.value: angle, ServoEnum.MSG_SPEED.value: speed}
+        return ServoMessageBuilder.move(ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, angle, speed)
+
+    @staticmethod
+    def get_status(location):
+        return {ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_STATUS.value,
+                ServoEnum.MSG_LOCATION_KEY.value: location}
 
     @staticmethod
     def send_status(location, results):
