@@ -61,12 +61,13 @@ class VisionTracker(MQTTClient):
     """
     Keep track of all the vision results based on mqtt status updates
     """
-    def __init__(self, broker: NamedTuple, target: str, confidence: float) -> None:
+    def __init__(self, broker: NamedTuple, target: str, confidence: float, tracker_callback) -> None:
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.target = target
         self.lock = Lock()
+        self.tracker_callback = tracker_callback
         self.confidence_score = confidence
         self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.main_camera = CameraEnum.CONFIG_HEAD.value
@@ -133,8 +134,11 @@ class VisionTracker(MQTTClient):
                     else:
                         self.response_cache[camera] = {sight_results[self.ts_key]: sight_results}
                     self.logger.debug("Sending Start command to track object")
-                    self.send_command(TargetMessageBuilder.send_track_command_start(),
-                                      TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                    # switch to callback since mqtt not working for some fucking reason...
+                    # TODO fix this later
+                    self.tracker_callback()
+                    #self.send_command(TargetMessageBuilder.send_track_command_start(),
+                    #                  TrackingEnums.MQTT_COMMAND_TOPIC.value)
 
     def get_vision_map(self) -> dict:
         """

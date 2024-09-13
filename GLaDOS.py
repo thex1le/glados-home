@@ -98,7 +98,7 @@ class MotionTrack(MQTTClient):
         # Create Servo Location Tracker
         self.servo_status = ServoLocation(broker)
         # Vision seen Tracker
-        self.vision_tracker = VisionTracker(broker, self.target, self.confidence)
+        self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value
