@@ -47,7 +47,7 @@ class MQTTClient:
 class TargetMessageBuilder:
     @staticmethod
     def send_track_command_start():
-        return {TrackingEnums.MSG_LOCATION_KEY: TrackingEnums.MSG_COMMAND_START}
+        return {TrackingEnums.MSG_LOCATION_KEY.value: TrackingEnums.MSG_COMMAND_START.value}
 
 
 class CameraMessageBuilder:
