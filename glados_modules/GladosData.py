@@ -25,6 +25,7 @@ class ServoLocation(MQTTClient):
         self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
         self.topic_handler: Dict[ServoEnum, Callable] = {self.cmd_topic: self.handle_cmd}
         self.body_map = dict()
+        self.lock = Lock()
         self.min = ServoEnum.MSG_MIN.value
         self.max = ServoEnum.MSG_MAX.value
         self.current_angle = ServoEnum.MSG_CURRENT_ANGLE.value
@@ -45,14 +46,14 @@ class ServoLocation(MQTTClient):
             servo_map = {location: self.ServoTuple(j_msg.get(self.current_angle),
                                                   j_msg.get(self.max), j_msg.get(self.min), j_msg.get(self.middle),
                                                   j_msg.get(self.axis), location)}
-            with Lock:
+            with self.lock:
                 self.body_map = servo_map
 
     def get_angle_map(self) -> dict:
         """
         Return angle map
         """
-        with Lock:
+        with self.lock:
             return self.body_map
 
 
@@ -65,6 +66,7 @@ class VisionTracker(MQTTClient):
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.target = target
+        self.lock = Lock()
         self.confidence_score = confidence
         self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.main_camera = CameraEnum.CONFIG_HEAD.value
@@ -97,7 +99,7 @@ class VisionTracker(MQTTClient):
         j_msg = loads(msg.payload.decode())
         if self.cam_key in j_msg.keys():
             # found a servo status, update the dict
-            with Lock:
+            with self.lock:
                 self.logger.debug(f"Camera message received, {msg.topic}, {j_msg}")
                 self.parse_camera(msg=j_msg)
 
@@ -133,7 +135,7 @@ class VisionTracker(MQTTClient):
         """
         Return just the last vision response messages seen
         """
-        with Lock:
+        with self.lock:
             # return a copy of the cache
             return self.response_map
 
@@ -141,6 +143,6 @@ class VisionTracker(MQTTClient):
         """
         Return 5 min cache of things seen
         """
-        with Lock:
+        with self.lock:
             # return a copy of the cache
             return dict(self.response_cache)
