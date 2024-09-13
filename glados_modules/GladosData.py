@@ -9,7 +9,7 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder
+from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
 from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums
 
 
@@ -31,6 +31,12 @@ class ServoLocation(MQTTClient):
         self.axis = ServoEnum.MSG_AXIS.value
         self.ServoTuple = namedtuple('servo', [self.current_angle, self.max, self.min, self.middle,
                                      self.axis, "location"])
+        # trigger servo message status update
+        msg = list()
+        for servo_location in (ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value,
+                               ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value):
+            msg.append(ServoMessageBuilder.get_status(servo_location))
+        self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
