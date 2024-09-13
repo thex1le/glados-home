@@ -130,7 +130,7 @@ class VisionTracker(MQTTClient):
                         # add a new camera to the cache
                     else:
                         self.response_cache[camera] = {sight_results[self.ts_key]: sight_results}
-                    self.send_command(TargetMessageBuilder.send_track_command_start(), TrackingEnums.MQTT_COMMAND_TOPIC)
+                    self.send_command(TargetMessageBuilder.send_track_command_start(), TrackingEnums.MQTT_COMMAND_TOPIC.value)
 
     def get_vision_map(self) -> dict:
         """
