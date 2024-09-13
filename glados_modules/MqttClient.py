@@ -7,7 +7,7 @@ import paho.mqtt.client as mqtt
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums
 
 
 class MQTTClient:
@@ -42,7 +42,12 @@ class MQTTClient:
             self.logger.debug(f"{self.__name__} sending {m} command")
             self.client.publish(topic, dumps(m))
 
+
 # TODO flesh out message classes for easy update in one place
+class TargetMessageBuilder:
+    @staticmethod
+    def send_track_command_start():
+        return {TrackingEnums.MSG_LOCATION_KEY: TrackingEnums.MSG_COMMAND_START}
 
 
 class CameraMessageBuilder:

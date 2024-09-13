@@ -7,8 +7,9 @@ class SystemEnums(Enum):
 
 class TrackingEnums(Enum):
     MSG_LOCATION_KEY: str = "system"
-    MSG_COMMAND_TRACK: str = "track"
-    MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_TRACK}"
+    MSG_COMMAND_KEY: str = "track"
+    MSG_COMMAND_START: str = "start"
+    MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_KEY}"
     BODY_LEFT_CAMERA_ANGLE: int = 135
     BODY_RIGHT_CAMERA_ANGLE: int = 45
 
