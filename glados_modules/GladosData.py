@@ -111,7 +111,9 @@ class VisionTracker(MQTTClient):
         sight_results = msg.get(self.results_key)
         if self.target in sight_results.keys():
             for p in sight_results[self.target][self.objects_key]:
-                if float(p[self.confidence_key]) >= self.confidence_score:
+                c = p[self.confidence_key]
+                if float(c) >= self.confidence_score:
+                    self.logger.debug(f"Confidence of {c} found for {self.target}")
                     self.response_map[camera] = sight_results
                     # track how many high confidence in last 2 seconds
                     # create a timer tracker and + or - it depending on how many confidence hits in last .5 seconds
@@ -130,7 +132,9 @@ class VisionTracker(MQTTClient):
                         # add a new camera to the cache
                     else:
                         self.response_cache[camera] = {sight_results[self.ts_key]: sight_results}
-                    self.send_command(TargetMessageBuilder.send_track_command_start(), TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                    self.logger.debug("Sending Start command to track object")
+                    self.send_command(TargetMessageBuilder.send_track_command_start(),
+                                      TrackingEnums.MQTT_COMMAND_TOPIC.value)
 
     def get_vision_map(self) -> dict:
         """
