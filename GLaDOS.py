@@ -173,7 +173,7 @@ class MotionTrack(MQTTClient):
             if mv_list != list():
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                 # wait for more to happen and update status
-                while self.servos[self.head_LR.name].curent != head_lr and self.servos[self.head_UD].current != head_ud:
+                while self.servos[self.head_LR.name].current != head_lr and self.servos[self.head_UD].current != head_ud:
                     self.servos = self.servo_status.get_angle_map()
                     time.sleep(.2)
 
