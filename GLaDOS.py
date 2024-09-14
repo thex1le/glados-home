@@ -147,13 +147,16 @@ class MotionTrack(MQTTClient):
         self.logger.debug(f"Moving To track {self.target}")
         if self.head_tracking is False:
             self.head_tracking = True
+            print("getting vision map")
             vision_map = self.vision_tracker.get_vision_map()
-            if vision_map[self.main_camera].get(self.count, 0) != 0:
-                # target
-                while vision_map[self.main_camera][self.count] >= 1:
-                    target_bounding = self.__find_person(vision_map[self.main_camera][self.objects])
-                    self.move_servos(target_bounding)
-            self.head_tracking = False
+            if self.main_camera in vision_map.keys():
+                print(vision_map[self.main_camera])
+                if vision_map[self.main_camera].get(self.count, 0) != 0:
+                    # target
+                    while vision_map[self.main_camera][self.count] >= 1:
+                        target_bounding = self.__find_person(vision_map[self.main_camera][self.target][self.objects])
+                        self.move_servos(target_bounding)
+                self.head_tracking = False
 
     def move_servos(self, target: dict):
         # get current servo position
@@ -161,6 +164,7 @@ class MotionTrack(MQTTClient):
         mv_list = list()
         if target != {}:
             # move "shoulders" first
+            print(self.servos)
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
             if self.__distance_check(self.servos[self.head_LR.name], head_lr) is True:
@@ -170,11 +174,15 @@ class MotionTrack(MQTTClient):
                 mv_list.append(self.head_UD.move(head_ud))
             if mv_list != list():
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                # wait for more to happen
+                time.sleep(.5)
             # head should now be centered on the target
             # level the head and arm with body and rotation
             # x-axis
             self.__level_servos(self.head_LR, self.body_LR)
             self.__level_servos(self.head_UD, self.body_UD)
+            # give time for servos to move...maybe check status before return?
+            time.sleep(.5)
 
     def __find_person(self, seen_data) -> dict:
         """
@@ -182,13 +190,12 @@ class MotionTrack(MQTTClient):
         """
         confidence = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
         bbox = VisionResultsEnum.VISION_RESULTS_BOX_KEY.value
-        with Lock:
-            rtn = dict()
-            highest_confidence = 0
-            for p in seen_data:
-                if p[confidence] > highest_confidence:
-                    highest_confidence = p[confidence]
-                    rtn = seen_data[bbox]
+        rtn = dict()
+        highest_confidence = 0
+        for p in seen_data:
+            if p[confidence] > highest_confidence:
+                highest_confidence = p[confidence]
+                rtn = p[bbox]
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
@@ -235,9 +242,9 @@ class MotionTrack(MQTTClient):
     def __level_servos(self, servo1, servo2) -> None:
         # bring servo1 to midpoint by moving servo2
         # ensure servos are on the same axis
-        self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2].location}")
+        self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2.name].location}")
         if self.servos[servo1.name].axis != self.servos[servo2.name].axis:
-            msg = "Servers are not on same axis"
+            msg = "Servos are not on same axis"
             self.logger.error(msg)
             raise Exception(msg)
         mv_list = [servo2.move(self.servos[servo1.name].current),
