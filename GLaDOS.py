@@ -152,10 +152,8 @@ class MotionTrack(MQTTClient):
             if self.main_camera in vision_map.keys():
                 print(vision_map[self.main_camera])
                 if vision_map[self.main_camera].get(self.count, 0) != 0:
-                    # target
-                    while vision_map[self.main_camera][self.count] >= 1:
-                        target_bounding = self.__find_person(vision_map[self.main_camera][self.target][self.objects])
-                        self.move_servos(target_bounding)
+                    target_bounding = self.__find_person(vision_map[self.main_camera][self.target][self.objects])
+                    self.move_servos(target_bounding)
                 self.head_tracking = False
 
     def move_servos(self, target: dict):
