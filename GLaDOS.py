@@ -173,7 +173,8 @@ class MotionTrack(MQTTClient):
             if mv_list != list():
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                 # wait for more to happen and update status
-                while self.servos[self.head_LR.name].current != head_lr and self.servos[self.head_UD].current != head_ud:
+                while self.servos[self.head_LR.name].current != head_lr and \
+                        self.servos[self.head_UD.name].current != head_ud:
                     self.servos = self.servo_status.get_angle_map()
                     time.sleep(.2)
 
@@ -182,7 +183,8 @@ class MotionTrack(MQTTClient):
             # x-axis
             servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-            while servo_1 != self.servos[self.head_LR.name].current and servo_2 != self.servos[self.body_LR].current \
+            while servo_1 != self.servos[self.head_LR.name].current and \
+                    servo_2 != self.servos[self.body_LR.name].current \
                     and servo_3 != self.servos[self.head_UD.name] and servo_4 != self.servos[self.body_UD.name].current:
                 self.servos = self.servo_status.get_angle_map()
                 time.sleep(.2)
