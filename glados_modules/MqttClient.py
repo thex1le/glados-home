@@ -25,7 +25,7 @@ class MQTTClient:
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
         self.logger.debug(f"Connecting to {self.broker}:{self.port}")
         for topic in self.topic_handler:
-            self.client.subscribe(topic)
+            self.client.subscribe(topic, qos=2)
 
     def on_message(self, client: mqtt.Client, userdata: object, msg: mqtt.MQTTMessage) -> None:
         if msg.topic in self.topic_handler:
@@ -40,7 +40,7 @@ class MQTTClient:
             command = (command, )
         for m in command:
             self.logger.debug(f"{self.__name__} sending {m} command")
-            self.client.publish(topic, dumps(m))
+            self.client.publish(topic, dumps(m), qos=2)
 
 
 # TODO flesh out message classes for easy update in one place
