@@ -31,18 +31,18 @@ class ServoLocation(MQTTClient):
         self.axis = ServoEnum.MSG_AXIS.value
         self.ServoTuple = namedtuple('servo', [self.current_angle, self.max, self.min, self.middle,
                                      self.axis, "location"])
+        self.servo_list = (ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value,
+                           ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value)
 
     def update_servo_status(self):
         # trigger servo message status update
         self.logger.debug("Updating Servo angle status")
         msg = list()
-        servo_list = (ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value,
-                      ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value)
-        for servo_location in servo_list:
+        for servo_location in self.servo_list:
             msg.append(ServoMessageBuilder.get_status(servo_location))
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # block and don't return till all the servos populate
-        for servo in servo_list:
+        for servo in self.servo_list:
             if servo not in self.body_map.keys():
                 # possible block here...
                 sleep(.2)
@@ -67,8 +67,8 @@ class ServoLocation(MQTTClient):
         """
         Return angle map
         """
-        if self.body_map == dict():
-            # empty map trigger a status update
+        if self.body_map == dict() or len(self.body_map.keys()) != len(self.servo_list):
+            # empty or not fully populated map trigger a status update
             self.update_servo_status()
         return self.body_map.copy()
 
