@@ -188,6 +188,8 @@ class MotionTrack(MQTTClient):
                     and servo_3 != self.servos[self.head_UD.name] and servo_4 != self.servos[self.body_UD.name].current:
                 self.servos = self.servo_status.get_angle_map()
                 time.sleep(.2)
+            # sleep a bit before we return just to slow things down, should be a better way to do this...
+            time.sleep(5)
 
     def __find_person(self, seen_data) -> dict:
         """
