@@ -39,11 +39,13 @@ if __name__ == "__main__":
     mqtt_connect = Mqtt_tuple(config_p["MQTT"]["mqtt_server_ip"], int(config_p["MQTT"]["mqtt_port"]))
     pulse_90 = config_p["SERVOS"]["mg90d_pulse"].split(',')
     pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
+    pulse_995 = config_p["SERVOS"]["mg995r_pulse"].split(',')
     default = config_p["SERVOS"]["default_max_min_center"].split(',')
     head_min_max = config_p["SERVOS"]["head_min_max_center"].split(',')
     neck_min_max = config_p["SERVOS"]["head_min_max_center"].split(',')
     mg92d_speed = float(config_p["SERVOS"]["mg92b_speed"])
     mg90d_speed = float(config_p["SERVOS"]["mg90d_speed"])
+    mg995_speed = float(config_p["SERVOS"]["mg995r_speed"])
     mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
     mg92b_pulse = max_min_tuple(int(pulse_92[0]), int(pulse_92[1]))
     default_angle = max_min_center_tuple(int(default[0]), int(default[1]), int(default[2]))
@@ -52,7 +54,7 @@ if __name__ == "__main__":
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=mqtt_connect)
     body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
-                     broker=mqtt_connect)
+                     broker=mqtt_connect, servo_speed=mg995_speed, pulse_max_min=pulse_995)
     body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', servo_range=default_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
     head_LR = Gservo(location='head_left_right', servo=kit.servo[2], axis='y', servo_range=neck_angle,
