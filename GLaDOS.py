@@ -143,18 +143,17 @@ class MotionTrack(MQTTClient):
     def track_loop(self):
         # main tracking loop
         # find target
-        # don't double call
-        self.logger.debug(f"Moving To track {self.target}")
+        # don't double call if head_tracking is True
         if self.head_tracking is False:
+            self.logger.debug(f"Moving To track {self.target}")
             self.head_tracking = True
-            print("getting vision map")
             vision_map = self.vision_tracker.get_vision_map()
             if self.main_camera in vision_map.keys():
                 print(vision_map[self.main_camera])
                 if vision_map[self.main_camera].get(self.count, 0) != 0:
                     target_bounding = self.__find_person(vision_map[self.main_camera][self.target][self.objects])
                     self.move_servos(target_bounding)
-                self.head_tracking = False
+            self.head_tracking = False
 
     def move_servos(self, target: dict):
         # get current servo position
