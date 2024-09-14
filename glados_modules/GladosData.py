@@ -61,8 +61,7 @@ class ServoLocation(MQTTClient):
             # found a servo status, update the dict
             location = j_msg.get(ServoEnum.MSG_LOCATION_KEY.value)
             results = j_msg[ServoEnum.MSG_RESULTS.value]
-            # you left off here populating the named tuple for the servo data
-            # TODO figure out WTF these are returning none...
+            self.logger.debug(f"Servo Map update with {results} for location {location}")
             self.body_map[location] = self.ServoTuple(results.get(self.current_angle),
                                                   results.get(self.max), results.get(self.min), results.get(self.middle),
                                                   results.get(self.axis), location)
