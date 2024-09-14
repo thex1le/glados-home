@@ -42,10 +42,15 @@ class ServoLocation(MQTTClient):
             msg.append(ServoMessageBuilder.get_status(servo_location))
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # block and don't return till all the servos populate
-        for servo in self.servo_list:
-            if servo not in self.body_map.keys():
-                # possible block here...
-                sleep(.2)
+        while len(self.servo_list) != len(self.body_map.keys()):
+            for servo in self.servo_list:
+                if servo not in self.body_map.keys():
+                    # possible block here...
+                    # keep sending request till we get them all
+                    self.send_command(ServoMessageBuilder.get_status(servo), ServoEnum.MQTT_COMMAND_TOPIC.value)
+                    sleep(.2)
+                    print("BLOCKING BLOCKING BLOCKING")
+                    print(len(self.servo_list), len(self.body_map.keys()))
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -58,10 +63,9 @@ class ServoLocation(MQTTClient):
             results = j_msg[ServoEnum.MSG_RESULTS.value]
             # you left off here populating the named tuple for the servo data
             # TODO figure out WTF these are returning none...
-            servo_map = {location: self.ServoTuple(results.get(self.current_angle),
+            self.body_map[location] = self.ServoTuple(results.get(self.current_angle),
                                                   results.get(self.max), results.get(self.min), results.get(self.middle),
-                                                  results.get(self.axis), location)}
-            self.body_map = servo_map
+                                                  results.get(self.axis), location)
 
     def get_angle_map(self) -> dict:
         """
@@ -69,7 +73,9 @@ class ServoLocation(MQTTClient):
         """
         if self.body_map == dict() or len(self.body_map.keys()) != len(self.servo_list):
             # empty or not fully populated map trigger a status update
+            print("we got here, updating map")
             self.update_servo_status()
+            print("****", self.body_map)
         return self.body_map.copy()
 
 
