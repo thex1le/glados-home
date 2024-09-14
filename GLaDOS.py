@@ -69,7 +69,7 @@ class MotionTrack(MQTTClient):
     # class for motion tracking on a target
     # TODO figure out if we want this here, or in teh Gbody class in the body server?
     def __init__(self, broker: NamedTuple,  camera_resolution: NamedTuple, target: str = "person",
-                 confidence: float = 0.65):
+                 confidence: float = 0.65, move_fudge_factor: int = 8):
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
         self.logger = setup_logger(self.__name__)
@@ -80,6 +80,7 @@ class MotionTrack(MQTTClient):
         self.main_camera = CameraEnum.CAMERA_HEAD.value
         self.left_camera = CameraEnum.CAMERA_LEFT.value
         self.right_camera = CameraEnum.CAMERA_RIGHT.value
+        self.move_fudge_factor = move_fudge_factor
         servo = namedtuple("servo", ["name", "move"])
         # servo names
         self.head_LR = servo(ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, ServoMessageBuilder.head_left_right)
@@ -164,22 +165,27 @@ class MotionTrack(MQTTClient):
             print(self.servos)
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
-            if self.__distance_check(self.servos[self.head_LR.name], head_lr) is True:
+            if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor) is True:
                 # send command to move the servo
                 mv_list.append(self.head_LR.move(head_lr))
-            if self.__distance_check(self.servos[self.head_UD.name], head_ud) is True:
+            if self.__distance_check(self.servos[self.head_UD.name], head_ud, self.move_fudge_factor) is True:
                 mv_list.append(self.head_UD.move(head_ud))
             if mv_list != list():
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                # wait for more to happen
-                time.sleep(.5)
+                # wait for more to happen and update status
+                while self.servos[self.head_LR.name].curent != head_lr and self.servos[self.head_UD].current != head_ud:
+                    self.servos = self.servo_status.get_angle_map()
+                    time.sleep(.2)
+
             # head should now be centered on the target
             # level the head and arm with body and rotation
             # x-axis
-            self.__level_servos(self.head_LR, self.body_LR)
-            self.__level_servos(self.head_UD, self.body_UD)
-            # give time for servos to move...maybe check status before return?
-            time.sleep(.5)
+            servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
+            servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
+            while servo_1 != self.servos[self.head_LR.name].current and servo_2 != self.servos[self.body_LR].current \
+                    and servo_3 != self.servos[self.head_UD.name] and servo_4 != self.servos[self.body_UD.name].current:
+                self.servos = self.servo_status.get_angle_map()
+                time.sleep(.2)
 
     def __find_person(self, seen_data) -> dict:
         """
@@ -236,7 +242,7 @@ class MotionTrack(MQTTClient):
                 self.logger.debug(f"Going Down, {new_angle} is more than current {current_angle}, not moving")
         return move
 
-    def __level_servos(self, servo1, servo2) -> None:
+    def __level_servos(self, servo1, servo2) -> tuple:
         # bring servo1 to midpoint by moving servo2
         # ensure servos are on the same axis
         self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2.name].location}")
@@ -247,6 +253,8 @@ class MotionTrack(MQTTClient):
         mv_list = [servo2.move(self.servos[servo1.name].current),
                    servo1.move(self.servos[servo1.name].middle)]
         self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        # servo 1, servo 2
+        return self.servos[servo1.name].middle, self.servos[servo1.name].current
 
     # detection logic loop...
     # done triggered by a high confidence of target in vision tracker.. each vision tracker can track a different target..
