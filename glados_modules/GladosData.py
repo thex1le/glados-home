@@ -1,6 +1,6 @@
 from typing import Dict, Callable, NamedTuple
 from json import loads
-from time import time
+from time import time, sleep
 from collections import namedtuple
 
 # 3rd party
@@ -31,12 +31,21 @@ class ServoLocation(MQTTClient):
         self.axis = ServoEnum.MSG_AXIS.value
         self.ServoTuple = namedtuple('servo', [self.current_angle, self.max, self.min, self.middle,
                                      self.axis, "location"])
+
+    def update_servo_status(self):
         # trigger servo message status update
+        self.logger.debug("Updating Servo angle status")
         msg = list()
-        for servo_location in (ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value,
-                               ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value):
+        servo_list = (ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value,
+                      ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value)
+        for servo_location in servo_list:
             msg.append(ServoMessageBuilder.get_status(servo_location))
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        # block and don't return till all the servos populate
+        for servo in servo_list:
+            if servo not in self.body_map.keys():
+                # possible block here...
+                sleep(.2)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -47,6 +56,7 @@ class ServoLocation(MQTTClient):
             # found a servo status, update the dict
             location = j_msg.get(ServoEnum.MSG_LOCATION_KEY.value)
             # you left off here populating the named tuple for the servo data
+            # TODO figure out WTF these are returning none...
             servo_map = {location: self.ServoTuple(j_msg.get(self.current_angle),
                                                   j_msg.get(self.max), j_msg.get(self.min), j_msg.get(self.middle),
                                                   j_msg.get(self.axis), location)}
@@ -56,6 +66,9 @@ class ServoLocation(MQTTClient):
         """
         Return angle map
         """
+        if self.body_map == dict():
+            # empty map trigger a status update
+            self.update_servo_status()
         return self.body_map.copy()
 
 
