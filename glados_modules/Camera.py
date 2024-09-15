@@ -50,9 +50,16 @@ class Camera(Process, MQTTClient):
             self.logger.debug(f" Camera FPS set to {self.fps} and RBG888 and YUV420 Modes")
             self.cam_config = self.cap.create_video_configuration(
                 main={"format": "RGB888", "size": (self.cam_res_x, self.cam_res_y)},
-                lores={"format": "YUV420", "size": (self.cam_res_x, self.cam_res_y)},
+                lores=None,
                 display="lores",
-                controls={"FrameRate": self.fps}
+                controls={
+                    "FrameRate": self.fps,  # Balance frame rate and resolution for your task
+                    "Brightness": 0.5,  # Adjust brightness for optimal image clarity
+                    "Sharpness": 1.0,  # Increase sharpness for better edge detection
+                    "Contrast": 1.0,  # Use higher contrast for better feature distinction
+                    "Saturation": 1.0,  # Preserve color information for ML tasks
+                    "NoiseReductionMode": 2  # Enable noise reduction for cleaner images
+                }
             )
             self.cap.configure(self.cam_config)
             self.cap.start()
@@ -88,7 +95,7 @@ class Camera(Process, MQTTClient):
         self.cap.configure(config)
 
     def __capture_image_pi(self):
-        return self.cap.capture_buffer("lores")
+        return self.cap.capture_buffer("main")
 
     def __capture_image_cv2(self):
         ret, frame = self.cap.read()

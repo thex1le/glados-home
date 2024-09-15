@@ -83,26 +83,32 @@ class YoloDetect(Thread, MQTTClient):
         return results_dict
 
     def __yolo_process_image(self, image_dict):
-        # pass image to rtsp...
-        print(image_dict)
+        # Get raw image data from the image_dict
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
-        print(width, height)
-        yuv420_data = raw.reshape((int(height) * 3) // 2, int(width))
-        image = cv2.cvtColor(yuv420_data, cv2.COLOR_YUV420p2BGR)
-        #image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
+        # No need for YUV420 conversion, as the camera is outputting in RGB888 directly
+        # Instead, reshape the raw data to match the RGB888 format: (height, width, 3)
+        image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
+        # Optionally, convert RGB to BGR as OpenCV typically expects BGR format for YOLO
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # Run YOLO on the image
         results = self.model(image, device="cuda")
         self.logger.debug(f"Yolo has processed raw image")
+        # Create an annotator to label the image with detected objects
         annotator = Annotator(image)
         for r in results:
-            annotator = Annotator(image)
             boxes = r.boxes
             for box in boxes:
                 b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
                 c = box.cls
-                annotator.box_label(b, self.model.names[int(c)])
-                self.logger.debug(f"Labeled image with, {self.model.names[int(c)]}")
+                conf = box.conf  # get confidence score
+                # Create a label that includes both the class name and confidence score
+                label = f"{self.model.names[int(c)]} {conf:.2f}"
+                annotator.box_label(b, label)
+                self.logger.debug(f"Labeled image with {label}")
+        # Get the annotated image
         a_image = annotator.result()
+        # Send the annotated image to the RTSP server
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
