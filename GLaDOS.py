@@ -239,7 +239,7 @@ class MotionTrack(MQTTClient):
         if new_angle > current_angle:
             angle_gl = "greater"
             difference = new_angle - current_angle
-            if difference > degree_diff:
+            if abs(difference) > degree_diff:
                 move_factor = "greater"
                 movement = "moving"
                 move = True
@@ -249,7 +249,7 @@ class MotionTrack(MQTTClient):
         elif new_angle < current_angle:
             difference = new_angle - current_angle
             angle_gl = "less"
-            if difference > degree_diff:
+            if abs(difference) > degree_diff:
                 move = True
                 move_factor = "greater"
                 movement = "moving"
