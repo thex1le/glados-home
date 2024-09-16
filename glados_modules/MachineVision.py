@@ -101,7 +101,7 @@ class YoloDetect(Thread, MQTTClient):
             for box in boxes:
                 b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
                 c = box.cls
-                conf = box.conf  # get confidence score
+                conf = box.conf.item()  # get confidence score
                 # Create a label that includes both the class name and confidence score
                 label = f"{self.model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
