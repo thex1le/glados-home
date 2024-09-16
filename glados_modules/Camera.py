@@ -51,7 +51,6 @@ class Camera(Process, MQTTClient):
             self.cam_config = self.cap.create_video_configuration(
                 main={"format": "RGB888", "size": (self.cam_res_x, self.cam_res_y)},
                 lores=None,
-                display="lores",
                 controls={
                     "FrameRate": self.fps,  # Balance frame rate and resolution for your task
                     "Brightness": 0.5,  # Adjust brightness for optimal image clarity
