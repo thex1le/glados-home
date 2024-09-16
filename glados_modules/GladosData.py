@@ -85,7 +85,6 @@ class VisionTracker(MQTTClient):
     def __init__(self, broker: NamedTuple, target: str, confidence: float, tracker_callback) -> None:
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         self.target = target
         self.tracker_callback = tracker_callback
         self.confidence_score = confidence
@@ -97,6 +96,7 @@ class VisionTracker(MQTTClient):
         self.results_key = CameraEnum.MSG_RESULTS.value
         self.ts_key = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
         self.topic_handler: Dict[CameraEnum, Callable] = {self.cmd_topic: self.handle_cmd}
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         # Use a time cache and expire any vision tracking objects after 1min and 1000 objects
         # should only need 720 ( 3 cam 4 a second = 12 * 60 = 720) but leave some wiggle room, will need to adjust this
         # if we up the output frame rate
@@ -155,9 +155,9 @@ class VisionTracker(MQTTClient):
                     self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
                     # switch to callback since mqtt not working for some fucking reason...
                     # TODO fix this later
-                    self.tracker_callback()
-                    #self.send_command(TargetMessageBuilder.send_track_command_start(),
-                    #                  TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                    #self.tracker_callback()
+                    self.send_command(TargetMessageBuilder.send_track_command_start(),
+                                      TrackingEnums.MQTT_COMMAND_TOPIC.value)
 
     def get_vision_map(self) -> dict:
         """

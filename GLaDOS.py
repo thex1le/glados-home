@@ -73,6 +73,13 @@ class MotionTrack(MQTTClient):
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
         self.logger = setup_logger(self.__name__)
+        self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value
+        self.cmd_trigger: str = TrackingEnums.MSG_COMMAND_KEY.value
+        self.intensity_topic: str = SystemEnums.MQTT_INTENSITY_TOPIC.value
+        self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
+        self.intensity: Tuple[float, float] = (.1, .1)
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
+                                                   self.intensity_topic: self.handle_intensity}
         MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         # head camera resolution
         self.cam_x = int(camera_resolution.x)
@@ -102,13 +109,6 @@ class MotionTrack(MQTTClient):
         self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
-        self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value
-        self.cmd_trigger: str = TrackingEnums.MSG_COMMAND_KEY.value
-        self.intensity_topic: str = SystemEnums.MQTT_INTENSITY_TOPIC.value
-        self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
-        self.intensity: Tuple[float, float] = (.1, .1)
-        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
-                                                   self.intensity_topic: self.handle_intensity}
         # access the servos
         # find the x1 x2, y1, y2 of the target,
         # figure out if the head can look at it...
@@ -144,7 +144,7 @@ class MotionTrack(MQTTClient):
     def track_loop(self):
         # main tracking loop
         # find target
-        # don't double call if head_tracking is True
+        # don't double call if head_tracking is True, just skip this detection
         if self.head_tracking is False:
             self.logger.debug(f"Moving To track {self.target}")
             self.head_tracking = True
