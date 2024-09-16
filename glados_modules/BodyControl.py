@@ -245,6 +245,14 @@ class Gservo(Thread, MQTTClient):
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, broker.ip, broker.port)
+        degree_per_second = 60 / servo_speed
+        self.speed_settings = {
+            1: degree_per_second * 0.2,  # Calm movement
+            2: degree_per_second * 0.4,  # Neutral
+            3: degree_per_second * 0.6,  # Slightly agitated
+            4: degree_per_second * 0.8,  # Angry
+            5: degree_per_second * 1.0  # Frustrated/fastest
+        }
         self.location: str = location
         self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC.value
         self.status_topic = ServoEnum.MQTT_STATUS_TOPIC.value
@@ -266,14 +274,6 @@ class Gservo(Thread, MQTTClient):
         self.exec_command: bool = False
         self.moving: bool = False
         self.stop_bool: bool = False
-        degree_per_second = 60 / servo_speed
-        self.speed_settings = {
-            1: degree_per_second * 0.2,  # Calm movement
-            2: degree_per_second * 0.4,  # Neutral
-            3: degree_per_second * 0.6,  # Slightly agitated
-            4: degree_per_second * 0.8,  # Angry
-            5: degree_per_second * 1.0  # Frustrated/fastest
-        }
         self.client.publish(topic=self.status_topic, payload=json.dumps(f"{self.location} servo startup complete"))
 
     def calculate_move_time(self, target_angle: int) -> float:
