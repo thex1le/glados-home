@@ -238,6 +238,9 @@ class MotionTrack(MQTTClient):
         move = False
         current_angle = servo.current
         difference = 0
+        angle_gl = "not greater or less"
+        movement = "not moving"
+        move_factor = angle_gl
         if new_angle > current_angle:
             angle_gl = "greater"
             difference = new_angle - current_angle
