@@ -371,6 +371,7 @@ class Gservo(Thread, MQTTClient):
             self.servo.angle = current_angle
             sleep(self.calculate_move_time(self.angle))
         # update current angle with new angle
+        self.logger.debug(f"Set {self.location} angle to {current_angle}")
         self.current_angle = self.angle
 
     def get_moving_status(self) -> bool:
@@ -381,12 +382,13 @@ class Gservo(Thread, MQTTClient):
             self.servo.angle = self.angle
             sleep(self.calculate_move_time(self.angle))
             self.moving = True
-            self.logger.debug(f"moving to {self.angle}")
+            self.logger.debug(f"Set {self.location} angle to {self.angle}")
             self.current_angle = self.angle
             self.moving = False
             self.first_boot = False
         else:
             if self.angle != self.current_angle:
+                self.logger.debug(f"New Angle {self.angle} does not equal {self.current_angle}")
                 self.moving = True
                 self.s_curve_move()
                 self.moving = False

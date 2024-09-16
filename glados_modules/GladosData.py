@@ -152,7 +152,7 @@ class VisionTracker(MQTTClient):
                         # add a new camera to the cache
                     else:
                         self.response_cache[camera] = {sight_results[self.ts_key]: sight_results}
-                    self.logger.debug("Sending Start command to track object")
+                    self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
                     # switch to callback since mqtt not working for some fucking reason...
                     # TODO fix this later
                     self.tracker_callback()

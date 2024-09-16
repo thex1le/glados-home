@@ -233,21 +233,32 @@ class MotionTrack(MQTTClient):
         return round(new_servo_angle_updated)
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
-        # TODO get degrees of difference from config file
         move = False
         current_angle = servo.current
+        difference = 0
         if new_angle > current_angle:
-            if (new_angle - current_angle) > degree_diff:
-                self.logger.debug(f"Going up, {new_angle} is greater than current {current_angle}, moving")
+            angle_gl = "greater"
+            difference = new_angle - current_angle
+            if difference > degree_diff:
+                move_factor = "greater"
+                movement = "moving"
                 move = True
             else:
-                self.logger.debug(f"Going up, {new_angle} is less than current {current_angle}, not moving")
+                move_factor = "greater"
+                movement = "not moving"
         elif new_angle < current_angle:
-            if (current_angle - new_angle) > degree_diff:
-                self.logger.debug(f"Going Down, {new_angle} is less than current {current_angle}, moving")
+            difference = new_angle - current_angle
+            angle_gl = "less"
+            if difference > degree_diff:
                 move = True
+                move_factor = "greater"
+                movement = "moving"
             else:
-                self.logger.debug(f"Going Down, {new_angle} is more than current {current_angle}, not moving")
+                movement = "not moving"
+                move_factor = "less"
+        self.logger.debug(f"{servo.location} {new_angle} is {angle_gl} than {current_angle} and "
+                          f"with a difference of {difference} which is {move_factor} than small movement factor"
+                          f" of {degree_diff}, {movement}")
         return move
 
     def __level_servos(self, servo1, servo2) -> tuple:
