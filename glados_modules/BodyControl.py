@@ -269,11 +269,11 @@ class Gservo(Thread, MQTTClient):
         self.current_angle: int = self.angle
         self.first_boot: bool = True
         self.axis: str = axis.lower()
+        MQTTClient.__init__(self, broker.ip, broker.port)
         self.move()
         self.exec_command: bool = False
         self.moving: bool = False
         self.stop_bool: bool = False
-        MQTTClient.__init__(self, broker.ip, broker.port)
         self.client.publish(topic=self.status_topic, payload=json.dumps(f"{self.location} servo startup complete"))
 
     def calculate_move_time(self, target_angle: int) -> float:
