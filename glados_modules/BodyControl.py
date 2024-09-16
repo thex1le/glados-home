@@ -276,6 +276,22 @@ class Gservo(Thread, MQTTClient):
         }
         self.client.publish(topic=self.status_topic, payload=json.dumps(f"{self.location} servo startup complete"))
 
+    def calculate_move_time(self, target_angle: int) -> float:
+        """
+        Calculate the time it will take the servo to move to the target angle based on its current speed setting.
+        :param target_angle: The desired angle to which the servo should move.
+        :return: The time (in seconds) it will take to complete the movement.
+        """
+        # Determine the distance (degrees) the servo will move
+        distance_to_travel = abs(self.current_angle - target_angle)
+        # Get the speed in degrees per second from the speed settings
+        speed_in_degrees_per_second = self.speed_settings[self.speed]
+        # Calculate the time required to move the specified distance at the current speed
+        move_time = distance_to_travel / speed_in_degrees_per_second
+        self.logger.debug(f"Calculated move time: {move_time} seconds to move {distance_to_travel} degrees "
+                          f"at speed setting {self.speed} ({speed_in_degrees_per_second} degrees/second)")
+        return move_time
+
     def send_status(self):
         # Send current
         status = ServoMessageBuilder.send_status(self.location, self.get_angles())
@@ -343,6 +359,7 @@ class Gservo(Thread, MQTTClient):
         full_time = total_distance / self.speed_settings[self.speed]
         # Divide the movement into small steps
         steps = 100
+        current_angle = 0
         for i in range(steps + 1):
             # Calculate S-curve (using a simple cosine-based ease-in and ease-out)
             t = i / steps
@@ -352,7 +369,7 @@ class Gservo(Thread, MQTTClient):
                 t = -1 + (4 - 2 * t) * t
             current_angle = self.current_angle + (self.angle - self.current_angle) * t
             self.servo.angle = current_angle
-            sleep(full_time / steps)
+            sleep(self.calculate_move_time(self.angle))
         # update current angle with new angle
         self.current_angle = self.angle
 
@@ -362,7 +379,7 @@ class Gservo(Thread, MQTTClient):
     def move(self) -> None:
         if self.first_boot is True:
             self.servo.angle = self.angle
-            sleep(.5)
+            sleep(self.calculate_move_time(self.angle))
             self.moving = True
             self.logger.debug(f"moving to {self.angle}")
             self.current_angle = self.angle
@@ -371,7 +388,6 @@ class Gservo(Thread, MQTTClient):
         else:
             if self.angle != self.current_angle:
                 self.moving = True
-                self.logger.debug(f"moving to {self.angle}")
                 self.s_curve_move()
                 self.moving = False
         self.send_status()
