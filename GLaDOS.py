@@ -164,9 +164,9 @@ class MotionTrack(MQTTClient):
             # move "shoulders" first
             print(self.servos)
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
-            self.logger.debug(f"{self.head_LR.name} should be at {head_lr} to be on target" )
+            self.logger.debug(f"{self.head_LR.name} should be at {head_lr} to be on target")
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
-            self.logger.debug(f"{self.head_UD.name} should be at {head_ud} to be on target" )
+            self.logger.debug(f"{self.head_UD.name} should be at {head_ud} to be on target")
             if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor) is True:
                 # send command to move the servo
                 mv_list.append(self.head_LR.move(head_lr))
