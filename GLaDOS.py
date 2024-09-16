@@ -224,7 +224,11 @@ class MotionTrack(MQTTClient):
         # Calculate the offset of the person's center from the image center with the updated data
         offset_from_center = center_updated - (axis_size / 2)
         # Calculate the new servo angle to center on the person with the updated data
-        new_servo_angle_updated = servo.middle - (offset_from_center / axis_size * servo.max)
+        if servo.name == "head_up_down":
+            new_servo_angle_updated = servo.middle + (offset_from_center / axis_size * servo.max)
+        else:
+            new_servo_angle_updated = servo.middle - (offset_from_center / axis_size * servo.max)
+
         # Round to nearest whole
         return round(new_servo_angle_updated)
 
