@@ -17,7 +17,7 @@ class MQTTClient:
         self.client: mqtt.Client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
-        self.topic_handler: Dict[str, Callable] = {}
+        #self.topic_handler: Dict[str, Callable] = {}
         self.client.connect(self.broker, self.port, 60)
         self.client.loop_start()
         self.logger = setup_logger(name=f"{self.__name__}")
