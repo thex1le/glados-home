@@ -80,7 +80,6 @@ class MotionTrack(MQTTClient):
         self.intensity: Tuple[float, float] = (.1, .1)
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         # head camera resolution
         self.cam_x = int(camera_resolution.x)
         self.cam_y = int(camera_resolution.y)
@@ -119,6 +118,7 @@ class MotionTrack(MQTTClient):
         # TODO figure out how we are going to track anger intensity over various body parts
         # TODO likely remove this next line
         self.scan_success = False
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
 
     def check_periph(self, camera: str):
         # confidence to move is already high enough, determine the direction and how close we already are

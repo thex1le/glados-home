@@ -35,7 +35,6 @@ class GladosLCD(Thread, MQTTClient):
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
-        MQTTClient.__init__(self, broker.ip, broker.port)
         self.location: str = location
         self.animation_path: str = animation_path
         self.cmd_topic: str = "body/lcd"
@@ -57,6 +56,7 @@ class GladosLCD(Thread, MQTTClient):
         self.breath_animation = True
         self.breathe_loop = True
         self.stop_loop = False
+        MQTTClient.__init__(self, broker.ip, broker.port)
 
     def handle_cmd(self, msg) -> None:
         j_msg = loads(msg.payload.decode())
@@ -244,7 +244,6 @@ class Gservo(Thread, MQTTClient):
         Thread.daemon = True
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
-        MQTTClient.__init__(self, broker.ip, broker.port)
         degree_per_second = 60 / servo_speed
         self.speed_settings = {
             1: degree_per_second * 0.2,  # Calm movement
@@ -274,6 +273,7 @@ class Gservo(Thread, MQTTClient):
         self.exec_command: bool = False
         self.moving: bool = False
         self.stop_bool: bool = False
+        MQTTClient.__init__(self, broker.ip, broker.port)
         self.client.publish(topic=self.status_topic, payload=json.dumps(f"{self.location} servo startup complete"))
 
     def calculate_move_time(self, target_angle: int) -> float:
@@ -411,7 +411,6 @@ class LedShoulders(MQTTClient):
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = "LED_Shoulder_Controller"
         self.logger = setup_logger(self.__name__)
-        MQTTClient.__init__(self, broker.ip, broker.port)
         led_num: int = 64
         self.pixels = neopixel.NeoPixel(board.D12, led_num, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.lh = LedHelper
@@ -428,6 +427,7 @@ class LedShoulders(MQTTClient):
         self.location: str = "shoulder_led"
         self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco, "twinkle": self.twinkle}
         self.twinkle_loop: bool = False
+        MQTTClient.__init__(self, broker.ip, broker.port)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
@@ -538,7 +538,6 @@ class LedHead(MQTTClient):
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
         self.logger = setup_logger(self.__name__)
-        MQTTClient.__init__(self, broker.ip, broker.port)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
@@ -555,6 +554,7 @@ class LedHead(MQTTClient):
         self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco,
                                                 "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
         self.glados_eye: Tuple[int, int, int] = (255, 165, 0)
+        MQTTClient.__init__(self, broker.ip, broker.port)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
