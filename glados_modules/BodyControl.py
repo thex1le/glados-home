@@ -369,7 +369,7 @@ class Gservo(Thread, MQTTClient):
                 t = -1 + (4 - 2 * t) * t
             current_angle = self.current_angle + (self.angle - self.current_angle) * t
             self.servo.angle = current_angle
-            sleep(self.calculate_move_time(self.angle))
+            sleep(full_time / steps)
         # update current angle with new angle
         self.logger.debug(f"Set {self.location} angle to {current_angle}")
         self.current_angle = self.angle
