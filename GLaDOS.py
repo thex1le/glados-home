@@ -257,7 +257,7 @@ class MotionTrack(MQTTClient):
                 movement = "not moving"
                 move_factor = "less"
         self.logger.debug(f"{servo.location} {new_angle} is {angle_gl} than {current_angle} and "
-                          f"with a difference of {difference} which is {move_factor} than small movement factor"
+                          f"with a difference of {abs(difference)} which is {move_factor} than small movement factor"
                           f" of {degree_diff}, {movement}")
         return move
 
