@@ -155,6 +155,8 @@ class MotionTrack(MQTTClient):
                     target_bounding = self.__find_person(vision_map[self.main_camera][self.target][self.objects])
                     self.move_servos(target_bounding)
             self.head_tracking = False
+        else:
+            self.logger.debug("Tracking quested but already currently moving to track target")
 
     def move_servos(self, target: dict):
         # get current servo position
