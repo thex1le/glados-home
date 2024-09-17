@@ -136,8 +136,8 @@ class MotionTrack(MQTTClient):
         Trigger the loop that hunts and locks onto target...
         """
         j_msg = loads(msg.payload.decode())
-        # make sure it's a track command
-        if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START:
+        print("************* TRACKING FIRED")
+        if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START.value:
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
             self.track_loop()
 
