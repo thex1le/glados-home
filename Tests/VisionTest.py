@@ -4,6 +4,7 @@ import paho.mqtt.client as mqtt
 import json
 
 from glados_modules.MqttClient import TargetMessageBuilder
+from glados_modules.GLaDosEnums import TrackingEnums
 
 
 class MQTTClient:
@@ -27,7 +28,7 @@ class MQTTClient:
 if __name__ == "__main__":
     broker = "192.168.86.52"
     port = 1883
-    topic = "body/servo"
+    topic = TrackingEnums.MQTT_COMMAND_TOPIC.value
 
     mqtt_client = MQTTClient(broker, port, topic)
     mqtt_client.connect()
