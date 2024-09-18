@@ -25,7 +25,11 @@ class MQTTClient:
         self.uuid_cache = TTLCache(maxsize=100, ttl=60)
         self.client.connect(self.broker, self.port, 60)
         self.client.loop_start()
-        self.logger = setup_logger(name=f"{self.__name__}")
+        try:
+            self.logger = setup_logger(name=f"{self.__name__}")
+        except AttributeError:
+            self.logger = setup_logger(name=f"{self.__class__.__name__}")
+            self.__name__ = self.__class__.__name__
 
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
         self.logger.debug(f"Connecting to {self.broker}:{self.port}")
