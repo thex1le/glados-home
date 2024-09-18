@@ -26,13 +26,14 @@ class MQTTClient:
 
 
 if __name__ == "__main__":
-    broker = "192.168.86.52"
+    broker = "192.168.86.23"
     port = 1883
+    #topic = "body/servo"
     topic = TrackingEnums.MQTT_COMMAND_TOPIC.value
 
     mqtt_client = MQTTClient(broker, port, topic)
     mqtt_client.connect()
     msglist = [TargetMessageBuilder.send_track_command_start()]
     for m in msglist:
-        print(f"sending {m}")
-        mqtt_client.client.publish(topic, json.dumps(m))
+        print(f"sending {m} to {topic}")
+        mqtt_client.client.publish(topic, json.dumps(m), qos=2)
