@@ -1,9 +1,12 @@
 # native imports
 from typing import Dict, Callable
-from json import dumps
+from json import dumps, loads
+from uuid import uuid4
+from time import time
 
 # 3rd party imports
 import paho.mqtt.client as mqtt
+from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -19,6 +22,7 @@ class MQTTClient:
         self.client.on_message = self.on_message
         if not hasattr(self, 'topic_handler'):
             self.topic_handler: Dict[str, Callable] = {}
+        self.uuid_cache = TTLCache(maxsize=100, ttl=60)
         self.client.connect(self.broker, self.port, 60)
         self.client.loop_start()
         self.logger = setup_logger(name=f"{self.__name__}")
@@ -29,8 +33,12 @@ class MQTTClient:
             self.client.subscribe(topic, qos=1)
 
     def on_message(self, client: mqtt.Client, userdata: object, msg: mqtt.MQTTMessage) -> None:
-        if msg.topic in self.topic_handler:
-            self.topic_handler[msg.topic](msg)
+        j_msg = loads(msg.payload.decode())
+        uuid = j_msg["uuid"]
+        if uuid not in self.uuid_cache.keys():
+            self.uuid_cache[uuid] = time()
+            if msg.topic in self.topic_handler:
+                self.topic_handler[msg.topic](msg)
 
     def send_command(self, command: dict | list | tuple, topic) -> None:
         """
@@ -40,6 +48,8 @@ class MQTTClient:
             # make it an object we can iterate on
             command = (command, )
         for m in command:
+            # add in uuid for message tracking and debugging
+            m["uuid"] = uuid4()
             self.logger.debug(f"{self.__name__} sending {m} command")
             self.client.publish(topic, dumps(m), qos=1)
 
