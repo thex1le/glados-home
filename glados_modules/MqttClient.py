@@ -49,7 +49,7 @@ class MQTTClient:
             command = (command, )
         for m in command:
             # add in uuid for message tracking and debugging
-            m["uuid"] = uuid4()
+            m["uuid"] = str(uuid4())
             self.logger.debug(f"{self.__name__} sending {m} command")
             self.client.publish(topic, dumps(m), qos=1)
 
