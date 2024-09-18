@@ -34,7 +34,9 @@ class MQTTClient:
 
     def on_message(self, client: mqtt.Client, userdata: object, msg: mqtt.MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
-        uuid = j_msg["uuid"]
+        uuid = j_msg.get("uuid", None)
+        if uuid is None:
+            self.logger.error("NO UUID IN MESSAGE")
         if uuid not in self.uuid_cache.keys():
             self.uuid_cache[uuid] = time()
             if msg.topic in self.topic_handler:
