@@ -239,11 +239,9 @@ class GladosLCD(Thread, MQTTClient):
         self.stop_loop = True
 
 
-class Gservo(Thread, MQTTClient):
+class Gservo(MQTTClient):
     def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple, servo_range: NamedTuple,
                  pulse_max_min=None, servo_speed: float = 0.1) -> None:
-        Thread.__init__(self)
-        Thread.daemon = True
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
         degree_per_second = 60 / servo_speed
@@ -273,11 +271,8 @@ class Gservo(Thread, MQTTClient):
         self.axis: str = axis.lower()
         MQTTClient.__init__(self, broker.ip, broker.port)
         self.move()
-        self.exec_command: bool = False
         self.moving: bool = False
-        self.stop_bool: bool = False
-        # TODO figure out how we want to track servo starup
-        #self.send_command(command={f"{self.location} servo startup complete"}, topic=self.status_topic)
+        self.send_status()
 
     def calculate_move_time(self, target_angle: int) -> float:
         """
@@ -308,7 +303,9 @@ class Gservo(Thread, MQTTClient):
                 self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
                 angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
                 speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
-                self.set_speed_angle((speed, angle), execute=True)
+                self.set_speed_angle((speed, angle))
+                self.move()
+                self.send_status()
             elif j_msg.get(ServoEnum.MSG_COMMAND_KEY.value, "") == ServoEnum.MSG_COMMAND_STATUS.value:
                 self.send_status()
 
@@ -342,17 +339,12 @@ class Gservo(Thread, MQTTClient):
             self.angle = angle
             self.logger.debug(f"Angle set to {self.angle}")
 
-    def set_speed_angle(self, speed_angle: Tuple[int, int], execute: bool = False) -> None:
+    def set_speed_angle(self, speed_angle: Tuple[int, int]) -> None:
         self.set_speed(speed_angle[0])
         self.set_angle(speed_angle[1])
-        if execute:
-            self.exec_command = True
 
     def get_angle(self) -> int:
         return self.current_angle
-
-    def execute(self) -> None:
-        self.exec_command = True
 
     def s_curve_move(self) -> None:
         total_distance = abs(self.angle - self.current_angle)
@@ -395,19 +387,6 @@ class Gservo(Thread, MQTTClient):
                 self.moving = True
                 self.s_curve_move()
                 self.moving = False
-        self.send_status()
-
-    def run(self) -> None:
-        while self.stop_bool is False:
-            if self.exec_command is True:
-                self.move()
-                self.exec_command = False
-            else:
-                sleep(.05)
-        self.client.loop_stop()
-
-    def stop(self) -> None:
-        self.stop_bool = True
 
 
 class LedShoulders(MQTTClient):

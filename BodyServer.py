@@ -67,10 +67,6 @@ if __name__ == "__main__":
     glados_right_lcd.start()
     led_head.startup()
     head_camera = Camera(configfile=config_p, location=head_camera_location)
-    body_LR.start()
-    body_UD.start()
-    head_LR.start()
-    head_UD.start()
     head_camera.start()
     while True:
         sleep(1)
