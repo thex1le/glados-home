@@ -159,41 +159,75 @@ class MotionTrack(MQTTClient):
             self.logger.debug("Tracking quested but already currently moving to track target")
 
     def move_servos(self, target: dict):
-        # get current servo position
+        # Get current servo position
         self.servos = self.servo_status.get_angle_map()
         mv_list = list()
-        if target != {}:
-            # move "shoulders" first
-            print(self.servos)
-            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
-            self.logger.debug(f"{self.head_LR.name} should be at {head_lr} to be on target")
-            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
-            self.logger.debug(f"{self.head_UD.name} should be at {head_ud} to be on target")
-            if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor) is True:
-                # send command to move the servo
-                mv_list.append(self.head_LR.move(head_lr))
-            if self.__distance_check(self.servos[self.head_UD.name], head_ud, self.move_fudge_factor) is True:
-                mv_list.append(self.head_UD.move(head_ud))
-            if mv_list != list():
-                self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                # wait for more to happen and update status
-                while self.servos[self.head_LR.name].current != head_lr and \
-                        self.servos[self.head_UD.name].current != head_ud:
-                    self.servos = self.servo_status.get_angle_map()
-                    time.sleep(.2)
 
-            # head should now be centered on the target
-            # level the head and arm with body and rotation
-            # x-axis
+        if target != {}:
+            # Move head left-right and up-down first
+            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
+            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
+
+            if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor):
+                mv_list.append(self.head_LR.move(head_lr))
+            if self.__distance_check(self.servos[self.head_UD.name], head_ud, self.move_fudge_factor):
+                mv_list.append(self.head_UD.move(head_ud))
+
+            if mv_list:
+                self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                # Wait for movement to complete
+                while (self.servos[self.head_LR.name].current != head_lr and
+                       self.servos[self.head_UD.name].current != head_ud):
+                    self.servos = self.servo_status.get_angle_map()
+                    time.sleep(0.2)
+
+            # Check if head movement reached its limit and compensate with body movement
+            if self.__reached_limit(self.servos[self.head_LR.name]):
+                self.logger.debug("Head reached left/right limit, rotating body to extend range")
+                self.__rotate_body_to_extend_range()
+
+            if self.__reached_limit(self.servos[self.head_UD.name]):
+                self.logger.debug("Head reached up/down limit, bending body to extend range")
+                self.__bend_body_to_extend_range()
+
+            # Level the head with the body after movement
             servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-            while servo_1 != self.servos[self.head_LR.name].current and \
-                    servo_2 != self.servos[self.body_LR.name].current \
-                    and servo_3 != self.servos[self.head_UD.name] and servo_4 != self.servos[self.body_UD.name].current:
+
+            # Wait until head and body servos are aligned
+            while (servo_1 != self.servos[self.head_LR.name].current and
+                   servo_2 != self.servos[self.body_LR.name].current and
+                   servo_3 != self.servos[self.head_UD.name].current and
+                   servo_4 != self.servos[self.body_UD.name].current):
                 self.servos = self.servo_status.get_angle_map()
-                time.sleep(.2)
-            # sleep a bit before we return just to slow things down, should be a better way to do this...
+                time.sleep(0.2)
+
+            # Add a small delay to make the movement seem more deliberate
             time.sleep(5)
+
+    def __reached_limit(self, servo) -> bool:
+        """
+        Check if the servo has reached its movement limit.
+        """
+        return servo.current == servo.min or servo.current == servo.max
+
+    def __rotate_body_to_extend_range(self):
+        """
+        Rotate the body left or right to extend the head's range when it reaches its limit.
+        """
+        if self.servos[self.body_LR.name].current != self.servos[self.head_LR.name].middle:
+            new_angle = self.servos[self.head_LR.name].middle - self.servos[self.body_LR.name].current
+            self.send_command(self.body_LR.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
+            time.sleep(1)
+
+    def __bend_body_to_extend_range(self):
+        """
+        Bend the body up or down to extend the head's range when it reaches its limit.
+        """
+        if self.servos[self.body_UD.name].current != self.servos[self.head_UD.name].middle:
+            new_angle = self.servos[self.head_UD.name].middle - self.servos[self.body_UD.name].current
+            self.send_command(self.body_UD.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
+            time.sleep(1)
 
     def __find_person(self, seen_data) -> dict:
         """
