@@ -3,7 +3,7 @@ import time
 import paho.mqtt.client as mqtt
 import json
 
-from glados_modules import MqttClient
+from glados_modules.MqttClient import ServoMessageBuilder
 
 class MQTTClient:
     def __init__(self, broker, port, topic):
@@ -23,7 +23,7 @@ class MQTTClient:
         #self.client.loop_forever()
 
 if __name__ == "__main__":
-    broker = "192.168.86.52"
+    broker = "192.168.86.23"
     port = 1883
     topic = "body/servo"
 
@@ -31,7 +31,8 @@ if __name__ == "__main__":
     mqtt_client.connect()
     #msglist = [{"servo": "body_up_down", "angle":0, "speed": 1}]
     # low neck 52
-    msglist = [{"servo": "head_left_right", "angle": 45, "speed": 1}]
+    msglist = [ServoMessageBuilder.body_left_right(angle=10, speed=1)]
+    msglist.extend([ServoMessageBuilder.head_left_right(angle=152, speed=1)])
     #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 1}, {"servo": "body_up_down", "angle": 180,
     #msglist = [{"servo": "head_up_down", "angle": 6, "speed": 1}]
     #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 1}, {"servo": "body_up_down", "angle": 180,
