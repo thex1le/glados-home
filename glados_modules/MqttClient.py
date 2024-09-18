@@ -17,9 +17,6 @@ class MQTTClient:
     def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
         self.broker = broker
         self.port = int(port)
-        self.client: mqtt.Client = mqtt.Client()
-        self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
         if not hasattr(self, 'topic_handler'):
             self.topic_handler: Dict[str, Callable] = {}
         self.uuid_cache = TTLCache(maxsize=100, ttl=60)
@@ -28,6 +25,9 @@ class MQTTClient:
         except AttributeError:
             self.logger = setup_logger(name=f"{self.__class__.__name__}")
             self.__name__ = self.__class__.__name__
+        self.client: mqtt.Client = mqtt.Client()
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
         self.client.connect(self.broker, self.port, 60)
         self.client.loop_start()
 
