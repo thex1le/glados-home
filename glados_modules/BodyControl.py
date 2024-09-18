@@ -65,10 +65,12 @@ class GladosLCD(Thread, MQTTClient):
             if j_msg.get("cmd", "") == "set_breath":
                 # command looks like nested {"cmd", "set_breath", options: { COMMAND DICT}}
                 self.set_breath_options(j_msg["options"])
-                self.client.publish("status", dumps({self.location: self.get_breath_options()}))
+                # TODO make this enum
+                self.send_command({self.location: self.get_breath_options()}, "status")
             elif j_msg.get("cmd", "") == "get_breath":
                 # mark the location of response
-                self.client.publish("body/lcd", dumps({self.location: self.get_breath_options()}))
+                # TODO make this enum
+                self.send_command({self.location: self.get_breath_options()}, "body/lcd")
             # comment this command out right now till we know if we need syncing between LCD's
             # calling startup via mqtt causes a dead_lock that doesn't return and stops all other commands
             """
@@ -274,7 +276,8 @@ class Gservo(Thread, MQTTClient):
         self.exec_command: bool = False
         self.moving: bool = False
         self.stop_bool: bool = False
-        self.client.publish(topic=self.status_topic, payload=json.dumps(f"{self.location} servo startup complete"))
+        # TODO figure out how we want to track servo starup
+        #self.send_command(command={f"{self.location} servo startup complete"}, topic=self.status_topic)
 
     def calculate_move_time(self, target_angle: int) -> float:
         """
@@ -295,7 +298,7 @@ class Gservo(Thread, MQTTClient):
     def send_status(self):
         # Send current
         status = ServoMessageBuilder.send_status(self.location, self.get_angles())
-        self.client.publish(topic=self.status_topic, payload=json.dumps(status))
+        self.send_command(topic=self.status_topic, command=status)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
