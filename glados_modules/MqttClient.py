@@ -23,13 +23,13 @@ class MQTTClient:
         if not hasattr(self, 'topic_handler'):
             self.topic_handler: Dict[str, Callable] = {}
         self.uuid_cache = TTLCache(maxsize=100, ttl=60)
-        self.client.connect(self.broker, self.port, 60)
-        self.client.loop_start()
         try:
             self.logger = setup_logger(name=f"{self.__name__}")
         except AttributeError:
             self.logger = setup_logger(name=f"{self.__class__.__name__}")
             self.__name__ = self.__class__.__name__
+        self.client.connect(self.broker, self.port, 60)
+        self.client.loop_start()
 
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
         self.logger.debug(f"Connecting to {self.broker}:{self.port}")
