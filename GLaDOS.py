@@ -105,9 +105,7 @@ class MotionTrack(MQTTClient):
         # Create Servo Location Tracker
         self.servo_status = ServoLocation(broker)
         # Vision seen Tracker
-        #self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
-        self.vision_tracker_thread = Thread(target=self.start_vision_tracker)
-        self.vision_tracker_thread.start()
+        self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         # access the servos
@@ -121,9 +119,6 @@ class MotionTrack(MQTTClient):
         # TODO likely remove this next line
         self.scan_success = False
         MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
-
-    def start_vision_tracker(self):
-        self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
 
     def check_periph(self, camera: str):
         # confidence to move is already high enough, determine the direction and how close we already are
