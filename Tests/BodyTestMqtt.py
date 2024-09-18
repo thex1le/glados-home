@@ -3,43 +3,23 @@ import time
 import paho.mqtt.client as mqtt
 import json
 
-from glados_modules.MqttClient import ServoMessageBuilder
-
-class MQTTClient:
-    def __init__(self, broker, port, topic):
-        self.broker = broker
-        self.port = port
-        self.topic = topic
-        self.client = mqtt.Client()
-        #self.client.on_connect = self.on_connect
-
-    def on_connect(self, client, userdata, flags, rc):
-        print(f"Connected with result code {rc}")
-        json_message = json.dumps({"key": "value", "number": 123})
-        self.client.publish(self.topic, json_message)
-
-    def connect(self):
-        self.client.connect(self.broker, self.port, 60)
-        #self.client.loop_forever()
+from glados_modules.MqttClient import ServoMessageBuilder, MQTTClient
 
 if __name__ == "__main__":
     broker = "192.168.86.23"
     port = 1883
     topic = "body/servo"
 
-    mqtt_client = MQTTClient(broker, port, topic)
-    mqtt_client.connect()
+    mqtt_client = MQTTClient(broker, port)
     #msglist = [{"servo": "body_up_down", "angle":0, "speed": 1}]
     # low neck 52
-    msglist = [ServoMessageBuilder.body_left_right(angle=10, speed=1)]
-    msglist.extend([ServoMessageBuilder.head_left_right(angle=152, speed=1)])
+    msglist = [ServoMessageBuilder.body_left_right(angle=50, speed=1)]
+    msglist.extend([ServoMessageBuilder.head_left_right(angle=90, speed=1)])
     #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 1}, {"servo": "body_up_down", "angle": 180,
     #msglist = [{"servo": "head_up_down", "angle": 6, "speed": 1}]
     #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 1}, {"servo": "body_up_down", "angle": 180,
     #                                                                    "speed": 1}, {"servo": "head_up_down", "angle": 180, "speed": 1}, {"servo": "head_left_right", "angle":180, "speed": 1}]
-    for m in msglist:
-        print(f"sending {m}")
-        mqtt_client.client.publish(topic, json.dumps(m))
+    mqtt_client.send_command(msglist, topic)
     #time.sleep(10)
     #msglist = [{"servo": "body_left_right", "angle": 0, "speed": 1}, {"servo": "body_up_down", "angle": 0,
     #           "speed": 1}, {"servo": "head_up_down", "angle": 0, "speed": 1}, {"servo": "head_left_right", "angle":0, "speed": 1}]
