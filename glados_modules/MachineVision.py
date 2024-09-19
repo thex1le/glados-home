@@ -100,10 +100,9 @@ class YoloDetect(Thread, MQTTClient):
         # Get raw image data from the image_dict
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
-        # No need for YUV420 conversion, as the camera is outputting in RGB888 directly
-        # Instead, reshape the raw data to match the RGB888 format: (height, width, 3)
+        # Reshape the raw data to match the RGB888 format: (height, width, 3)
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-        # Optionally, convert RGB to BGR as OpenCV typically expects BGR format for YOLO
+        # Convert RGB to BGR as OpenCV expects BGR format
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         # Run YOLO on the image
         results = self.model(image, device="cuda")
@@ -113,7 +112,8 @@ class YoloDetect(Thread, MQTTClient):
         for r in results:
             boxes = r.boxes
             for box in boxes:
-                b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
+                b = box.xyxy[0]  # Get box coordinates in (left, top, right, bottom) format
+                x1, y1, x2, y2 = map(int, b.tolist())
                 c = box.cls
                 conf = box.conf.item()  # get confidence score
                 # Create a label that includes both the class name and confidence score
