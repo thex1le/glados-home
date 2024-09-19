@@ -115,11 +115,26 @@ class YoloDetect(Thread, MQTTClient):
                 b = box.xyxy[0]  # Get box coordinates in (left, top, right, bottom) format
                 x1, y1, x2, y2 = map(int, b.tolist())
                 c = box.cls
-                conf = box.conf.item()  # get confidence score
+                conf = box.conf.item()  # Get confidence score
                 # Create a label that includes both the class name and confidence score
                 label = f"{self.model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
                 self.logger.debug(f"Labeled image with {label}")
+                # Calculate the center of the bounding box
+                center_x = int((x1 + x2) / 2)
+                center_y = int((y1 + y2) / 2)
+                # Draw a plus sign at the center of the bounding box
+                center_point = (center_x, center_y)
+                color = (0, 255, 0)  # Green color for the plus sign
+                thickness = 2
+                plus_size = 10  # Size of the plus sign lines
+                # Draw horizontal line
+                cv2.line(image, (center_point[0] - plus_size, center_point[1]),
+                         (center_point[0] + plus_size, center_point[1]), color, thickness)
+                # Draw vertical line
+                cv2.line(image, (center_point[0], center_point[1] - plus_size),
+                         (center_point[0], center_point[1] + plus_size), color, thickness)
+                self.logger.debug(f"Drew plus sign at {center_point} (center of bounding box).")
         # Get the annotated image
         a_image = annotator.result()
         # Send the annotated image to the RTSP server
