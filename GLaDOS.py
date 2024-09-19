@@ -199,12 +199,14 @@ class MotionTrack(MQTTClient):
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
+        self.logger.debug(f"Waiting for updates on {len(target_positions.keys())}")
         while True:
             self.servos = self.servo_status.get_angle_map()
             all_reached = True
             for name, target in target_positions.items():
                 if self.servos[name].current != target:
                     all_reached = False
+                    self.logger.debug(f"{name} servo is currently blocking")
                     break
             if all_reached:
                 break
