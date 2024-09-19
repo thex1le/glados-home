@@ -259,9 +259,9 @@ class MotionTrack(MQTTClient):
 
     def __calc_servo(self, servo, bbox: dict) -> int:
         """
-        Calculate servo angle correction to target
+        Calculate servo angle correction to target, clamped within servo's allowed range.
         """
-        # TODO determine if we need current_angle? does it matter?
+        # Determine axis and image dimensions
         if servo.axis == 'x':
             bbox_edge_1 = bbox['x1']
             bbox_edge_2 = bbox['x2']
@@ -270,18 +270,24 @@ class MotionTrack(MQTTClient):
             bbox_edge_1 = bbox['y1']
             bbox_edge_2 = bbox['y2']
             axis_size = self.cam_y
-        # Calculate the center of the new person's bounding box on the x-axis
-        center_updated = (bbox_edge_1 + bbox_edge_2) / 2
-        # Calculate the offset of the person's center from the image center with the updated data
-        offset_from_center = center_updated - (axis_size / 2)
-        # Calculate the new servo angle to center on the person with the updated data
+        # Calculate the center of the bounding box on the axis
+        center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
+        # Calculate the offset from the image center (in pixels)
+        offset_from_center = center_of_bbox - (axis_size / 2)
+        # Calculate the proportion of the offset relative to the image size
+        offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
+        # Calculate the angle adjustment based on the proportion
+        angle_range = servo.max - servo.min
+        angle_adjustment = offset_proportion * (angle_range / 2)
+        # Determine the new servo angle based on the middle position
         if servo.location == "head_up_down":
-            new_servo_angle_updated = servo.middle + (offset_from_center / axis_size * servo.max)
+            new_servo_angle = servo.middle + angle_adjustment
         else:
-            new_servo_angle_updated = servo.middle - (offset_from_center / axis_size * servo.max)
-
-        # Round to nearest whole
-        return round(new_servo_angle_updated)
+            new_servo_angle = servo.middle - angle_adjustment
+        # Clamp the new angle within servo's min and max
+        new_servo_angle = max(servo.min, min(servo.max, new_servo_angle))
+        # Round to the nearest whole number
+        return round(new_servo_angle)
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
         move = False
