@@ -1,5 +1,6 @@
 from json import loads as json_loads
 from threading import Thread
+from time import time
 
 #3rd party
 import cv2
@@ -61,25 +62,38 @@ class YoloDetect(Thread, MQTTClient):
         return self.sight
 
     def __translate_results(self, results):
-        name = VisionResultsEnum.YOLO_CLASS_NAME_KEY.value
-        count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
-        class_name = VisionResultsEnum.VISION_RESULTS_CLASS_KEY.value
-        objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
-        ts = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
+        name_key = VisionResultsEnum.YOLO_CLASS_NAME_KEY.value
+        count_key = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
+        class_name_key = VisionResultsEnum.VISION_RESULTS_CLASS_KEY.value
+        objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+        ts_key = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
         results_dict = {}
         for y_class in results:
             if y_class is None:
                 continue
             self.logger.debug(f"Translating {y_class} with type {type(y_class)}")
-            for cname in json_loads(y_class.tojson()):
-                name = cname[name]
-                if name in list(results_dict.keys()):
-                    results_dict[name][count] += 1
-                    results_dict[name][ts] += 1
-                    results_dict[name][objects].append(cname)
+            # Parse the JSON representation of y_class
+            y_class_data = json_loads(y_class.tojson())
+            for cname in y_class_data:
+                # Retrieve the class name from cname
+                class_name = cname.get(name_key)
+                if not class_name:
+                    self.logger.warning(f"No '{name_key}' found in {cname}")
+                    continue  # Skip if class name is not found
+                if class_name in results_dict:
+                    # Update existing entry
+                    results_dict[class_name][count_key] += 1
+                    results_dict[class_name][ts_key] = time()  # Update timestamp
+                    results_dict[class_name][objects_key].append(cname)
                 else:
-                    results_dict[name] = {count: 1, objects: [cname], class_name: name}
-        self.logger.debug(results_dict)
+                    # Create a new entry
+                    results_dict[class_name] = {
+                        count_key: 1,
+                        objects_key: [cname],
+                        class_name_key: class_name,
+                        ts_key: time()
+                    }
+        self.logger.debug(f"Translated results: {results_dict}")
         return results_dict
 
     def __yolo_process_image(self, image_dict):
