@@ -3,6 +3,7 @@ from typing import Dict, Callable
 from json import dumps, loads
 from uuid import uuid4
 from time import time
+from threading import Lock
 
 # 3rd party imports
 import paho.mqtt.client as mqtt
@@ -25,6 +26,7 @@ class MQTTClient:
         except AttributeError:
             self.logger = setup_logger(name=f"{self.__class__.__name__}")
             self.__name__ = self.__class__.__name__
+        self._lock = Lock()
         self.client: mqtt.Client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -33,24 +35,28 @@ class MQTTClient:
 
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
         self.logger.debug(f"Connecting to {self.broker}:{self.port}")
-        for topic in self.topic_handler:
-            self.client.subscribe(topic, qos=1)
+        with self._lock:
+            for topic in self.topic_handler:
+                self.client.subscribe(topic, qos=1)
 
     def on_message(self, client: mqtt.Client, userdata: object, msg: mqtt.MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
         uuid = j_msg.get("uuid", None)
         if uuid is None:
             self.logger.error("NO UUID IN MESSAGE")
-        if uuid not in self.uuid_cache.keys():
-            self.uuid_cache[uuid] = time()
-            if msg.topic in self.topic_handler:
-                self.topic_handler[msg.topic](msg)
+            return
+        with self._lock:
+            if uuid not in self.uuid_cache.keys():
+                self.uuid_cache[uuid] = time()
+                handler = self.topic_handler.get(msg.topic)
+        if handler:
+            handler(msg)
 
     def send_command(self, command: dict | list | tuple, topic) -> None:
         """
         Generic mqtt sending function for single or multiple messages
         """
-        if type(command) not in (tuple, list):
+        if isinstance(command, (tuple, list)):
             # make it an object we can iterate on
             command = (command, )
         for m in command:
