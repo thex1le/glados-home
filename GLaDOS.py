@@ -170,8 +170,13 @@ class MotionTrack(MQTTClient):
 
             if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor):
                 mv_list.append(self.head_LR.move(head_lr))
+            else:
+                # don't try small movements just set it to current
+                head_lr = self.servos[self.head_LR.name].current
             if self.__distance_check(self.servos[self.head_UD.name], head_ud, self.move_fudge_factor):
                 mv_list.append(self.head_UD.move(head_ud))
+            else:
+                head_ud = self.servos[self.head_UD.name].current
 
             if mv_list:
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
