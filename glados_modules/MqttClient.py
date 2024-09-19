@@ -56,7 +56,7 @@ class MQTTClient:
         """
         Generic mqtt sending function for single or multiple messages
         """
-        if isinstance(command, (tuple, list)):
+        if not isinstance(command, (tuple, list)):
             # make it an object we can iterate on
             command = (command, )
         for m in command:
