@@ -103,7 +103,7 @@ class YoloDetect(Thread, MQTTClient):
         # Reshape the raw data to match the RGB888 format: (height, width, 3)
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
         # Convert RGB to BGR as OpenCV expects BGR format
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         # Run YOLO on the image
         results = self.model(image, device="cuda")
         self.logger.debug(f"Yolo has processed raw image")
