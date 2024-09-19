@@ -207,7 +207,7 @@ class MotionTrack(MQTTClient):
             for name, target in target_positions.items():
                 if self.servos[name].current != target:
                     all_reached = False
-                    self.logger.debug(f"{name} servo is currently blocking")
+                    self.logger.debug(f"{name} servo is currently blocking attempting to get to {target}")
                     break
             if all_reached:
                 break
