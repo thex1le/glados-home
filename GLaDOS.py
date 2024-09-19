@@ -152,7 +152,7 @@ class MotionTrack(MQTTClient):
             if self.main_camera in vision_map.keys():
                 print(vision_map[self.main_camera])
                 if vision_map[self.main_camera].get(self.count, 0) != 0:
-                    target_bounding = self.__find_person(vision_map[self.main_camera][self.target][self.objects])
+                    target_bounding = self.__find_target(vision_map[self.main_camera][self.target][self.objects])
                     self.move_servos(target_bounding)
             self.head_tracking = False
         else:
@@ -175,11 +175,8 @@ class MotionTrack(MQTTClient):
 
             if mv_list:
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                # Wait for movement to complete
-                while (self.servos[self.head_LR.name].current != head_lr and
-                       self.servos[self.head_UD.name].current != head_ud):
-                    self.servos = self.servo_status.get_angle_map()
-                    time.sleep(0.2)
+                head_movement = {self.head_LR.name: head_lr, self.head_UD.name: head_ud}
+                self.__block_for_update(head_movement)
 
             # Check if head movement reached its limit and compensate with body movement
             if self.__reached_limit(self.servos[self.head_LR.name]):
@@ -193,17 +190,25 @@ class MotionTrack(MQTTClient):
             # Level the head with the body after movement
             servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-
-            # Wait until head and body servos are aligned
-            while (servo_1 != self.servos[self.head_LR.name].current and
-                   servo_2 != self.servos[self.body_LR.name].current and
-                   servo_3 != self.servos[self.head_UD.name].current and
-                   servo_4 != self.servos[self.body_UD.name].current):
-                self.servos = self.servo_status.get_angle_map()
-                time.sleep(0.2)
+            body_level = {self.head_LR.name: servo_1, self.body_LR.name: servo_2,
+                          self.head_UD.name: servo_3, self.body_UD.name: servo_4}
+            self.__block_for_update(body_level)
 
             # Add a small delay to make the movement seem more deliberate
             time.sleep(5)
+
+    def __block_for_update(self, target_positions: Dict[str, int]) -> None:
+        # Loop until all servos reach their target positions
+        while True:
+            self.servos = self.servo_status.get_angle_map()
+            all_reached = True
+            for name, target in target_positions.items():
+                if self.servos[name].current != target:
+                    all_reached = False
+                    break
+            if all_reached:
+                break
+            time.sleep(0.2)
 
     def __reached_limit(self, servo) -> bool:
         """
@@ -229,7 +234,7 @@ class MotionTrack(MQTTClient):
             self.send_command(self.body_UD.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
             time.sleep(1)
 
-    def __find_person(self, seen_data) -> dict:
+    def __find_target(self, seen_data) -> dict:
         """
         Find the highest confidence target and return their bounding box from current data set
         """
