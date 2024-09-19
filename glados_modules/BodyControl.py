@@ -349,6 +349,8 @@ class Gservo(MQTTClient):
     def s_curve_move(self) -> None:
         total_distance = abs(self.angle - self.current_angle)
         if total_distance == 0:
+            # shouldn't be needed but update current angle any ways
+            self.current_angle = self.angle
             return  # No movement needed
         # Time for full move
         full_time = total_distance / self.speed_settings[self.speed]
