@@ -109,6 +109,19 @@ class YoloDetect(Thread, MQTTClient):
         self.logger.debug(f"Yolo has processed raw image")
         # Create an annotator to label the image with detected objects
         annotator = Annotator(image)
+        # Define the center point of the image (target position)
+        image_center = (width // 2, height // 2)
+        # Draw a plus sign at the center of the image to represent the target position
+        color_target = (0, 255, 0)  # Green color
+        thickness = 2
+        plus_size = 10  # Size of the plus sign lines
+        # Draw horizontal line at target position
+        cv2.line(image, (image_center[0] - plus_size, image_center[1]),
+                 (image_center[0] + plus_size, image_center[1]), color_target, thickness)
+        # Draw vertical line at target position
+        cv2.line(image, (image_center[0], image_center[1] - plus_size),
+                 (image_center[0], image_center[1] + plus_size), color_target, thickness)
+        self.logger.debug(f"Drew plus sign at {image_center} (center of the image).")
         for r in results:
             boxes = r.boxes
             for box in boxes:
@@ -120,21 +133,17 @@ class YoloDetect(Thread, MQTTClient):
                 label = f"{self.model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
                 self.logger.debug(f"Labeled image with {label}")
-                # Calculate the center of the bounding box
+                # Calculate the center of the bounding box (current position)
                 center_x = int((x1 + x2) / 2)
                 center_y = int((y1 + y2) / 2)
-                # Draw a plus sign at the center of the bounding box
-                center_point = (center_x, center_y)
-                color = (0, 255, 0)  # Green color for the plus sign
-                thickness = 2
-                plus_size = 10  # Size of the plus sign lines
-                # Draw horizontal line
-                cv2.line(image, (center_point[0] - plus_size, center_point[1]),
-                         (center_point[0] + plus_size, center_point[1]), color, thickness)
-                # Draw vertical line
-                cv2.line(image, (center_point[0], center_point[1] - plus_size),
-                         (center_point[0], center_point[1] + plus_size), color, thickness)
-                self.logger.debug(f"Drew plus sign at {center_point} (center of bounding box).")
+                object_center = (center_x, center_y)
+                color_current = (0, 0, 255)  # Red color
+                # Draw a circle at the object's current position
+                cv2.circle(image, object_center, radius=5, color=color_current, thickness=-1)
+                self.logger.debug(f"Drew circle at {object_center} (center of bounding box).")
+                # Draw an arrow from the object's current position to the target position
+                cv2.arrowedLine(image, object_center, image_center, color=(255, 0, 0), thickness=2)
+                self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
         # Get the annotated image
         a_image = annotator.result()
         # Send the annotated image to the RTSP server
