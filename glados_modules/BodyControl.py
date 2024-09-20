@@ -271,7 +271,8 @@ class Gservo(MQTTClient):
         self.axis: str = axis.lower()
         self.moving: bool = False
         # Call the superclass constructor to initialize MQTTClient and the lock
-        super().__init__(broker.ip, broker.port)
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        #super().__init__(broker.ip, broker.port)
         # Move to the initial position and send status
         self.move()
         self.send_status()
@@ -316,8 +317,7 @@ class Gservo(MQTTClient):
                 self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
                 angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
                 speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
-                with self._lock:
-                    self.set_speed_angle((speed, angle))
+                self.set_speed_angle((speed, angle))
                 self.move()
                 self.send_status()
             elif cmd == ServoEnum.MSG_COMMAND_STATUS.value:
@@ -642,7 +642,7 @@ class LedHead(MQTTClient):
 
 
 if __name__ == "__main__":
-    ip = '192.168.86.52'
+    ip = '192.168.86.23'
     Angle_tuple = namedtuple("angle", ['max', 'min', 'center'])
     Pulse_tuple = namedtuple("pulse", ['max', 'min'])
     Mqtt_tuple = namedtuple("mqtt", ["ip", "port"])
@@ -653,7 +653,7 @@ if __name__ == "__main__":
     neck_angle = Angle_tuple(120, 52, 92)
     default_angle = Angle_tuple(180, 0, 90)
     kit = ServoKit(channels=16)
-    led_head = LedHead(broker=Mqtt_tuple)
+    led_head = LedHead(broker=mqtt_connect)
     right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd")
     body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
                      broker=mqtt_connect)
@@ -664,10 +664,6 @@ if __name__ == "__main__":
     head_LR = Gservo(location='head_up_down', servo=kit.servo[3], axis='x', servo_range=neck_angle,
                      broker=mqtt_connect)
     right_lcd.start()
-    body_LR.start()
-    body_UD.start()
-    head_LR.start()
-    head_UD.start()
     led_head.startup()
     while True:
         sleep(1)
