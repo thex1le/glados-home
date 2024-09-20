@@ -239,7 +239,7 @@ class GladosLCD(Thread, MQTTClient):
 
 
 class Gservo(MQTTClient):
-    def __init__(self, location: str, servo: adafruit_servokit.ServoKit.servo, axis: str, broker: NamedTuple,
+    def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__)
