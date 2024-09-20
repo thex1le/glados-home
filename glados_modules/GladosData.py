@@ -96,13 +96,12 @@ class ServoLocation(MQTTClient):
         """
         Return a copy of the angle map.
         """
-        with self._lock:
-            if not self.body_map or len(self.body_map) != len(self.servo_list):
-                # Empty or not fully populated map, trigger a status update
-                self.logger.debug("Servo map incomplete, updating servo statuses.")
-                self.update_servo_status()
-            # Return a copy to prevent external modifications
-            angle_map_copy = self.body_map.copy()
+        if not self.body_map or len(self.body_map) != len(self.servo_list):
+            # Empty or not fully populated map, trigger a status update
+            self.logger.debug("Servo map incomplete, updating servo statuses.")
+            self.update_servo_status()
+        # Return a copy to prevent external modifications
+        angle_map_copy = self.body_map.copy()
         return angle_map_copy
 
 
