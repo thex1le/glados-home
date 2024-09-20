@@ -102,11 +102,12 @@ class MotionTrack(MQTTClient):
         self.peripheral_hunt = True
         # bool if the head is currently tracking something
         self.head_tracking = False
+        super().__init__(self, broker=broker.ip, port=broker.port)
         # Create Servo Location Tracker
         self.servo_status = ServoLocation(broker)
         # Vision seen Tracker
-        self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+        self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         # access the servos
         # find the x1 x2, y1, y2 of the target,
@@ -118,7 +119,6 @@ class MotionTrack(MQTTClient):
         # TODO figure out how we are going to track anger intensity over various body parts
         # TODO likely remove this next line
         self.scan_success = False
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
 
     def check_periph(self, camera: str):
         # confidence to move is already high enough, determine the direction and how close we already are
@@ -146,23 +146,23 @@ class MotionTrack(MQTTClient):
         # main tracking loop
         # find target
         # don't double call if head_tracking is True, just skip this detection
-        if self.head_tracking is False:
-            self.logger.debug(f"Tracking is allowed, Moving To track {self.target}")
-            self.head_tracking = True
-            self.logger.debug("Getting Vision Map")
-            vision_map = self.vision_tracker.get_vision_map()
-            self.logger.debug("Looping though vision map")
-            if self.main_camera in vision_map.keys():
-                print("**************", vision_map[self.main_camera])
-                print("***",vision_map[self.main_camera][self.target])
-                print(vision_map[self.main_camera][self.target].get(self.count, 0))
-                if vision_map[self.main_camera][self.target].get(self.count, 0) != 0:
-                    target_bounding = self.__find_target(vision_map[self.main_camera][self.target][self.objects])
-                    self.logger.debug("Read to move servos")
-                    self.move_servos(target_bounding)
+        with self._lock:
+            if self.head_tracking is False:
+                self.logger.debug(f"Tracking is allowed, Moving To track {self.target}")
+                self.head_tracking = True
+            else:
+                self.logger.debug("Tracking requested but already currently moving to track target")
+                return
+        self.logger.debug("Getting Vision Map")
+        vision_map = self.vision_tracker.get_vision_map()
+        self.logger.debug("Looping though vision map")
+        if self.main_camera in vision_map.keys():
+            if vision_map[self.main_camera][self.target].get(self.count, 0) != 0:
+                target_bounding = self.__find_target(vision_map[self.main_camera][self.target][self.objects])
+                self.logger.debug("Ready to move servos")
+                self.move_servos(target_bounding)
+        with self._lock:
             self.head_tracking = False
-        else:
-            self.logger.debug("Tracking requested but already currently moving to track target")
 
     def move_servos(self, target: dict):
         # Get current servo position
