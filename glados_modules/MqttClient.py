@@ -15,8 +15,8 @@ from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums
 
 
 class MQTTClient:
-    def __init__(self, broker: str = 'localhost', port: int = 1883) -> None:
-        self.broker = broker
+    def __init__(self, ip: str = 'localhost', port: int = 1883) -> None:
+        self.ip = ip
         self.port = int(port)
         if not hasattr(self, 'topic_handler'):
             self.topic_handler: Dict[str, Callable] = {}
@@ -30,11 +30,11 @@ class MQTTClient:
         self.client: mqtt.Client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
-        self.client.connect(self.broker, self.port, 60)
+        self.client.connect(self.ip, self.port, 60)
         self.client.loop_start()
 
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
-        self.logger.debug(f"Connecting to {self.broker}:{self.port}")
+        self.logger.debug(f"Connecting to {self.ip}:{self.port}")
         with self._lock:
             for topic in self.topic_handler:
                 self.client.subscribe(topic, qos=1)
