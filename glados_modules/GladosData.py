@@ -2,7 +2,6 @@ from typing import Dict, Callable, NamedTuple
 from json import loads, JSONDecodeError
 from time import time, sleep
 from collections import namedtuple
-from threading import Lock
 
 # 3rd party
 from paho.mqtt.client import MQTTMessage
@@ -99,17 +98,13 @@ class VisionTracker(MQTTClient):
         self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         self.objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         self.confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-
         # Initialize the topic handler before calling the superclass constructor
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
-
         # Call the superclass constructor
         super().__init__(broker=broker.ip, port=broker.port)
-
         # Use a time cache and expire any vision tracking objects after 1 minute
         self.response_cache = TTLCache(maxsize=1000, ttl=60)
         self.response_map = dict()
-
         # Tracking variables
         self.head_target = False
         self.left_target = False
