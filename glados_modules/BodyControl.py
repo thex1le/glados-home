@@ -336,6 +336,7 @@ class Gservo(MQTTClient):
                 ServoEnum.MSG_CURRENT_ANGLE.value: self.current_angle,
                 ServoEnum.MSG_AXIS.value: self.axis
             }
+
     def set_speed(self, speed: int) -> None:
         if speed >= 5:
             speed = 5
