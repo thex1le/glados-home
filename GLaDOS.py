@@ -102,7 +102,7 @@ class MotionTrack(MQTTClient):
         self.peripheral_hunt = True
         # bool if the head is currently tracking something
         self.head_tracking = False
-        super().__init__(self, broker=broker.ip, port=broker.port)
+        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
         # Create Servo Location Tracker
         self.servo_status = ServoLocation(broker)
         # Vision seen Tracker
