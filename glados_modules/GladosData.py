@@ -38,7 +38,7 @@ class ServoLocation(MQTTClient):
             ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value
         )
         # Call the superclass constructor
-        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        super().__init__(ip=broker.ip, port=broker.port)
 
     def update_servo_status(self):
         """
@@ -128,7 +128,7 @@ class VisionTracker(MQTTClient):
         # Initialize the topic handler before calling the superclass constructor
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         # Call the superclass constructor
-        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        super().__init__(ip=broker.ip, port=broker.port)
         # Use a time cache and expire any vision tracking objects after 1 minute
         self.response_cache = TTLCache(maxsize=1000, ttl=60)
         self.response_map = dict()
