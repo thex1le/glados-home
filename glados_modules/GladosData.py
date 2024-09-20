@@ -1,7 +1,8 @@
 from typing import Dict, Callable, NamedTuple
-from json import loads
+from json import loads, JSONDecodeError
 from time import time, sleep
 from collections import namedtuple
+from threading import Lock
 
 # 3rd party
 from paho.mqtt.client import MQTTMessage
@@ -95,20 +96,21 @@ class VisionTracker(MQTTClient):
         self.cam_key = CameraEnum.MSG_LOCATION_KEY.value
         self.results_key = CameraEnum.MSG_RESULTS.value
         self.ts_key = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
-        self.topic_handler: Dict[CameraEnum, Callable] = {self.cmd_topic: self.handle_cmd}
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
-        # Use a time cache and expire any vision tracking objects after 1min and 1000 objects
-        # should only need 720 ( 3 cam 4 a second = 12 * 60 = 720) but leave some wiggle room, will need to adjust this
-        # if we up the output frame rate
-        self.response_cache = TTLCache(maxsize=1000, ttl=60)
-        self.response_map = dict()
         self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         self.objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         self.confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-        # if we have people on both sides? how do we decide which way to turn? count based? last time seen? random?
-        # need bools for left and right camera to mark if we currently see high confidence on target or not
-        # when do we check the cache?
-        # currently tracking object location bool's
+
+        # Initialize the topic handler before calling the superclass constructor
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
+
+        # Call the superclass constructor
+        super().__init__(broker=broker.ip, port=broker.port)
+
+        # Use a time cache and expire any vision tracking objects after 1 minute
+        self.response_cache = TTLCache(maxsize=1000, ttl=60)
+        self.response_map = dict()
+
+        # Tracking variables
         self.head_target = False
         self.left_target = False
         self.right_target = False
@@ -117,10 +119,15 @@ class VisionTracker(MQTTClient):
         """
         Command Handler
         """
-        j_msg = loads(msg.payload.decode())
-        if self.cam_key in j_msg.keys():
-            # found a servo status, update the dict
+        try:
+            j_msg = loads(msg.payload.decode())
+        except JSONDecodeError as e:
+            self.logger.error(f"Failed to decode JSON message: {e}")
+            return
+
+        if self.cam_key in j_msg:
             self.logger.debug(f"Camera message received, {msg.topic}, {j_msg}")
+            # Protect shared resources in parse_camera
             self.parse_camera(msg=j_msg)
 
     def parse_camera(self, msg: dict):
@@ -128,47 +135,49 @@ class VisionTracker(MQTTClient):
         Parse a camera message and add it to the cache and currently seen objects
         """
         camera = msg.get(self.cam_key, "")
-        sight_results = msg.get(self.results_key)
-        if self.target in sight_results.keys():
-            for p in sight_results[self.target][self.objects_key]:
-                c = p[self.confidence_key]
-                if float(c) >= self.confidence_score:
-                    self.logger.debug(f"Confidence of {c} found for {self.target}")
-                    self.response_map[camera] = sight_results
-                    # track how many high confidence in last 2 seconds
-                    # create a timer tracker and + or - it depending on how many confidence hits in last .5 seconds
-                    if self.ts_key not in self.response_map[camera].keys():
-                        self.response_map[camera][self.ts_key] = time()
-                        self.response_map[camera][self.count] = 1
-                    else:
-                        if time() - self.response_map[camera][self.ts_key] <= .5:
-                            self.response_map[camera][self.count] += 1
+        sight_results = msg.get(self.results_key, {})
+        if self.target in sight_results:
+            with self._lock:
+                for p in sight_results[self.target][self.objects_key]:
+                    c = p.get(self.confidence_key, 0.0)
+                    if float(c) >= self.confidence_score:
+                        self.logger.debug(f"Confidence of {c} found for {self.target}")
+                        # Update response_map
+                        self.response_map[camera] = sight_results
+                        # Update counts and timestamps
+                        current_time = time()
+                        last_ts = self.response_map[camera].get(self.ts_key, 0)
+                        if current_time - last_ts <= 0.5:
+                            self.response_map[camera][self.count] = self.response_map[camera].get(self.count, 0) + 1
                         else:
-                            self.response_map[camera][self.count] -= 1
-                    # store sight results
-                    if camera in self.response_cache.keys():
-                        # add to an existing cache
-                        self.response_cache[camera].update({sight_results[self.ts_key]: sight_results})
-                        # add a new camera to the cache
-                    else:
-                        self.response_cache[camera] = {sight_results[self.ts_key]: sight_results}
-                    self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
-                    # switch to callback since mqtt not working for some fucking reason...
-                    # TODO fix this later
-                    #self.tracker_callback()
-                    self.send_command(TargetMessageBuilder.send_track_command_start(),
-                                      TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                            self.response_map[camera][self.count] = max(0, self.response_map[camera].get(self.count, 1) - 1)
+                        self.response_map[camera][self.ts_key] = current_time
+                        # Store sight results in response_cache
+                        if camera in self.response_cache:
+                            # Add to an existing cache
+                            self.response_cache[camera][current_time] = sight_results
+                        else:
+                            # Add a new camera to the cache
+                            self.response_cache[camera] = {current_time: sight_results}
+                        self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
+                        # Send the tracking command
+                        self.send_command(
+                            TargetMessageBuilder.send_track_command_start(),
+                            TrackingEnums.MQTT_COMMAND_TOPIC.value
+                        )
 
     def get_vision_map(self) -> dict:
         """
         Return just the last vision response messages seen
         """
-        # return a copy of the cache
-        return self.response_map.copy()
+        with self._lock:
+            # Return a copy of the response_map
+            return self.response_map.copy()
 
     def get_vision_cache(self) -> dict:
         """
-        Return 5 min cache of things seen
+        Return the vision results cache
         """
-        # return a copy of the cache
-        return dict(self.response_cache)
+        with self._lock:
+            # Return a copy of the response_cache
+            return dict(self.response_cache)
