@@ -154,8 +154,9 @@ class MotionTrack(MQTTClient):
             self.logger.debug("Looping though vision map")
             if self.main_camera in vision_map.keys():
                 print("**************", vision_map[self.main_camera])
-                print(vision_map[self.main_camera].get(self.count, 0))
-                if vision_map[self.main_camera].get(self.count, 0) != 0:
+                print("***",vision_map[self.main_camera][self.target])
+                print(vision_map[self.main_camera][self.target].get(self.count, 0))
+                if vision_map[self.main_camera][self.target].get(self.count, 0) != 0:
                     target_bounding = self.__find_target(vision_map[self.main_camera][self.target][self.objects])
                     self.logger.debug("Read to move servos")
                     self.move_servos(target_bounding)
