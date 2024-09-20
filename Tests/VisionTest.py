@@ -36,4 +36,4 @@ if __name__ == "__main__":
     msglist = [TargetMessageBuilder.send_track_command_start()]
     for m in msglist:
         print(f"sending {m} to {topic}")
-        mqtt_client.client.publish(topic, json.dumps(m), qos=2)
+        mqtt_client.client.publish(topic, json.dumps(m), qos=1)
