@@ -151,7 +151,7 @@ class MotionTrack(MQTTClient):
             self.head_tracking = True
             self.logger.debug("Getting Vision Map")
             vision_map = self.vision_tracker.get_vision_map()
-            self.logger.debug("Looping THough vision map")
+            self.logger.debug("Looping Though vision map")
             if self.main_camera in vision_map.keys():
                 print("**************", vision_map[self.main_camera])
                 if vision_map[self.main_camera].get(self.count, 0) != 0:
@@ -163,9 +163,10 @@ class MotionTrack(MQTTClient):
 
     def move_servos(self, target: dict):
         # Get current servo position
+        self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
         mv_list = list()
-
+        self.logger.debug("Calculating movement for servos")
         if target != {}:
             # Move head left-right and up-down first
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
@@ -182,6 +183,7 @@ class MotionTrack(MQTTClient):
                 head_ud = self.servos[self.head_UD.name].current
 
             if mv_list:
+                self.logger.debug("Sending Move commands for Head and Neck")
                 self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                 head_movement = {self.head_LR.name: head_lr, self.head_UD.name: head_ud}
                 self.__block_for_update(head_movement)
