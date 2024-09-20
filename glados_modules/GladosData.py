@@ -204,3 +204,22 @@ class VisionTracker(MQTTClient):
         with self._lock:
             # Return a copy of the response_cache
             return dict(self.response_cache)
+
+
+if __name__ == "__main__":
+    b = namedtuple("broker", ["ip", "port"])
+    broker = b('192.168.86.23', 1883)
+    # Assuming broker is a NamedTuple with 'ip' and 'port' attributes
+    servo_location_tracker = ServoLocation(broker)
+
+    # Retrieve the current servo angles
+    angle_map = servo_location_tracker.get_angle_map()
+
+    # Access servo data
+    for servo_name, servo_data in angle_map.items():
+        print(f"Servo {servo_name}:")
+        print(f"  Current Angle: {servo_data.current}")
+        print(f"  Min Angle: {servo_data.min}")
+        print(f"  Max Angle: {servo_data.max}")
+        print(f"  Middle Angle: {servo_data.middle}")
+        print(f"  Axis: {servo_data.axis}")
