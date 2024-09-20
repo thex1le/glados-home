@@ -15,67 +15,95 @@ from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum,
 
 class ServoLocation(MQTTClient):
     """
-    Keep track of all the angles based on mqtt status updates
+    Keep track of all the angles based on MQTT status updates.
     """
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
-        MQTTClient.__init__(self, broker=broker.ip, port=broker.port)
+        # Initialize shared resources before calling the superclass constructor
         self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
-        self.topic_handler: Dict[ServoEnum, Callable] = {self.cmd_topic: self.handle_cmd}
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         self.body_map = dict()
         self.min = ServoEnum.MSG_MIN.value
         self.max = ServoEnum.MSG_MAX.value
         self.current_angle = ServoEnum.MSG_CURRENT_ANGLE.value
         self.middle = ServoEnum.MSG_MIDDLE.value
         self.axis = ServoEnum.MSG_AXIS.value
-        self.ServoTuple = namedtuple('servo', [self.current_angle, self.max, self.min, self.middle,
-                                     self.axis, "location"])
-        self.servo_list = (ServoEnum.LOCATION_BODY_UP_DOWN.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value,
-                           ServoEnum.LOCATION_BODY_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value)
+        self.ServoTuple = namedtuple('servo', [self.current_angle, self.max,
+                                     self.min, self.middle, self.axis, "location"])
+        self.servo_list = (
+            ServoEnum.LOCATION_BODY_UP_DOWN.value,
+            ServoEnum.LOCATION_HEAD_UP_DOWN.value,
+            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value,
+            ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value
+        )
+        # Call the superclass constructor
+        super().__init__(broker=broker.ip, port=broker.port)
 
     def update_servo_status(self):
-        # trigger servo message status update
+        """
+        Trigger servo message status update.
+        """
         self.logger.debug("Updating Servo angle status")
-        msg = list()
+        msg = []
         for servo_location in self.servo_list:
             msg.append(ServoMessageBuilder.get_status(servo_location))
+        # Send the status request commands
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
-        # block and don't return till all the servos populate
-        while len(self.servo_list) != len(self.body_map.keys()):
-            for servo in self.servo_list:
-                if servo not in self.body_map.keys():
-                    # possible block here...
-                    # keep sending request till we get them all
-                    self.send_command(ServoMessageBuilder.get_status(servo), ServoEnum.MQTT_COMMAND_TOPIC.value)
-                    sleep(.2)
-                    print("BLOCKING BLOCKING BLOCKING")
-                    print(len(self.servo_list), len(self.body_map.keys()))
+        # Block and don't return until all the servos populate
+        while True:
+            with self._lock:
+                current_servo_count = len(self.body_map.keys())
+            if current_servo_count >= len(self.servo_list):
+                break  # All servos have reported their status
+            else:
+                # Possible block here...
+                # Keep sending request until we get them all
+                for servo in self.servo_list:
+                    with self._lock:
+                        if servo not in self.body_map:
+                            self.send_command(
+                                ServoMessageBuilder.get_status(servo),
+                                ServoEnum.MQTT_COMMAND_TOPIC.value)
+                sleep(0.2)
+                self.logger.debug("Waiting for servo statuses to update...")
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
-        Command Handler
+        Command Handler for incoming servo status messages.
         """
-        j_msg = loads(msg.payload.decode())
-        if ServoEnum.MSG_LOCATION_KEY.value in j_msg.keys():
-            # found a servo status, update the dict
+        try:
+            j_msg = loads(msg.payload.decode())
+        except JSONDecodeError as e:
+            self.logger.error(f"Failed to decode JSON message: {e}")
+            return
+
+        if ServoEnum.MSG_LOCATION_KEY.value in j_msg:
+            # Found a servo status, update the dict
             location = j_msg.get(ServoEnum.MSG_LOCATION_KEY.value)
-            results = j_msg[ServoEnum.MSG_RESULTS.value]
-            self.logger.debug(f"Servo Map update with {results} for location {location}")
-            self.body_map[location] = self.ServoTuple(results.get(self.current_angle),
-                                                  results.get(self.max), results.get(self.min), results.get(self.middle),
-                                                  results.get(self.axis), location)
+            results = j_msg.get(ServoEnum.MSG_RESULTS.value, {})
+            self.logger.debug(f"Received servo status for {location}: {results}")
+            with self._lock:
+                self.body_map[location] = self.ServoTuple(
+                    results.get(self.current_angle),
+                    results.get(self.max),
+                    results.get(self.min),
+                    results.get(self.middle),
+                    results.get(self.axis),
+                    location)
 
     def get_angle_map(self) -> dict:
         """
-        Return angle map
+        Return a copy of the angle map.
         """
-        if self.body_map == dict() or len(self.body_map.keys()) != len(self.servo_list):
-            # empty or not fully populated map trigger a status update
-            print("we got here, updating map")
-            self.update_servo_status()
-            print("****", self.body_map)
-        return self.body_map.copy()
+        with self._lock:
+            if not self.body_map or len(self.body_map) != len(self.servo_list):
+                # Empty or not fully populated map, trigger a status update
+                self.logger.debug("Servo map incomplete, updating servo statuses.")
+                self.update_servo_status()
+            # Return a copy to prevent external modifications
+            angle_map_copy = self.body_map.copy()
+        return angle_map_copy
 
 
 class VisionTracker(MQTTClient):
