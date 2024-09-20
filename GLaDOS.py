@@ -136,7 +136,7 @@ class MotionTrack(MQTTClient):
         Trigger the loop that hunts and locks onto target...
         """
         j_msg = loads(msg.payload.decode())
-        print(f"************* TRACKING FIRED", {self.cmd_trigger}, {TrackingEnums.MSG_COMMAND_START.value})
+        print(f"*** TRACKING FIRED", {self.cmd_trigger}, {TrackingEnums.MSG_COMMAND_START.value})
         print(j_msg, j_msg.get(self.cmd_trigger))
         if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START.value:
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
@@ -147,17 +147,19 @@ class MotionTrack(MQTTClient):
         # find target
         # don't double call if head_tracking is True, just skip this detection
         if self.head_tracking is False:
-            self.logger.debug(f"Moving To track {self.target}")
+            self.logger.debug(f"Tracking is allowed, Moving To track {self.target}")
             self.head_tracking = True
+            self.logger.debug("Getting Vision Map")
             vision_map = self.vision_tracker.get_vision_map()
+            self.logger.debug("Looping THough vision map")
             if self.main_camera in vision_map.keys():
-                print(vision_map[self.main_camera])
+                print("**************", vision_map[self.main_camera])
                 if vision_map[self.main_camera].get(self.count, 0) != 0:
                     target_bounding = self.__find_target(vision_map[self.main_camera][self.target][self.objects])
                     self.move_servos(target_bounding)
             self.head_tracking = False
         else:
-            self.logger.debug("Tracking quested but already currently moving to track target")
+            self.logger.debug("Tracking requested but already currently moving to track target")
 
     def move_servos(self, target: dict):
         # Get current servo position
