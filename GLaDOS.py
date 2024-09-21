@@ -110,27 +110,9 @@ class MotionTrack(MQTTClient):
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
-        # access the servos
-        # find the x1 x2, y1, y2 of the target,
-        # figure out if the head can look at it...
-        # if we can then head / neck moves to it...
-        # then recalculate so the head and neck can move back to center
-        # and the body will rotate and middle_angle will move up or down
-        # order of off center is self.body_LR > self.body_UD,> self.head.UP> self, head left right
         # TODO figure out how we are going to track anger intensity over various body parts
         # TODO likely remove this next line
         self.scan_success = False
-
-    def check_periph(self, camera: str):
-        # confidence to move is already high enough, determine the direction and how close we already are
-        angle = None
-        if camera == CameraEnum.CAMERA_RIGHT:
-            angle = TrackingEnums.BODY_RIGHT_CAMERA_ANGLE.value
-        elif camera == CameraEnum.CAMERA_LEFT:
-            angle = TrackingEnums.BODY_LEFT_CAMERA_ANGLE.value
-        if angle is not None:
-            msg = ServoMessageBuilder.body_left_right(angle=angle, speed=self.dms)
-            self.servo_status.send_command(command=msg, topic=ServoEnum.MQTT_COMMAND_TOPIC)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -203,7 +185,6 @@ class MotionTrack(MQTTClient):
             # Move head left-right and up-down first
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
-
             if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
@@ -213,29 +194,24 @@ class MotionTrack(MQTTClient):
                 mv_list.append(self.head_UD.move(head_ud))
             else:
                 head_ud = self.servos[self.head_UD.name].current
-
             if mv_list:
                 self.logger.debug("Sending Move commands for Head and Neck")
                 self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                 head_movement = {self.head_LR.name: head_lr, self.head_UD.name: head_ud}
                 self.__block_for_update(head_movement)
-
             # Check if head movement reached its limit and compensate with body movement
             if self.__reached_limit(self.servos[self.head_LR.name]):
                 self.logger.debug("Head reached left/right limit, rotating body to extend range")
                 self.__rotate_body_to_extend_range()
-
             if self.__reached_limit(self.servos[self.head_UD.name]):
                 self.logger.debug("Head reached up/down limit, bending body to extend range")
                 self.__bend_body_to_extend_range()
-
             # Level the head with the body after movement
             servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
             body_level = {self.head_LR.name: servo_1, self.body_LR.name: servo_2,
                           self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             self.__block_for_update(body_level)
-
             # Add a small delay to make the movement seem more deliberate
             time.sleep(5)
 
@@ -377,70 +353,12 @@ class MotionTrack(MQTTClient):
         # servo 1, servo 2
         return self.servos[servo1.name].middle, self.servos[servo1.name].current
 
-    # detection logic loop...
-    # done triggered by a high confidence of target in vision tracker.. each vision tracker can track a different target..
-    # done how long to we track for .5?
-    # if detection is on head camera move into tracking and keep target in frame. how often do we move and correct?
-    # done every second? .5
-    # if it's a trigger of left and right camera, swing to fixed degree, then trigger hunt with main camera..
-    # if find right target with head camera, move into tracking... track till person gone...
-    # need to stop spin if find target... how?
-    # how long after?
-    # say good buy?
-
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         j_msg = loads(msg.payload.decode())
         if j_msg.get("led", "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
             self.intensity = j_msg["intensity"]
-
-    """
-    def scan_room(self, scan_speed=3, search_time=90, confidence=.70):
-        #TODO consider how this will change with left and right cameras...,
-        self.logger.debug("Scanning Room for Target")
-        t = time.time()
-        while (time.time() - t) < search_time and self.scan_success is False:
-            if self.scan_success is False:
-                # TODO FIGURE OUT WHRERE WE GET THE MIN MAX ANGLE HERE.. FROM STATUS MQTT?
-                msglist = [{"servo": "body_left_right", "angle": 180, "speed": scan_speed},
-                           {"servo": "body_up_down", "angle": 180, "speed": scan_speed},
-                           {"servo": "head_up_down", "angle": 180, "speed": scan_speed},
-                           {"servo": "head_left_right", "angle": 180, "speed": scan_speed}]
-                self.client.publish("body/servo", json.dumps(msglist))
-            else:
-                break
-            # block till head and body are at min
-            # TODO DO WE KEEP SENDING STATUS MESSAGES TO CHECK? HOW OFFTEN?
-            while (self.body_LR.get_angle() != self.body_LR.min_angle and
-                   self.head_LR.get_angle() != self.head_LR.min_angle or self.scan_success is True):
-                time.sleep(.2)
-            # HOW DO WE KNOW SCAN WAS SUCESSFULL?
-            if self.scan_success is False:
-                self.head_LR.set_speed_angle((scan_speed, self.head_LR.max_angle), execute=True)
-                self.body_LR.set_speed_angle((scan_speed, self.body_LR.max_angle), execute=True)
-                # TODO change when threading is enabled
-                self.head_LR.move()
-                self.body_LR.move()
-            else:
-                break
-            # block till head and body are at max
-            while (self.body_LR.get_angle() != self.body_LR.max_angle and
-                   self.head_LR.get_angle() != self.head_LR.max_angle or self.scan_success is True):
-                time.sleep(.2)
-        if self.scan_success is True:
-            with self.lock:
-                self.seen_data = self.eyes.get_results()
-            self.scan_success = False
-            self.move_servos()
-        self.logger.debug("Scanning For Target Complete")
-    """
-    def stop_body(self):
-        """
-        Stop body movement
-        """
-        # TODO how do we signal to stop moving? do we need to?
-        self.stop = True
 
 
 class GladosLocal(Thread, MQTTClient):
