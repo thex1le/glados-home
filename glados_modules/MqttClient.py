@@ -69,8 +69,9 @@ class MQTTClient:
 # TODO flesh out message classes for easy update in one place
 class TargetMessageBuilder:
     @staticmethod
-    def send_track_command_start():
-        return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value}
+    def send_track_command_start(camera):
+        return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
+                TrackingEnums.MSG_CAMERA_KEY: camera}
 
 
 class CameraMessageBuilder:

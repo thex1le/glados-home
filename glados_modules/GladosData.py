@@ -184,7 +184,7 @@ class VisionTracker(MQTTClient):
                         self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
                         # Send the tracking command
                         self.send_command(
-                            TargetMessageBuilder.send_track_command_start(),
+                            TargetMessageBuilder.send_track_command_start(camera),
                             TrackingEnums.MQTT_COMMAND_TOPIC.value
                         )
 

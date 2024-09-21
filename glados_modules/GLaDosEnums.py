@@ -5,15 +5,6 @@ class SystemEnums(Enum):
     MQTT_INTENSITY_TOPIC: str = "intensity"
 
 
-class TrackingEnums(Enum):
-    MSG_LOCATION_KEY: str = "system"
-    MSG_COMMAND_KEY: str = "track"
-    MSG_COMMAND_START: str = "start"
-    MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_KEY}"
-    BODY_LEFT_CAMERA_ANGLE: int = 135
-    BODY_RIGHT_CAMERA_ANGLE: int = 45
-
-
 class VisionResultsEnum(Enum):
     """
     Enum for dict that tracks objects found by yolo
@@ -82,3 +73,18 @@ class CameraEnum(Enum):
     CAMERA_HEAD_FACTORY: str = f"{CAMERA_HEAD}_{MSG_FACTORY}"
     CAMERA_LEFT_FACTORY: str = f"{CAMERA_LEFT}_{MSG_FACTORY}"
     CAMERA_RIGHT_FACTORY: str = f"{CAMERA_RIGHT}_{MSG_FACTORY}"
+
+
+class TrackingEnums(Enum):
+    MSG_LOCATION_KEY: str = "system"
+    MSG_COMMAND_KEY: str = "track"
+    MSG_COMMAND_START: str = "start"
+    MSG_CAMERA_KEY: str = "camera"
+    MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_KEY}"
+    BODY_LEFT_CAMERA_ANGLE: int = 134
+    BODY_RIGHT_CAMERA_ANGLE: int = 44
+    BODY_HEAD_CAMERA: str = f"{MSG_CAMERA_KEY}_head"
+    BODY_LEFT_CAMERA: str = f"{MSG_CAMERA_KEY}_left"
+    BODY_RIGHT_CAMERA: str = f"{MSG_CAMERA_KEY}_right"
+
+

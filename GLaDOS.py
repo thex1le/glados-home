@@ -81,6 +81,7 @@ class MotionTrack(MQTTClient):
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         # head camera resolution
+        # TODO this will work for now but need to get all camera resolution to account for side cameras
         self.cam_x = int(camera_resolution.x)
         self.cam_y = int(camera_resolution.y)
         self.main_camera = CameraEnum.CAMERA_HEAD.value
@@ -140,31 +141,59 @@ class MotionTrack(MQTTClient):
         print(j_msg, j_msg.get(self.cmd_trigger))
         if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START.value:
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
-            self.track_loop()
+            trigger_camera = j_msg.get(TrackingEnums.MSG_CAMERA_KEY.value, "")
+            self.track_loop(trigger_camera)
 
-    def track_loop(self):
+    def track_loop(self, camera):
         # main tracking loop
         # find target
         # don't double call if head_tracking is True, just skip this detection
+        if self.__check_tracking() is True:
+            self.logger.debug("Getting Vision Map")
+            vision_map = self.vision_tracker.get_vision_map()
+            self.logger.debug("Looping though vision map")
+            if self.main_camera in vision_map.keys():
+                if vision_map[camera][self.target].get(self.count, 0) != 0:
+                    target_bounding = self.__find_target(vision_map[camera][self.target][self.objects])
+                    if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
+                        self.logger.debug("Ready to move all servos")
+                        self.move_all_servos(target_bounding)
+                    elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
+                        self.logger.debug("Rotating Body to face target")
+                        self.rotate_body(target_bounding)
+            with self._lock:
+                self.head_tracking = False
+
+    def __check_tracking(self) -> bool:
+        """
+        Check if we are tracking and return a bool, if we are not set the master bool to true
+        """
         with self._lock:
             if self.head_tracking is False:
                 self.logger.debug(f"Tracking is allowed, Moving To track {self.target}")
                 self.head_tracking = True
+                rtn = True
             else:
                 self.logger.debug("Tracking requested but already currently moving to track target")
-                return
-        self.logger.debug("Getting Vision Map")
-        vision_map = self.vision_tracker.get_vision_map()
-        self.logger.debug("Looping though vision map")
-        if self.main_camera in vision_map.keys():
-            if vision_map[self.main_camera][self.target].get(self.count, 0) != 0:
-                target_bounding = self.__find_target(vision_map[self.main_camera][self.target][self.objects])
-                self.logger.debug("Ready to move servos")
-                self.move_servos(target_bounding)
-        with self._lock:
-            self.head_tracking = False
+                rtn = False
+        return rtn
 
-    def move_servos(self, target: dict):
+    def rotate_body(self, target: dict) -> None:
+        # Get current servo position
+        self.logger.debug("Moving servos getting angle map")
+        self.servos = self.servo_status.get_angle_map()
+        self.logger.debug("Calculating movement for servos")
+        mv_list = list()
+        if target != {}:
+            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target)
+            mv_list.append(self.body_LR.move(body_lr))
+            if mv_list:
+                self.logger.debug("Sending Move commands for Head and Neck")
+                self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                body_movement = {self.body_LR.name: body_lr}
+                self.__block_for_update(body_movement)
+
+    def move_all_servos(self, target: dict) -> None:
         # Get current servo position
         self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
@@ -468,36 +497,6 @@ class GladosLocal(Thread, MQTTClient):
     def handle_intensity(self):
         # TODO FIGURE OUT WHAT TO DO HERE
         pass
-
-    def handle_cmd(self, msg) -> None:
-        j_msg = loads(msg.payload.decode())
-        if j_msg.get("Camera", "") == self.main_camera:
-            self.logger.debug(f"{self.main_camera}, {msg.topic}, {j_msg}")
-            self.sight_results = j_msg.get("Results")
-        if j_msg.get("camera", "") == "Camera_Left":
-            self.logger.debug(f"Camera_Left, {msg.topic}, {j_msg}")
-            sight_results = j_msg.get("results")
-            if "person" in sight_results.keys():
-                for p in sight_results["person"]["objects"]:
-                    if float(p["confidence"]) >= 0.3:
-                        # move the robot to the left to start tracking
-                        # TODO gonna need to do location checks to make sure if we are already tracking
-                        # on the left quad we dont move there
-                        # maybe a bool true false on quadreants of where we are pointed?
-                        self.client.publish("body/servo",
-                                            json.dumps({"servo": "body_left_right", "angle": 135, "speed": 1}))
-        if j_msg.get("camera", "") == "Camera_Right":
-            self.logger.debug(f"Camera_Left, {msg.topic}, {j_msg}")
-            sight_results = j_msg.get("results")
-            if "person" in sight_results.keys():
-                for p in sight_results["person"]["objects"]:
-                    if float(p["confidence"]) >= 0.3:
-                        # move the robot to the left to start tracking
-                        # TODO gonna need to do location checks to make sure if we are already tracking
-                        # on the left quad we dont move there
-                        # maybe a bool true false on quadreants of where we are pointed?
-                        self.client.publish("body/servo",
-                                            json.dumps({"servo": "body_left_right", "angle": 45, "speed": 1}))
 
     def __random_audio(self, choice, last, options_list, last_attr_name, just_text=False):
         proc = self.__dedupe(choice, last, options_list)
