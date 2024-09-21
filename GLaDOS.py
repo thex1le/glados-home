@@ -129,7 +129,7 @@ class MotionTrack(MQTTClient):
             angle = TrackingEnums.BODY_LEFT_CAMERA_ANGLE.value
         if angle is not None:
             msg = ServoMessageBuilder.body_left_right(angle=angle, speed=self.dms)
-            self.send_command(command=msg, topic=ServoEnum.MQTT_COMMAND_TOPIC)
+            self.servo_status.send_command(command=msg, topic=ServoEnum.MQTT_COMMAND_TOPIC)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -187,7 +187,7 @@ class MotionTrack(MQTTClient):
 
             if mv_list:
                 self.logger.debug("Sending Move commands for Head and Neck")
-                self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                 head_movement = {self.head_LR.name: head_lr, self.head_UD.name: head_ud}
                 self.__block_for_update(head_movement)
 
@@ -344,7 +344,7 @@ class MotionTrack(MQTTClient):
             raise Exception(msg)
         mv_list = [servo2.move(self.servos[servo1.name].current),
                    servo1.move(self.servos[servo1.name].middle)]
-        self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # servo 1, servo 2
         return self.servos[servo1.name].middle, self.servos[servo1.name].current
 
