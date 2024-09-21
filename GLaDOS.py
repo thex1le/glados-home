@@ -1,6 +1,5 @@
 import io
 import base64
-import json
 import random
 from threading import Thread, Lock
 import time
