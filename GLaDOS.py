@@ -404,7 +404,7 @@ class GladosLocal(Thread, MQTTClient):
         self.sight_results = mp.Manager().dict()
         self.stop = False
         self.homeass = HomeAssistantLink(config_file)
-        self.homeass.get_temp()
+        #self.homeass.get_temp()
         # TODO figure out how to implement the songs
         #self.portal1song()
         self.mp_lock = mp.Lock()
