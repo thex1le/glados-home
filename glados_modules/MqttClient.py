@@ -71,7 +71,7 @@ class TargetMessageBuilder:
     @staticmethod
     def send_track_command_start(camera):
         return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
-                TrackingEnums.MSG_CAMERA_KEY: camera}
+                TrackingEnums.MSG_CAMERA_KEY.value: camera}
 
 
 class CameraMessageBuilder:
