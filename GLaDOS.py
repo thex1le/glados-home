@@ -248,6 +248,7 @@ class MotionTrack(MQTTClient):
         if self.servos[self.body_LR.name].current != self.servos[self.head_LR.name].middle:
             new_angle = self.servos[self.head_LR.name].middle - self.servos[self.body_LR.name].current
             self.send_command(self.body_LR.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
+            # todo use block for update here
             time.sleep(1)
 
     def __bend_body_to_extend_range(self):
@@ -257,6 +258,7 @@ class MotionTrack(MQTTClient):
         if self.servos[self.body_UD.name].current != self.servos[self.head_UD.name].middle:
             new_angle = self.servos[self.head_UD.name].middle - self.servos[self.body_UD.name].current
             self.send_command(self.body_UD.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
+            # todo use block for update here
             time.sleep(1)
 
     def __find_target(self, seen_data) -> dict:
