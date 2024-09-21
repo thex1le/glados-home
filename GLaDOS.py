@@ -375,8 +375,7 @@ class GladosLocal(Thread, MQTTClient):
         self.intensity_topic: str = "intensity"
         # TODO consider how we want to handle all 3 cameras...
         self.main_camera = "Camera_Head"
-        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
-                                                   self.intensity_topic: self.handle_intensity}
+        self.topic_handler: Dict[str, Callable] = {self.intensity_topic: self.handle_intensity}
         self.llm = remote_llm
         self.last_greeting = None
         self.last_insult = None
