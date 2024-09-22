@@ -243,23 +243,39 @@ class MotionTrack(MQTTClient):
 
     def __rotate_body_to_extend_range(self):
         """
-        Rotate the body left or right to extend the head's range when it reaches its limit.
+        Rotate the body to extend the head's range when it reaches its limit.
         """
-        if self.servos[self.body_LR.name].current != self.servos[self.head_LR.name].middle:
-            new_angle = self.servos[self.head_LR.name].middle - self.servos[self.body_LR.name].current
-            self.send_command(self.body_LR.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
-            # todo use block for update here
-            time.sleep(1)
+        # Calculate the required adjustment to align the body with the head
+        diff = self.servos[self.head_LR.name].current - self.servos[self.head_LR.name].middle
+        # Adjust the body servo in the same direction (considering its reversed nature)
+        new_body_angle = self.servos[self.body_LR.name].current + diff
+        # Clamp the new angle within the body's allowed range
+        new_body_angle = max(min(new_body_angle, self.servos[self.body_LR.name].max),
+                             self.servos[self.body_LR.name].min)
+        # Send movement command
+        self.servo_status.send_command(
+            [self.body_LR.move(new_body_angle)],
+            ServoEnum.MQTT_COMMAND_TOPIC.value)
+        # Block until the movement is completed
+        self.__block_for_update({self.body_LR.name: new_body_angle})
 
     def __bend_body_to_extend_range(self):
         """
-        Bend the body up or down to extend the head's range when it reaches its limit.
+        Bend the body to extend the head's vertical range when it reaches its limit.
         """
-        if self.servos[self.body_UD.name].current != self.servos[self.head_UD.name].middle:
-            new_angle = self.servos[self.head_UD.name].middle - self.servos[self.body_UD.name].current
-            self.send_command(self.body_UD.move(new_angle), ServoEnum.MQTT_COMMAND_TOPIC.value)
-            # todo use block for update here
-            time.sleep(1)
+        # Calculate the required adjustment
+        diff = self.servos[self.head_UD.name].current - self.servos[self.head_UD.name].middle
+        # Adjust the body servo
+        new_body_angle = self.servos[self.body_UD.name].current + diff
+        # Clamp the new angle
+        new_body_angle = max(min(new_body_angle, self.servos[self.body_UD.name].max),
+                             self.servos[self.body_UD.name].min)
+        # Send movement command
+        self.servo_status.send_command(
+            [self.body_UD.move(new_body_angle)],
+            ServoEnum.MQTT_COMMAND_TOPIC.value)
+        # Block until the movement is completed
+        self.__block_for_update({self.body_UD.name: new_body_angle})
 
     def __find_target(self, seen_data) -> dict:
         """
@@ -285,10 +301,20 @@ class MotionTrack(MQTTClient):
             bbox_edge_1 = bbox['x1']
             bbox_edge_2 = bbox['x2']
             axis_size = self.cam_x
+            # Determine direction factor based on servo location
+            if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
+                direction_factor = -1  # Head LR servo is reversed
+            else:
+                direction_factor = +1  # Body LR servo moves normally
         else:
             bbox_edge_1 = bbox['y1']
             bbox_edge_2 = bbox['y2']
             axis_size = self.cam_y
+            # Determine direction factor based on servo location
+            if servo.location in ServoEnum.LOCATION_HEAD_UP_DOWN.value:
+                direction_factor = -1  # Head UD servo is reversed
+            else:
+                direction_factor = +1  # Body UD servo moves normally
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
@@ -297,15 +323,11 @@ class MotionTrack(MQTTClient):
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
         # Calculate the angle adjustment based on the proportion
         angle_range = servo.max - servo.min
-        angle_adjustment = offset_proportion * (angle_range / 2)
+        angle_adjustment = direction_factor * offset_proportion * (angle_range / 2)
         # Determine the new servo angle based on the middle position
-        if servo.location in (ServoEnum.LOCATION_HEAD_UP_DOWN.value,
-                              ServoEnum.LOCATION_BODY_LEFT_RIGHT.value):
-            new_servo_angle = servo.middle + angle_adjustment
-        else:
-            new_servo_angle = servo.middle - angle_adjustment
+        new_servo_angle = servo.middle + angle_adjustment
         # Clamp the new angle within servo's min and max
-        new_servo_angle = max(servo.min, min(servo.max, new_servo_angle))
+        new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
         return round(new_servo_angle)
 
@@ -342,18 +364,20 @@ class MotionTrack(MQTTClient):
         return move
 
     def __level_servos(self, servo1, servo2) -> tuple:
-        # bring servo1 to midpoint by moving servo2
-        # ensure servos are on the same axis
+        # Bring servo1 to its middle position by adjusting servo2
         self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2.name].location}")
-        if self.servos[servo1.name].axis != self.servos[servo2.name].axis:
-            msg = "Servos are not on same axis"
-            self.logger.error(msg)
-            raise Exception(msg)
-        mv_list = [servo2.move(self.servos[servo1.name].current),
-                   servo1.move(self.servos[servo1.name].middle)]
+        # Calculate the difference between the current position and middle for servo1
+        diff = self.servos[servo1.name].current - self.servos[servo1.name].middle
+        # Adjust servo2 in the opposite direction
+        new_servo2_angle = self.servos[servo2.name].current + diff
+        # Clamp servo2's new angle within its allowed range
+        new_servo2_angle = max(min(new_servo2_angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
+        # Move servo1 back to middle and adjust servo2 accordingly
+        mv_list = [servo1.move(self.servos[servo1.name].middle),
+                   servo2.move(new_servo2_angle)]
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-        # servo 1, servo 2
-        return self.servos[servo1.name].middle, self.servos[servo1.name].current
+        # Return the new positions for further processing
+        return self.servos[servo1.name].middle, new_servo2_angle
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
