@@ -152,8 +152,8 @@ class MotionTrack(MQTTClient):
         """
         with self._lock:
             if self.head_tracking is False:
-                self.logger.debug(f"Tracking is allowed, Moving To track {self.target}")
                 self.head_tracking = True
+                self.logger.debug(f"Tracking is allowed, Moving To track {self.target}")
                 rtn = True
             else:
                 self.logger.debug("Tracking requested but already currently moving to track target")
@@ -238,7 +238,7 @@ class MotionTrack(MQTTClient):
                 # hard block for some reason, trigger servo updates
                 count = 0
                 self.servo_status.update_servo_status()
-            self.logger.debug(f"Blocking Updates Complete")
+        self.logger.debug(f"Blocking Updates Complete")
 
     def __reached_limit(self, servo) -> bool:
         """
