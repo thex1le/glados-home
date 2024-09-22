@@ -311,8 +311,8 @@ class MotionTrack(MQTTClient):
             bbox_edge_2 = bbox['y2']
             axis_size = self.cam_y
             # Determine direction factor based on servo location
-            if servo.location in ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-                direction_factor = -1  # Head UD servo is reversed
+            if servo.location in (ServoEnum.LOCATION_HEAD_UP_DOWN.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value):
+                direction_factor = -1  # Head UD servo is reversed, Head LR servo is reversed
             else:
                 direction_factor = +1  # Body UD servo moves normally
         # Calculate the center of the bounding box on the axis
@@ -376,7 +376,9 @@ class MotionTrack(MQTTClient):
         mv_list = [servo1.move(self.servos[servo1.name].middle),
                    servo2.move(new_servo2_angle)]
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-        # Return the new positions for further processing
+        # Block until movement is completed
+        self.__block_for_update({servo1.name: self.servos[servo1.name].middle, servo2.name: new_servo2_angle})
+        # Return the new positions
         return self.servos[servo1.name].middle, new_servo2_angle
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
