@@ -1,6 +1,7 @@
 from json import loads as json_loads
 from threading import Thread
 from time import time
+from datetime import datetime
 
 #3rd party
 import cv2
@@ -146,6 +147,12 @@ class YoloDetect(Thread, MQTTClient):
                 self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
         # Get the annotated image
         a_image = annotator.result()
+        # write a time stamp
+        timestamp = datetime.now().isoformat(timespec='seconds')
+        yellow_orange_color = (0, 140, 255)
+        position = (10, a_image.shape[0] - 10)
+        cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=1, color=yellow_orange_color, thickness=2)
         # Send the annotated image to the RTSP server
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
