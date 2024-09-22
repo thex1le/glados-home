@@ -172,7 +172,8 @@ class VisionTracker(MQTTClient):
                         if current_time - last_ts <= 0.5:
                             self.response_map[camera][self.count] = self.response_map[camera].get(self.count, 0) + 1
                         else:
-                            self.response_map[camera][self.count] = max(0, self.response_map[camera].get(self.count, 1) - 1)
+                            self.response_map[camera][self.count] = max(
+                                0, self.response_map[camera].get(self.count, 1) - 1)
                         self.response_map[camera][self.ts_key] = current_time
                         # Store sight results in response_cache
                         if camera in self.response_cache:
@@ -183,10 +184,17 @@ class VisionTracker(MQTTClient):
                             self.response_cache[camera] = {current_time: sight_results}
                         self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
                         # Send the tracking command
-                        self.send_command(
-                            TargetMessageBuilder.send_track_command_start(camera),
-                            TrackingEnums.MQTT_COMMAND_TOPIC.value
-                        )
+                        if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
+                            self.send_command(
+                                TargetMessageBuilder.send_track_command_start(camera),
+                                TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                        elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
+                            # head has not seen any target in 60 seconds or more, see response_cache creation to verify
+                            # use side cameras to try and find target
+                            if TrackingEnums.BODY_HEAD_CAMERA.value not in self.response_cache.keys():
+                                self.send_command(
+                                    TargetMessageBuilder.send_track_command_start(camera),
+                                    TrackingEnums.MQTT_COMMAND_TOPIC.value)
 
     def get_vision_map(self) -> dict:
         """
