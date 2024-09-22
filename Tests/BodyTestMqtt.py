@@ -18,7 +18,7 @@ if __name__ == "__main__":
     #msglist = list()
     msglist = [{'cmd': 'move', 'servo': 'head_left_right', 'angle': 83, 'speed': 1, 'uuid': '171309dc-0d2f-43f9-b525-41c314b78284'},]
     #msglist.extend([ServoMessageBuilder.head_up_down(angle=50, speed=1)])
-    msglist.append({'cmd': 'move', "servo": "body_left_right", "angle": 127, "speed": 1})
+    msglist.append({'cmd': 'move', "servo": "body_left_right", "angle": 131, "speed": 1})
     #msglist = [{"servo": "head_up_down", "angle": 6, "speed": 1}]
     #msglist = [{"servo": "body_left_right", "angle": 180, "speed": 1}, {"servo": "body_up_down", "angle": 180,
     #                                                                    "speed": 1}, {"servo": "head_up_down", "angle": 180, "speed": 1}, {"servo": "head_left_right", "angle":180, "speed": 1}]

@@ -376,7 +376,7 @@ class MotionTrack(MQTTClient):
             angle = current
         mv_list = [servo2.move(angle),
                    servo1.move(self.servos[servo1.name].middle)]
-        self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # servo 1, servo 2
         return self.servos[servo1.name].middle, self.servos[servo1.name].current
 
