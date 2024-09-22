@@ -68,7 +68,7 @@ class MotionTrack(MQTTClient):
     # class for motion tracking on a target
     # TODO figure out if we want this here, or in teh Gbody class in the body server?
     def __init__(self, broker: NamedTuple,  camera_resolution: NamedTuple, target: str = "person",
-                 confidence: float = 0.65, move_fudge_factor: int = 3):
+                 confidence: float = 0.65, move_fudge_factor: int = .5):
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
         self.logger = setup_logger(self.__name__)
