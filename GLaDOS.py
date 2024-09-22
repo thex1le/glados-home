@@ -245,11 +245,11 @@ class MotionTrack(MQTTClient):
         """
         Rotate the body to extend the head's range when it reaches its limit.
         """
-        # Calculate the required adjustment to align the body with the head
+        # Calculate the difference between head's current position and middle
         diff = self.servos[self.head_LR.name].current - self.servos[self.head_LR.name].middle
-        # Adjust the body servo in the same direction (considering its reversed nature)
+        # Adjust body servo in the same direction
         new_body_angle = self.servos[self.body_LR.name].current + diff
-        # Clamp the new angle within the body's allowed range
+        # Clamp the new angle within body's allowed range
         new_body_angle = max(min(new_body_angle, self.servos[self.body_LR.name].max),
                              self.servos[self.body_LR.name].min)
         # Send movement command
@@ -263,11 +263,11 @@ class MotionTrack(MQTTClient):
         """
         Bend the body to extend the head's vertical range when it reaches its limit.
         """
-        # Calculate the required adjustment
+        # Calculate the difference between head's current position and middle
         diff = self.servos[self.head_UD.name].current - self.servos[self.head_UD.name].middle
-        # Adjust the body servo
+        # Adjust body servo in the same direction
         new_body_angle = self.servos[self.body_UD.name].current + diff
-        # Clamp the new angle
+        # Clamp the new angle within body's allowed range
         new_body_angle = max(min(new_body_angle, self.servos[self.body_UD.name].max),
                              self.servos[self.body_UD.name].min)
         # Send movement command
@@ -364,11 +364,11 @@ class MotionTrack(MQTTClient):
         return move
 
     def __level_servos(self, servo1, servo2) -> tuple:
-        # Bring servo1 to its middle position by adjusting servo2
+        # Level the servos by adjusting servo2 to compensate for servo1
         self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2.name].location}")
-        # Calculate the difference between the current position and middle for servo1
+        # Calculate the difference from the middle for servo1
         diff = self.servos[servo1.name].current - self.servos[servo1.name].middle
-        # Adjust servo2 in the opposite direction
+        # Adjust servo2 in the same direction to compensate
         new_servo2_angle = self.servos[servo2.name].current + diff
         # Clamp servo2's new angle within its allowed range
         new_servo2_angle = max(min(new_servo2_angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
