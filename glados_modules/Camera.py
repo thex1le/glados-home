@@ -47,7 +47,7 @@ class Camera(Process, MQTTClient):
             # pi cam
             self.cap = Picamera2(self.camera_num)
             self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
-            self.logger.debug(f" Camera FPS set to {self.fps} and RBG888 and YUV420 Modes")
+            self.logger.debug(f" Camera FPS set to {self.fps} and RBG888")
             self.cam_config = self.cap.create_video_configuration(
                 main={"format": "RGB888", "size": (self.cam_res_x, self.cam_res_y)},
                 lores=None,
