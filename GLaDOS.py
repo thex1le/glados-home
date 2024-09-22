@@ -299,7 +299,8 @@ class MotionTrack(MQTTClient):
         angle_range = servo.max - servo.min
         angle_adjustment = offset_proportion * (angle_range / 2)
         # Determine the new servo angle based on the middle position
-        if servo.location == "head_up_down":
+        if servo.location in (ServoEnum.LOCATION_HEAD_UP_DOWN.value,
+                              ServoEnum.LOCATION_BODY_LEFT_RIGHT.value):
             new_servo_angle = servo.middle + angle_adjustment
         else:
             new_servo_angle = servo.middle - angle_adjustment
