@@ -166,7 +166,8 @@ class MotionTrack(MQTTClient):
         self.logger.debug("Calculating movement for servos")
         mv_list = list()
         if target != {}:
-            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target)
+            # account for left right swap
+            body_lr = self.__mirror_calc(self.__calc_servo(self.servos[self.body_LR.name], target))
             mv_list.append(self.body_LR.move(body_lr))
             if mv_list:
                 self.logger.debug("Sending Move commands for Head and Neck")
