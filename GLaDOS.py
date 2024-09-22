@@ -242,14 +242,11 @@ class MotionTrack(MQTTClient):
         return servo.current == servo.min or servo.current == servo.max
 
     def __rotate_body_to_extend_range(self):
-        """
-        Rotate the body to extend the head's range when it reaches its limit.
-        """
         self.logger.debug("Rotating body to extend range of neck")
         # Calculate the difference between head's current position and middle
         diff = self.servos[self.head_LR.name].current - self.servos[self.head_LR.name].middle
         # Adjust body servo in the same direction
-        new_body_angle = self.servos[self.body_LR.name].current - diff
+        new_body_angle = self.servos[self.body_LR.name].current + diff
         # Clamp the new angle within body's allowed range
         new_body_angle = max(min(new_body_angle, self.servos[self.body_LR.name].max),
                              self.servos[self.body_LR.name].min)
@@ -261,14 +258,11 @@ class MotionTrack(MQTTClient):
         self.__block_for_update({self.body_LR.name: new_body_angle})
 
     def __bend_body_to_extend_range(self):
-        """
-        Bend the body to extend the head's vertical range when it reaches its limit.
-        """
         self.logger.debug("Bending body to extend range of head")
         # Calculate the difference between head's current position and middle
         diff = self.servos[self.head_UD.name].current - self.servos[self.head_UD.name].middle
         # Adjust body servo in the same direction
-        new_body_angle = self.servos[self.body_UD.name].current - diff
+        new_body_angle = self.servos[self.body_UD.name].current + diff
         # Clamp the new angle within body's allowed range
         new_body_angle = max(min(new_body_angle, self.servos[self.body_UD.name].max),
                              self.servos[self.body_UD.name].min)
@@ -295,9 +289,6 @@ class MotionTrack(MQTTClient):
         return rtn
 
     def __calc_servo(self, servo, bbox: dict) -> int:
-        """
-        Calculate servo angle correction to target, clamped within servo's allowed range.
-        """
         # Determine axis and image dimensions
         if servo.axis == 'x':
             bbox_edge_1 = bbox['x1']
@@ -305,29 +296,29 @@ class MotionTrack(MQTTClient):
             axis_size = self.cam_x
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
-                direction_factor = -1  # Head LR servo is reversed
+                direction_factor = 1  # Head LR servo moves with image shift
             else:
-                direction_factor = +1  # Body LR servo moves normally
+                direction_factor = -1  # Body LR servo compensates
         else:
             bbox_edge_1 = bbox['y1']
             bbox_edge_2 = bbox['y2']
             axis_size = self.cam_y
             # Determine direction factor based on servo location
-            if servo.location in (ServoEnum.LOCATION_HEAD_UP_DOWN.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value):
-                direction_factor = 1  # Head UD servo is reversed, Head LR servo is reversed
+            if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
+                direction_factor = 1  # Head UD servo moves with image shift
             else:
-                direction_factor = -1  # Body UD servo moves normally
+                direction_factor = -1  # Body UD servo compensates
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
-        offset_from_center = center_of_bbox - (axis_size / 2)
+        offset_from_center = (axis_size / 2) - center_of_bbox  # Reverse due to camera movement
         # Calculate the proportion of the offset relative to the image size
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
         # Calculate the angle adjustment based on the proportion
         angle_range = servo.max - servo.min
         angle_adjustment = direction_factor * offset_proportion * (angle_range / 2)
-        # Determine the new servo angle based on the middle position
-        new_servo_angle = servo.middle + angle_adjustment
+        # Determine the new servo angle based on the current position
+        new_servo_angle = servo.current + angle_adjustment
         # Clamp the new angle within servo's min and max
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
@@ -370,7 +361,7 @@ class MotionTrack(MQTTClient):
         self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2.name].location}")
         # Calculate the difference from the middle for servo1
         diff = self.servos[servo1.name].current - self.servos[servo1.name].middle
-        # Adjust servo2 in the same direction to compensate
+        # Adjust servo2 in the opposite direction to compensate
         new_servo2_angle = self.servos[servo2.name].current + diff
         # Clamp servo2's new angle within its allowed range
         new_servo2_angle = max(min(new_servo2_angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
