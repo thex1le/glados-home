@@ -142,7 +142,7 @@ class MotionTrack(MQTTClient):
                         self.move_all_servos(target_bounding)
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         self.logger.debug("Rotating Body to face target")
-                        self.rotate_body(target_bounding)
+                        self.rotate_body(target=target_bounding, flip=True)
             with self._lock:
                 self.head_tracking = False
 
@@ -160,7 +160,7 @@ class MotionTrack(MQTTClient):
                 rtn = False
         return rtn
 
-    def rotate_body(self, target: dict) -> None:
+    def rotate_body(self, target: dict, flip=False) -> None:
         # Get current servo position
         self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
@@ -169,6 +169,8 @@ class MotionTrack(MQTTClient):
         if target != {}:
             # account for left right swap
             body_lr = self.__calc_servo(self.servos[self.body_LR.name], target)
+            if flip is True:
+                body_lr = self.__mirror_calc(body_lr)
             mv_list.append(self.body_LR.move(body_lr))
             if mv_list:
                 self.logger.debug("Sending Move commands for Head and Neck")
