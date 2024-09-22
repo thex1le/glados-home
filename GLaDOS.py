@@ -375,6 +375,7 @@ class MotionTrack(MQTTClient):
         else:
             angle = current
         # clamp to max min of travel
+        self.logger.debug(f"Servo {servo2.name} is at {self.servos[servo2.name].current} before leveling")
         angle = max(min(angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
         mv_list = [servo2.move(angle),
                    servo1.move(self.servos[servo1.name].middle)]
