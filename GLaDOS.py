@@ -208,10 +208,15 @@ class MotionTrack(MQTTClient):
                 self.logger.debug("Head reached up/down limit, bending body to extend range")
                 self.__bend_body_to_extend_range()
             # Level the head with the body after movement
-            servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
+            #servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
+            self.rotate_body(target)
+            # level the head
+            self.servo_status.send_command(self.head_LR.move(self.servos[self.head_LR.name].middle),
+                                           ServoEnum.MQTT_COMMAND_TOPIC)
+            # hack to see if it fixes the over rotation problem
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-            body_level = {self.head_LR.name: servo_1, self.body_LR.name: servo_2,
-                          self.head_UD.name: servo_3, self.body_UD.name: servo_4}
+            #body_level = {self.head_LR.name: servo_1, self.body_LR.name: servo_2,
+            body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
             time.sleep(2.5)
@@ -328,6 +333,9 @@ class MotionTrack(MQTTClient):
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
         return round(new_servo_angle)
+
+# we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
+# body needs to calculate rotation distance to track correctly
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
         move = False
