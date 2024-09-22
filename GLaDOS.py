@@ -357,22 +357,29 @@ class MotionTrack(MQTTClient):
         return move
 
     def __level_servos(self, servo1, servo2) -> tuple:
-        # Level the servos by adjusting servo2 to compensate for servo1
+        # bring servo1 to midpoint by moving servo2
+        # ensure servos are on the same axis
         self.logger.debug(f"Leveling Servos {self.servos[servo1.name].location} & {self.servos[servo2.name].location}")
-        # Calculate the difference from the middle for servo1
-        diff = self.servos[servo1.name].current - self.servos[servo1.name].middle
-        # Adjust servo2 in the opposite direction to compensate
-        new_servo2_angle = self.servos[servo2.name].current + diff
-        # Clamp servo2's new angle within its allowed range
-        new_servo2_angle = max(min(new_servo2_angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
-        # Move servo1 back to middle and adjust servo2 accordingly
-        mv_list = [servo1.move(self.servos[servo1.name].middle),
-                   servo2.move(new_servo2_angle)]
-        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-        # Block until movement is completed
-        self.__block_for_update({servo1.name: self.servos[servo1.name].middle, servo2.name: new_servo2_angle})
-        # Return the new positions
-        return self.servos[servo1.name].middle, new_servo2_angle
+        if self.servos[servo1.name].axis != self.servos[servo2.name].axis:
+            msg = "Servos are not on same axis"
+            self.logger.error(msg)
+            raise Exception(msg)
+        current = self.servos[servo1.name].current
+        if servo1.name in (ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value):
+            angle = self.__mirror_calc(current)
+        else:
+            angle = current
+        mv_list = [servo2.move(angle),
+                   servo1.move(self.servos[servo1.name].middle)]
+        self.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        # servo 1, servo 2
+        return self.servos[servo1.name].middle, self.servos[servo1.name].current
+
+    def __mirror_calc(self, servo_angle) -> int:
+        """
+        Figure out degree on other side when we have servos that need to align and their left and right's are flipped
+        """
+        return 180 - servo_angle
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
