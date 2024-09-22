@@ -296,9 +296,9 @@ class MotionTrack(MQTTClient):
             axis_size = self.cam_x
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
-                direction_factor = 1  # Head LR servo moves with image shift
+                direction_factor = -1  # Head LR servo moves with image shift
             else:
-                direction_factor = -1  # Body LR servo compensates
+                direction_factor = 1  # Body LR servo compensates
         else:
             bbox_edge_1 = bbox['y1']
             bbox_edge_2 = bbox['y2']
