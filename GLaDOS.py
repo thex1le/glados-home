@@ -123,6 +123,7 @@ class MotionTrack(MQTTClient):
         if j_msg.get(self.cmd_trigger, "") == TrackingEnums.MSG_COMMAND_START.value:
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
             trigger_camera = j_msg.get(TrackingEnums.MSG_CAMERA_KEY.value, "")
+            self.logger.debug(f"Running Track loop for {trigger_camera}")
             self.track_loop(trigger_camera)
 
     def track_loop(self, camera):
