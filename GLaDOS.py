@@ -133,7 +133,7 @@ class MotionTrack(MQTTClient):
             self.logger.debug("Getting Vision Map")
             vision_map = self.vision_tracker.get_vision_map()
             self.logger.debug("Looping though vision map")
-            if self.main_camera in vision_map.keys():
+            if camera in vision_map.keys():
                 if vision_map[camera][self.target].get(self.count, 0) != 0:
                     target_bounding = self.__find_target(vision_map[camera][self.target][self.objects])
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
