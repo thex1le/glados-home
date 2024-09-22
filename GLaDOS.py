@@ -168,7 +168,7 @@ class MotionTrack(MQTTClient):
         mv_list = list()
         if target != {}:
             # account for left right swap
-            body_lr = self.__mirror_calc(self.__calc_servo(self.servos[self.body_LR.name], target))
+            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target)
             mv_list.append(self.body_LR.move(body_lr))
             if mv_list:
                 self.logger.debug("Sending Move commands for Head and Neck")
@@ -212,7 +212,7 @@ class MotionTrack(MQTTClient):
             self.rotate_body(target)
             # level the head
             self.servo_status.send_command(self.head_LR.move(self.servos[self.head_LR.name].middle),
-                                           ServoEnum.MQTT_COMMAND_TOPIC)
+                                           ServoEnum.MQTT_COMMAND_TOPIC.value)
             # hack to see if it fixes the over rotation problem
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
             #body_level = {self.head_LR.name: servo_1, self.body_LR.name: servo_2,
