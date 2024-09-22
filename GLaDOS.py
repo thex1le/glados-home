@@ -219,7 +219,7 @@ class MotionTrack(MQTTClient):
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
-            time.sleep(.5)
+            time.sleep(1)
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
