@@ -245,10 +245,11 @@ class MotionTrack(MQTTClient):
         """
         Rotate the body to extend the head's range when it reaches its limit.
         """
+        self.logger.debug("Rotating body to extend range of neck")
         # Calculate the difference between head's current position and middle
         diff = self.servos[self.head_LR.name].current - self.servos[self.head_LR.name].middle
         # Adjust body servo in the same direction
-        new_body_angle = self.servos[self.body_LR.name].current + diff
+        new_body_angle = self.servos[self.body_LR.name].current - diff
         # Clamp the new angle within body's allowed range
         new_body_angle = max(min(new_body_angle, self.servos[self.body_LR.name].max),
                              self.servos[self.body_LR.name].min)
@@ -263,10 +264,11 @@ class MotionTrack(MQTTClient):
         """
         Bend the body to extend the head's vertical range when it reaches its limit.
         """
+        self.logger.debug("Bending body to extend range of head")
         # Calculate the difference between head's current position and middle
         diff = self.servos[self.head_UD.name].current - self.servos[self.head_UD.name].middle
         # Adjust body servo in the same direction
-        new_body_angle = self.servos[self.body_UD.name].current + diff
+        new_body_angle = self.servos[self.body_UD.name].current - diff
         # Clamp the new angle within body's allowed range
         new_body_angle = max(min(new_body_angle, self.servos[self.body_UD.name].max),
                              self.servos[self.body_UD.name].min)
@@ -312,9 +314,9 @@ class MotionTrack(MQTTClient):
             axis_size = self.cam_y
             # Determine direction factor based on servo location
             if servo.location in (ServoEnum.LOCATION_HEAD_UP_DOWN.value, ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value):
-                direction_factor = -1  # Head UD servo is reversed, Head LR servo is reversed
+                direction_factor = 1  # Head UD servo is reversed, Head LR servo is reversed
             else:
-                direction_factor = +1  # Body UD servo moves normally
+                direction_factor = -1  # Body UD servo moves normally
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
