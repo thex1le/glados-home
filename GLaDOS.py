@@ -226,6 +226,8 @@ class MotionTrack(MQTTClient):
                     all_reached = False
                     self.logger.debug(f"{name} servo is currently blocking attempting to get to {target}")
                     break
+                else:
+                self.logger.debug(f"{name} servo has updated and reached {target}")
             if all_reached:
                 break
             time.sleep(0.2)
@@ -234,6 +236,7 @@ class MotionTrack(MQTTClient):
                 # hard block for some reason, trigger servo updates
                 count = 0
                 self.servo_status.update_servo_status()
+            self.logger.debug(f"Blocking Updates Complete")
 
     def __reached_limit(self, servo) -> bool:
         """
