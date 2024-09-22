@@ -227,7 +227,7 @@ class MotionTrack(MQTTClient):
                     self.logger.debug(f"{name} servo is currently blocking attempting to get to {target}")
                     break
                 else:
-                self.logger.debug(f"{name} servo has updated and reached {target}")
+                    self.logger.debug(f"{name} servo has updated and reached {target}")
             if all_reached:
                 break
             time.sleep(0.2)
