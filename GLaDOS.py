@@ -375,7 +375,7 @@ class MotionTrack(MQTTClient):
         else:
             angle = current
         # clamp to max min of travel
-        angle = max(min(angle, servo2.max), servo2.min)
+        angle = max(min(angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
         mv_list = [servo2.move(angle),
                    servo1.move(self.servos[servo1.name].middle)]
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
