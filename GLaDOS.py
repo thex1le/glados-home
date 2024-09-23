@@ -68,7 +68,7 @@ class MotionTrack(MQTTClient):
     # class for motion tracking on a target
     # TODO figure out if we want this here, or in teh Gbody class in the body server?
     def __init__(self, broker: NamedTuple,  camera_resolution: NamedTuple, target: str = "person",
-                 confidence: float = 0.65, move_fudge_factor: int = .5):
+                 confidence: float = 0.65, move_fudge_factor: int = 3):
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
         self.logger = setup_logger(self.__name__)
@@ -169,14 +169,15 @@ class MotionTrack(MQTTClient):
         if target != {}:
             # account for left right swap
             body_lr = self.__calc_servo(self.servos[self.body_LR.name], target)
-            if flip is True:
-                body_lr = self.__mirror_calc(body_lr)
-            mv_list.append(self.body_LR.move(body_lr))
-            if mv_list:
-                self.logger.debug("Sending Move commands for Head and Neck")
-                self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                body_movement = {self.body_LR.name: body_lr}
-                self.__block_for_update(body_movement)
+            if self.__distance_check(self.servos[self.body_LR.name], body_lr, self.move_fudge_factor):
+                if flip is True:
+                    body_lr = self.__mirror_calc(body_lr)
+                mv_list.append(self.body_LR.move(body_lr))
+                if mv_list:
+                    self.logger.debug("Sending Move commands for Head and Neck")
+                    self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                    body_movement = {self.body_LR.name: body_lr}
+                    self.__block_for_update(body_movement)
 
     def move_all_servos(self, target: dict) -> None:
         # Get current servo position
