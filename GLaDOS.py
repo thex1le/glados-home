@@ -136,13 +136,13 @@ class MotionTrack(MQTTClient):
             if camera in vision_map.keys():
                 if vision_map[camera][self.target].get(self.count, 0) != 0:
                     target_bounding = self.__find_target(vision_map[camera][self.target][self.objects])
-                    target_uuid = vision_map.get('uuid', None)
+                    target_ts = vision_map.get(VisionResultsEnum.VISION_RESULTS_TS_KEY.value, None)
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                         self.logger.debug(f"Ready to move all servos for " +
-                                          f"target {self.target} message UUID {target_uuid}")
+                                          f"target {self.target} message times stamp {target_ts}")
                         self.move_all_servos(target_bounding)
                         self.side_camera_count = 0
-                        self.logger.debug(f"Movement complete for target {self.target} and message UUID {target_uuid}")
+                        self.logger.debug(f"Movement complete for target {self.target} and message times stamp {target_ts}")
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
                             self.logger.debug(f"Rotating Body to face target {self.target}")
