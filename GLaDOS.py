@@ -242,10 +242,12 @@ class MotionTrack(MQTTClient):
             # hack to see if it fixes the over rotation problem
             # level the body
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
+            # TODO you left off here chasing small movements because we don't calculate fudge factor
+            #  for leveling distances
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
-            time.sleep(1)
+            time.sleep(2)
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
