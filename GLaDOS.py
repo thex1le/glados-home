@@ -198,7 +198,7 @@ class MotionTrack(MQTTClient):
         msglist.extend([ServoMessageBuilder.head_left_right(angle=92, speed=1)])
         msglist.extend([ServoMessageBuilder.head_up_down(angle=125, speed=1)])
         msglist.append(ServoMessageBuilder.body_up_down(angle=180, speed=1))
-        self.servo_status.send_command(msglist, TrackingEnums.MQTT_COMMAND_TOPIC.value)
+        self.servo_status.send_command(msglist, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
     def move_all_servos(self, target: dict) -> None:
         # Get current servo position
