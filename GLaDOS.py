@@ -109,6 +109,8 @@ class MotionTrack(MQTTClient):
         # Vision seen Tracker
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
+        #hanging tracker
+        self.hanging = False
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         # TODO figure out how we are going to track anger intensity over various body parts
 
@@ -141,19 +143,25 @@ class MotionTrack(MQTTClient):
                         self.logger.debug(f"Ready to move all servos for " +
                                           f"target {self.target} message times stamp {target_ts}")
                         self.move_all_servos(target_bounding)
-                        self.side_camera_count = 0
+                        with self._lock:
+                            self.side_camera_count = 0
+                            self.hang_around()
                         self.logger.debug(f"Movement complete for target {self.target} and message times stamp {target_ts}")
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
                             self.logger.debug(f"Rotating Body to face target {self.target}")
                             self.rotate_body(target=target_bounding, flip=True)
-                            self.side_camera_count += 1
+                            with self._lock:
+                                self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
                             time.sleep(5)
                         else:
                             # move to just hang around
-                            self.hang_around()
-                            self.logger.debug("couldn't get target on head camera in 5 tries skipping for now")
+                            if self.hanging is False:
+                                self.hang_around()
+                                self.logger.debug("Couldn't get target on head camera in 5 tries skipping for now")
+                            else:
+                                self.logger.debug("Already hanging out")
             with self._lock:
                 self.head_tracking = False
 
@@ -193,6 +201,8 @@ class MotionTrack(MQTTClient):
     def hang_around(self) -> None:
         # rotate to the center point and then hang with head slightly picked up
         # this is expected to get called when there is nothing else to do so not waiting or blocking for movement
+        with self._lock:
+            self.hanging = True
         self.logger.debug("Deciding to hang out")
         msglist = [ServoMessageBuilder.body_left_right(angle=90, speed=1)]
         msglist.extend([ServoMessageBuilder.head_left_right(angle=92, speed=1)])
