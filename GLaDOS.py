@@ -143,6 +143,8 @@ class MotionTrack(MQTTClient):
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         self.logger.debug("Rotating Body to face target")
                         self.rotate_body(target=target_bounding, flip=True)
+                        # hold for a while to let main camera capture targets
+                        time.sleep(5)
             with self._lock:
                 self.head_tracking = False
 
