@@ -370,6 +370,7 @@ class MotionTrack(MQTTClient):
         angle_gl = "not greater or less"
         movement = "not moving"
         move_factor = angle_gl
+        # TODO figure out why angles being equal falls into greater not moving, likely abs issue
         if new_angle > current_angle:
             angle_gl = "greater"
             difference = new_angle - current_angle
