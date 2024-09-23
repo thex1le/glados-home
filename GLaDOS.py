@@ -232,11 +232,13 @@ class MotionTrack(MQTTClient):
             #servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
             self.rotate_body(target)
             # level the head
-            self.servo_status.send_command(self.head_LR.move(self.servos[self.head_LR.name].middle),
-                                           ServoEnum.MQTT_COMMAND_TOPIC.value)
+            middle = self.servos[self.head_LR.name].middle
+            if self.__distance_check(self.servos[self.head_LR.name], middle, self.move_fudge_factor):
+                self.servo_status.send_command(self.head_LR.move(middle),
+                                               ServoEnum.MQTT_COMMAND_TOPIC.value)
             # hack to see if it fixes the over rotation problem
+            # level the body
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-            #body_level = {self.head_LR.name: servo_1, self.body_LR.name: servo_2,
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
