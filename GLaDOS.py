@@ -186,6 +186,7 @@ class MotionTrack(MQTTClient):
         self.servos = self.servo_status.get_angle_map()
         self.logger.debug("Calculating movement for servos")
         mv_list = list()
+        body_movement = dict()
         if target != {}:
             # account for left right swap
             body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera)
@@ -199,8 +200,9 @@ class MotionTrack(MQTTClient):
                     if return_message is False:
                         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                         self.__block_for_update(body_movement)
-                    else:
-                        return body_movement, mv_list
+        if return_message is True:
+            return body_movement, mv_list
+
 
     def hang_around(self) -> None:
         # rotate to the center point and then hang with head slightly picked up
