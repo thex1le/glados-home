@@ -407,7 +407,7 @@ class MotionTrack(MQTTClient):
                 movement = "moving"
                 move = True
             else:
-                move_factor = "greater"
+                move_factor = "less"
                 movement = "not moving"
         elif new_angle < current_angle:
             difference = new_angle - current_angle
