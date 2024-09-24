@@ -173,7 +173,7 @@ class VisionTracker(MQTTClient):
                             self.kalman = KalmanFilter(bbox=box)
                         self.response_map[camera] = sight_results
                         # update the position with the current data
-                        self.response_map[camera][self.target][
+                        self.response_map[camera][self.target][self.objects_key][
                             TrackingEnums.FILTER_KEY.value] = self.kalman.get_estimated_position(p.get("box"))
                         self.response_map[camera][self.ts_key] = time()
                         self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
