@@ -52,7 +52,7 @@ class MQTTClient:
         if handler:
             handler(msg)
 
-    def send_command(self, command: dict | list | tuple, topic) -> None:
+    def send_command(self, command: dict | list | tuple, topic, qos: int = 1) -> None:
         """
         Generic mqtt sending function for single or multiple messages
         """
@@ -63,7 +63,7 @@ class MQTTClient:
             # add in uuid for message tracking and debugging
             m["uuid"] = str(uuid4())
             self.logger.debug(f"{self.__name__} sending {m} command")
-            self.client.publish(topic, dumps(m), qos=1)
+            self.client.publish(topic, dumps(m), qos=qos)
 
 
 # TODO flesh out message classes for easy update in one place
