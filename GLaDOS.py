@@ -367,6 +367,14 @@ class MotionTrack(MQTTClient):
         # Assume average height of a person (5 feet = 1.52 meters)
         object_real_height = 1.52  # in meters
         image_resolution = self.cam_y  # vertical resolution of the camera
+
+        # Offsets: 30 mm in front, 20 mm below the pivot
+        horizontal_offset = 30  # in mm
+        vertical_offset = 20  # in mm
+
+        # Calculate total offset from the pivot point to the camera
+        total_offset = math.sqrt(horizontal_offset ** 2 + vertical_offset ** 2)  # 36.06 mm
+
         # Determine axis and image dimensions
         if servo.axis == 'x':
             bbox_edge_1 = bbox['x1']
@@ -386,12 +394,14 @@ class MotionTrack(MQTTClient):
                 direction_factor = 1  # Head UD servo moves with image shift
             else:
                 direction_factor = -1  # Body UD servo compensates
+
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
         offset_from_center = (axis_size / 2) - center_of_bbox  # Reverse due to camera movement
         # Calculate the proportion of the offset relative to the image size
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
+
         # Get the right FOV from enums and apply fisheye correction for left and right cameras
         fov = 70  # Default FOV
         if camera == CameraEnum.CAMERA_HEAD.value:
@@ -410,8 +420,9 @@ class MotionTrack(MQTTClient):
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)
         # Apply the camera offset correction only to the head pivot servo (not full head movement)
         if servo.axis == 'y' and servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-            # Apply trigonometric correction based on vertical offset (10 mm below pivot)
-            corrected_angle = atan2(offset_from_center, distance_to_target + 0.01)
+            # Apply trigonometric correction based on vertical and horizontal offset
+            corrected_angle = atan2(offset_from_center,
+                                    distance_to_target + (total_offset / 1000))  # Convert to meters
             angle_adjustment += degrees(corrected_angle)  # Convert radians to degrees for servo adjustment
         # Determine the new servo angle based on the current position
         new_servo_angle = servo.current + angle_adjustment
@@ -419,7 +430,6 @@ class MotionTrack(MQTTClient):
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
         return round(new_servo_angle)
-
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
         move = False
