@@ -265,7 +265,6 @@ class MotionTrack(MQTTClient):
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
             self.logger.debug("Leveling out body complete")
-            time.sleep(.5)
 
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
