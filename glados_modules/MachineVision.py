@@ -150,7 +150,7 @@ class YoloDetect(Thread, MQTTClient):
             f"Sending back process dict of seen data for camera {image[CameraEnum.MSG_LOCATION_KEY.value]}")
         cam_name = image[CameraEnum.MSG_LOCATION_KEY.value][1:]
         results = CameraMessageBuilder.send_results(cam_name, self.__translate_results(self.sight))
-        self.send_command(results, self.cmd_topic)
+        self.send_command(results, self.cmd_topic, qos=0)
 
     def run(self):
         status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
