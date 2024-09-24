@@ -60,7 +60,7 @@ class KalmanFilter:
         bbox_center_y = (y1 + y2) / 2
         return self.center(bbox_center_x, bbox_center_y)
 
-    def get_estimated_position(self, bbox: dict) -> int:
+    def get_estimated_position(self, bbox: dict) -> numpy.ndarray:
         center = self.__calc_center(box=bbox)
         z_measured = np.array([[center.x, center.y]])
         return self.__kalman_filter(z_measured=z_measured)

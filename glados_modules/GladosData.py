@@ -11,6 +11,7 @@ from cachetools import TTLCache
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
 from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums
+from glados_modules.MotionSmoothing import KalmanFilter
 
 
 class ServoLocation(MQTTClient):
@@ -125,13 +126,14 @@ class VisionTracker(MQTTClient):
         self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         self.objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         self.confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+        # create a holding object for the filter later
+        self.kalman = None
         # Initialize the topic handler before calling the superclass constructor
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         # Call the superclass constructor
         super().__init__(ip=broker.ip, port=broker.port)
         # Use a time cache and expire any vision tracking objects after 1 minute
-        self.response_cache = TTLCache(maxsize=1000, ttl=60)
-        self.response_map = dict()
+        self.response_map = TTLCache(maxsize=1000, ttl=60)
         # Tracking variables
         self.head_target = False
         self.left_target = False
@@ -165,23 +167,15 @@ class VisionTracker(MQTTClient):
                     if float(c) >= self.confidence_score:
                         self.logger.debug(f"Confidence of {c} found for {self.target}")
                         # Update response_map
+                        if camera not in self.response_map.keys():
+                            box = p.get("box")
+                            # start a kalman filter for tracking that object
+                            self.kalman = KalmanFilter(bbox=box)
                         self.response_map[camera] = sight_results
-                        # Update counts and timestamps
-                        current_time = time()
-                        last_ts = self.response_map[camera].get(self.ts_key, 0)
-                        if current_time - last_ts <= 0.5:
-                            self.response_map[camera][self.count] = self.response_map[camera].get(self.count, 0) + 1
-                        else:
-                            self.response_map[camera][self.count] = max(
-                                0, self.response_map[camera].get(self.count, 1) - 1)
-                        self.response_map[camera][self.ts_key] = current_time
-                        # Store sight results in response_cache
-                        if camera in self.response_cache:
-                            # Add to an existing cache
-                            self.response_cache[camera][current_time] = sight_results
-                        else:
-                            # Add a new camera to the cache
-                            self.response_cache[camera] = {current_time: sight_results}
+                        # update the position with the current data
+                        self.response_map[camera][self.target][
+                            TrackingEnums.FILTER_KEY.value] = self.kalman.get_estimated_position(p.get("box"))
+                        self.response_map[camera][self.ts_key] = time()
                         self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
                         # Send the tracking command
                         if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
@@ -191,7 +185,7 @@ class VisionTracker(MQTTClient):
                         elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                             # head has not seen any target in 60 seconds or more, see response_cache creation to verify
                             # use side cameras to try and find target
-                            if TrackingEnums.BODY_HEAD_CAMERA.value not in self.response_cache.keys():
+                            if TrackingEnums.BODY_HEAD_CAMERA.value not in self.response_map.keys():
                                 self.send_command(
                                     TargetMessageBuilder.send_track_command_start(camera),
                                     TrackingEnums.MQTT_COMMAND_TOPIC.value)

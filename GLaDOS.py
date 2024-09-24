@@ -137,20 +137,21 @@ class MotionTrack(MQTTClient):
             self.logger.debug("Looping though vision map")
             if camera in vision_map.keys():
                 if vision_map[camera][self.target].get(self.count, 0) != 0:
-                    target_bounding = self.__find_target(vision_map[camera][self.target][self.objects])
+                    target_center = self.__find_target(vision_map[camera][self.target][self.objects])
                     target_ts = vision_map[camera].get(VisionResultsEnum.VISION_RESULTS_TS_KEY.value, None)
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                         self.logger.debug(f"Ready to move all servos for " +
                                           f"target {self.target} message times stamp {target_ts}")
-                        self.move_all_servos(target_bounding)
+                        self.move_all_servos(target_center)
                         with self._lock:
                             self.side_camera_count = 0
                             self.hang_around()
-                        self.logger.debug(f"Movement complete for target {self.target} and message times stamp {target_ts}")
+                        self.logger.debug(f"Movement complete for target {self.target} " +
+                                          f"and message times stamp {target_ts}")
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
                             self.logger.debug(f"Rotating Body to face target {self.target}")
-                            self.rotate_body(target=target_bounding, flip=True)
+                            self.rotate_body(target=target_center, flip=True)
                             with self._lock:
                                 self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
@@ -323,24 +324,23 @@ class MotionTrack(MQTTClient):
 
     def __find_target(self, seen_data) -> dict:
         """
-        Find the highest confidence target and return their bounding box from current data set
+        Find the highest confidence target and return their kalman center from current data set
         """
-        confidence = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-        bbox = VisionResultsEnum.VISION_RESULTS_BOX_KEY.value
+        target_confidence = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+        target_center = TrackingEnums.FILTER_KEY.value
         rtn = dict()
         highest_confidence = 0
-        for p in seen_data:
-            if p[confidence] > highest_confidence:
-                highest_confidence = p[confidence]
-                rtn = p[bbox]
+        for target in seen_data:
+            if target[target_confidence] > highest_confidence:
+                highest_confidence = target[target_confidence]
+                rtn = target[target_center]
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
-    def __calc_servo(self, servo, bbox: dict) -> int:
+    def __calc_servo(self, servo, center: dict) -> int:
         # Determine axis and image dimensions
         if servo.axis == 'x':
-            bbox_edge_1 = bbox['x1']
-            bbox_edge_2 = bbox['x2']
+            center_of_bbox = center["x"]
             axis_size = self.cam_x
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
@@ -348,16 +348,13 @@ class MotionTrack(MQTTClient):
             else:
                 direction_factor = -1  # Body LR servo compensates
         else:
-            bbox_edge_1 = bbox['y1']
-            bbox_edge_2 = bbox['y2']
+            center_of_bbox = center["y"]
             axis_size = self.cam_y
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
                 direction_factor = 1  # Head UD servo moves with image shift
             else:
                 direction_factor = -1  # Body UD servo compensates
-        # Calculate the center of the bounding box on the axis
-        center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
         offset_from_center = (axis_size / 2) - center_of_bbox  # Reverse due to camera movement
         # Calculate the proportion of the offset relative to the image size

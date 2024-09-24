@@ -80,6 +80,7 @@ class TrackingEnums(Enum):
     MSG_COMMAND_KEY: str = "track"
     MSG_COMMAND_START: str = "start"
     MSG_CAMERA_KEY: str = "camera"
+    FILTER_KEY: str = "kalman"
     MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_KEY}"
     BODY_LEFT_CAMERA_ANGLE: int = 134
     BODY_RIGHT_CAMERA_ANGLE: int = 44
