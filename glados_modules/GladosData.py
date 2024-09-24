@@ -196,15 +196,8 @@ class VisionTracker(MQTTClient):
         """
         with self._lock:
             # Return a copy of the response_map
-            return self.response_map.copy()
+            return dict(self.response_map).copy()
 
-    def get_vision_cache(self) -> dict:
-        """
-        Return the vision results cache
-        """
-        with self._lock:
-            # Return a copy of the response_cache
-            return dict(self.response_cache)
 
 
 if __name__ == "__main__":
