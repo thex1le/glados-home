@@ -47,10 +47,15 @@ class YoloDetect(Thread, MQTTClient):
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
-        self.logger.debug(f"YOLO model started with {model}")
-        self.model = YOLOv10(model)
+        tracker_config = configfile["YOLO"]["tracker"]
+
+        self.logger.debug(f"YOLOv8 model started with {model} using {tracker_config}")
+        # Initialize YOLOv8 model with tracking
+        self.model = YOLO(model)
+        self.tracker_config = tracker_config
+
         self.sight = None
-        self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx" )
+        self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx")
         self.image_get.start()
         for key in self.cam_configs.keys():
             msg = {"status": f"Starting the RTSP server on rtsp://{rtsp_server_ip}:{rtsp_port}{key}"}
@@ -73,21 +78,17 @@ class YoloDetect(Thread, MQTTClient):
             if y_class is None:
                 continue
             self.logger.debug(f"Translating {y_class} with type {type(y_class)}")
-            # Parse the JSON representation of y_class
             y_class_data = json_loads(y_class.tojson())
             for cname in y_class_data:
-                # Retrieve the class name from cname
                 class_name = cname.get(name_key)
                 if not class_name:
                     self.logger.warning(f"No '{name_key}' found in {cname}")
-                    continue  # Skip if class name is not found
+                    continue
                 if class_name in results_dict:
-                    # Update existing entry
                     results_dict[class_name][count_key] += 1
-                    results_dict[class_name][ts_key] = time()  # Update timestamp
+                    results_dict[class_name][ts_key] = time()
                     results_dict[class_name][objects_key].append(cname)
                 else:
-                    # Create a new entry
                     results_dict[class_name] = {
                         count_key: 1,
                         objects_key: [cname],
@@ -98,71 +99,55 @@ class YoloDetect(Thread, MQTTClient):
         return results_dict
 
     def __yolo_process_image(self, image_dict):
-        # Get raw image data from the image_dict
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
-        # Reshape the raw data to match the RGB888 format: (height, width, 3)
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-        # Convert RGB to BGR as OpenCV expects BGR format
-        # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        # Run YOLO on the image
-        results = self.model(image, device="cuda")
-        self.logger.debug(f"Yolo has processed raw image")
-        # Create an annotator to label the image with detected objects
+        results = self.model.track(source=image, device="cuda", tracker=self.tracker_config)
+        self.logger.debug(f"Yolo has processed raw image with tracking")
         annotator = Annotator(image)
-        # Define the center point of the image (target position)
         image_center = (width // 2, height // 2)
-        # Draw a plus sign at the center of the image to represent the target position
-        color_target = (0, 255, 0)  # Green color
+        color_target = (0, 255, 0)
         thickness = 2
-        plus_size = 10  # Size of the plus sign lines
-        # Draw horizontal line at target position
+        plus_size = 10
         cv2.line(image, (image_center[0] - plus_size, image_center[1]),
                  (image_center[0] + plus_size, image_center[1]), color_target, thickness)
-        # Draw vertical line at target position
         cv2.line(image, (image_center[0], image_center[1] - plus_size),
                  (image_center[0], image_center[1] + plus_size), color_target, thickness)
         self.logger.debug(f"Drew plus sign at {image_center} (center of the image).")
+
         for r in results:
             boxes = r.boxes
             for box in boxes:
-                b = box.xyxy[0]  # Get box coordinates in (left, top, right, bottom) format
+                b = box.xyxy[0]
                 x1, y1, x2, y2 = map(int, b.tolist())
                 c = box.cls
-                conf = box.conf.item()  # Get confidence score
-                # Create a label that includes both the class name and confidence score
+                conf = box.conf.item()
                 label = f"{self.model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
                 self.logger.debug(f"Labeled image with {label}")
-                # Calculate the center of the bounding box (current position)
                 center_x = int((x1 + x2) / 2)
                 center_y = int((y1 + y2) / 2)
                 object_center = (center_x, center_y)
-                color_current = (0, 0, 255)  # Red color
-                # Draw a circle at the object's current position
+                color_current = (0, 0, 255)
                 cv2.circle(image, object_center, radius=5, color=color_current, thickness=-1)
                 self.logger.debug(f"Drew circle at {object_center} (center of bounding box).")
-                # Draw an arrow from the object's current position to the target position
                 cv2.arrowedLine(image, object_center, image_center, color=(255, 0, 0), thickness=2)
                 self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
-        # Get the annotated image
+
         a_image = annotator.result()
-        # write a time stamp
         timestamp = datetime.now().isoformat(timespec='seconds')
         yellow_orange_color = (0, 140, 255)
         position = (10, a_image.shape[0] - 10)
         cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=1, color=yellow_orange_color, thickness=2)
-        # Send the annotated image to the RTSP server
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 
     def process_image(self, image):
         self.sight = self.__yolo_process_image(image)
-        self.logger.debug(f"Sending back process dict of seen data for camera \
-                           {image[CameraEnum.MSG_LOCATION_KEY.value]}")
-        # cut off the slash at the front
+        self.logger.debug(
+            f"Sending back process dict of seen data for camera {image[CameraEnum.MSG_LOCATION_KEY.value]}")
         cam_name = image[CameraEnum.MSG_LOCATION_KEY.value][1:]
         results = CameraMessageBuilder.send_results(cam_name, self.__translate_results(self.sight))
         self.send_command(results, self.cmd_topic)
@@ -177,4 +162,3 @@ class YoloDetect(Thread, MQTTClient):
                 self.process_image(image_dict)
             except Exception as e:
                 self.logger.error(f"Image Error: {e}")
-

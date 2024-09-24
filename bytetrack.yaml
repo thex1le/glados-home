@@ -1,0 +1,7 @@
+tracker:
+  type: bytetrack
+  confidence_threshold: 0.6
+  iou_threshold: 0.3
+  match_threshold: 0.8
+  nms_threshold: 0.6
+  frame_rate: 4
