@@ -151,7 +151,7 @@ class MotionTrack(MQTTClient):
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
                             self.logger.debug(f"Rotating Body to face target {self.target}")
-                            self.rotate_body(target=target_bounding, camera, flip=True, return_message=True)
+                            self.rotate_body(target=target_bounding, camera=camera, flip=True)
                             with self._lock:
                                 self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
@@ -180,7 +180,7 @@ class MotionTrack(MQTTClient):
                 rtn = False
         return rtn
 
-    def rotate_body(self, target: dict, flip=False) -> None:
+    def rotate_body(self, target: dict, camera: str, flip=False, return_message=False) -> None | tuple:
         # Get current servo position
         self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
@@ -188,16 +188,19 @@ class MotionTrack(MQTTClient):
         mv_list = list()
         if target != {}:
             # account for left right swap
-            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target)
+            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera)
             if self.__distance_check(self.servos[self.body_LR.name], body_lr, self.move_fudge_factor):
                 if flip is True:
                     body_lr = self.__mirror_calc(body_lr)
                 mv_list.append(self.body_LR.move(body_lr))
                 if mv_list:
                     self.logger.debug("Sending Move commands for Head and Neck")
-                    self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                     body_movement = {self.body_LR.name: body_lr}
-                    self.__block_for_update(body_movement)
+                    if return_message is False:
+                        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                        self.__block_for_update(body_movement)
+                    else:
+                        return body_movement, mv_list
 
     def hang_around(self) -> None:
         # rotate to the center point and then hang with head slightly picked up
@@ -243,20 +246,20 @@ class MotionTrack(MQTTClient):
                 self.logger.debug("Head reached up/down limit, bending body to extend range")
                 self.__bend_body_to_extend_range()
             # Level the head with the body after movement
-            #servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
-            self.rotate_body(target)
+            # servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
+            body_movement, mv_list = self.rotate_body(target, camera, return_message=True)
             # level the head
             middle = self.servos[self.head_LR.name].middle
             if self.__distance_check(self.servos[self.head_LR.name], middle, self.move_fudge_factor):
-                self.servo_status.send_command(self.head_LR.move(middle),
-                                               ServoEnum.MQTT_COMMAND_TOPIC.value)
-            # hack to see if it fixes the over rotation problem
+                mv_list.append(self.head_LR.move(middle))
+            self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
             # level the body
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
             # TODO you left off here chasing small movements because we don't calculate fudge factor
             #  for leveling distances
             self.logger.debug("Leveling out body")
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
+            body_level.update(body_movement)
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
             self.logger.debug("Leveling out body complete")
