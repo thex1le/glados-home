@@ -126,6 +126,7 @@ class MotionTrack(MQTTClient):
             trigger_camera = j_msg.get(TrackingEnums.MSG_CAMERA_KEY.value, "")
             self.logger.debug(f"Running Track loop for {trigger_camera}")
             self.track_loop(trigger_camera)
+            self.logger.debug(f"Tracking complete for {trigger_camera}")
 
     def track_loop(self, camera):
         # main tracking loop
@@ -145,7 +146,7 @@ class MotionTrack(MQTTClient):
                         self.move_all_servos(target_bounding)
                         with self._lock:
                             self.side_camera_count = 0
-                            self.hang_around()
+                            self.hanging = False
                         self.logger.debug(f"Movement complete for target {self.target} and message times stamp {target_ts}")
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
@@ -254,10 +255,13 @@ class MotionTrack(MQTTClient):
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
             # TODO you left off here chasing small movements because we don't calculate fudge factor
             #  for leveling distances
+            self.logger.debug("Leveling out body")
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
-            time.sleep(5)
+            self.logger.debug("Leveling out body complete")
+            #time.sleep(1)
+            
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
