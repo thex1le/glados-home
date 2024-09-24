@@ -14,7 +14,7 @@ from queue import Queue
 from typing import Dict, Callable, Tuple, NamedTuple
 from json import loads
 from collections import namedtuple
-from math import sqrt, atan2, degrees, tan, radians
+from math import sqrt, atan2, degrees
 
 # 3rd party imports
 import requests
@@ -355,18 +355,7 @@ class MotionTrack(MQTTClient):
             return corrected_proportion
         return offset_proportion
 
-    @staticmethod
-    def estimate_distance(bbox: dict, object_real_height: float, camera_fov: float, image_resolution: int) -> float:
-        # Extract the height of the bounding box in pixels
-        H_image = bbox['y2'] - bbox['y1']
-        # Calculate the distance using the formula
-        distance = (object_real_height * image_resolution) / (2 * H_image * tan(radians(camera_fov / 2)))
-        return distance
-
-    def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
-        # Assume average height of a person (5 feet = 1.52 meters)
-        object_real_height = 1.52  # in meters
-        image_resolution = self.cam_y  # vertical resolution of the camera
+    def __calc_servo(self, servo, bbox: dict, camera: str, distance_to_target: float) -> int:
         # Determine axis and image dimensions
         if servo.axis == 'x':
             bbox_edge_1 = bbox['x1']
@@ -386,12 +375,14 @@ class MotionTrack(MQTTClient):
                 direction_factor = 1  # Head UD servo moves with image shift
             else:
                 direction_factor = -1  # Body UD servo compensates
+
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
         offset_from_center = (axis_size / 2) - center_of_bbox  # Reverse due to camera movement
         # Calculate the proportion of the offset relative to the image size
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
+
         # Get the right FOV from enums and apply fisheye correction for left and right cameras
         fov = 70  # Default FOV
         if camera == CameraEnum.CAMERA_HEAD.value:
@@ -404,22 +395,22 @@ class MotionTrack(MQTTClient):
             fov = CameraEnum.CAMERA_LEFT_FOCAL.value
             # Apply fisheye correction for the left camera
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
-        # Estimate distance dynamically using vision data
-        distance_to_target = self.estimate_distance(bbox, object_real_height, fov, image_resolution)
+
         # Calculate the initial angle adjustment based on FOV
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)
+
         # Apply the camera offset correction only to the head pivot servo (not full head movement)
         if servo.axis == 'y' and servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-            # Apply trigonometric correction based on vertical offset (10 mm below pivot)
+            # Apply trigonometric correction based on vertical offset
             corrected_angle = atan2(offset_from_center, distance_to_target + 0.01)
             angle_adjustment += degrees(corrected_angle)  # Convert radians to degrees for servo adjustment
+
         # Determine the new servo angle based on the current position
         new_servo_angle = servo.current + angle_adjustment
         # Clamp the new angle within servo's min and max
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
         return round(new_servo_angle)
-
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
         move = False
