@@ -5,7 +5,7 @@ from datetime import datetime
 
 #3rd party
 import cv2
-from ultralytics import YOLOv10
+from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
 # glados imports
