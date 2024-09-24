@@ -34,6 +34,8 @@ class YoloDetect(Thread, MQTTClient):
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
         cam_conf = self.configfile['CAMERAS']
+
+        # Create cam_configs for each camera
         self.cam_configs = {
             f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
@@ -43,16 +45,22 @@ class YoloDetect(Thread, MQTTClient):
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value])},
             f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
-                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value])}}
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value])}
+        }
+
         rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
-        tracker_config = configfile["YOLO"]["tracker"]
 
-        self.logger.debug(f"YOLOv8 model started with {model} using {tracker_config}")
-        # Initialize YOLOv8 model with tracking
+        self.logger.debug(f"YOLOv8 model started with {model}")
         self.model = YOLO(model)
-        self.tracker_config = tracker_config
+
+        # Separate trackers for each camera
+        self.trackers = {
+            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": self.model.get_tracker(configfile["YOLO"]["tracker"]),
+            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": self.model.get_tracker(configfile["YOLO"]["tracker"]),
+            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": self.model.get_tracker(configfile["YOLO"]["tracker"])
+        }
 
         self.sight = None
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx")
@@ -102,8 +110,15 @@ class YoloDetect(Thread, MQTTClient):
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-        results = self.model.track(source=image, device="cuda", tracker=self.tracker_config)
-        self.logger.debug(f"Yolo has processed raw image with tracking")
+
+        # Get the camera location to select the appropriate tracker
+        camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
+        tracker = self.trackers[camera_location]
+
+        # Process the image using the camera-specific tracker
+        results = self.model.track(source=image, device="cuda", tracker=tracker)
+        self.logger.debug(f"Yolo has processed raw image with tracking for camera {camera_location}")
+
         annotator = Annotator(image)
         image_center = (width // 2, height // 2)
         color_target = (0, 255, 0)
