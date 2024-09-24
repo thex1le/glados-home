@@ -260,7 +260,7 @@ class MotionTrack(MQTTClient):
             self.__block_for_update(body_level)
             # Add a small delay to make the movement seem more deliberate
             self.logger.debug("Leveling out body complete")
-            #time.sleep(1)
+            time.sleep(.5)
             
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
@@ -368,7 +368,10 @@ class MotionTrack(MQTTClient):
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
         # Calculate the angle adjustment based on the proportion
         angle_range = servo.max - servo.min
-        angle_adjustment = direction_factor * offset_proportion * (angle_range / 2)
+        # Calculate angle adjustment based on camera field of view (FOV)
+        fov = 70  # Camera's field of view in degrees
+        angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
+        #angle_adjustment = direction_factor * offset_proportion * (angle_range / 2)
         # Determine the new servo angle based on the current position
         new_servo_angle = servo.current + angle_adjustment
         # Clamp the new angle within servo's min and max
