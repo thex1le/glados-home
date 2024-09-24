@@ -14,6 +14,7 @@ from queue import Queue
 from typing import Dict, Callable, Tuple, NamedTuple
 from json import loads
 from collections import namedtuple
+from math import sqrt
 
 # 3rd party imports
 import requests
@@ -344,6 +345,16 @@ class MotionTrack(MQTTClient):
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
+    @staticmethod
+    def fisheye_correction(offset_proportion, fov):
+        if fov >= 160:
+            # Apply a non-linear correction based on radial distortion
+            k1 = 0.2  # Example distortion coefficient for fisheye
+            radial_distance = sqrt(offset_proportion ** 2)
+            corrected_proportion = offset_proportion * (1 + k1 * (radial_distance ** 2))
+            return corrected_proportion
+        return offset_proportion
+
     def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
         # Determine axis and image dimensions
         if servo.axis == 'x':
@@ -377,8 +388,12 @@ class MotionTrack(MQTTClient):
             fov = CameraEnum.CAMERA_HEAD_FOCAL.value  # Camera's field of view in degrees
         if camera == CameraEnum.CAMERA_RIGHT.value:
             fov = CameraEnum.CAMERA_RIGHT_FOCAL.value
+            # account for fisheye
+            offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         if camera == CameraEnum.CAMERA_LEFT.value:
             fov = CameraEnum.CAMERA_LEFT_FOCAL.value
+            # account for fisheye
+            offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
         # Determine the new servo angle based on the current position
         new_servo_angle = servo.current + angle_adjustment
