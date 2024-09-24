@@ -143,7 +143,7 @@ class MotionTrack(MQTTClient):
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                         self.logger.debug(f"Ready to move all servos for " +
                                           f"target {self.target} message times stamp {target_ts}")
-                        self.move_all_servos(target_bounding)
+                        self.move_all_servos(target_bounding, camera)
                         with self._lock:
                             self.side_camera_count = 0
                             self.hanging = False
@@ -151,7 +151,7 @@ class MotionTrack(MQTTClient):
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
                             self.logger.debug(f"Rotating Body to face target {self.target}")
-                            self.rotate_body(target=target_bounding, flip=True)
+                            self.rotate_body(target=target_bounding, camera, flip=True, return_message=True)
                             with self._lock:
                                 self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
@@ -211,7 +211,7 @@ class MotionTrack(MQTTClient):
         msglist.append(ServoMessageBuilder.body_up_down(angle=180, speed=1))
         self.servo_status.send_command(msglist, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
-    def move_all_servos(self, target: dict) -> None:
+    def move_all_servos(self, target: dict, camera: str) -> None:
         # Get current servo position
         self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
@@ -219,8 +219,8 @@ class MotionTrack(MQTTClient):
         self.logger.debug("Calculating movement for servos")
         if target != {}:
             # Move head left-right and up-down first
-            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target)
-            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target)
+            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
+            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
             if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
@@ -261,7 +261,7 @@ class MotionTrack(MQTTClient):
             # Add a small delay to make the movement seem more deliberate
             self.logger.debug("Leveling out body complete")
             time.sleep(.5)
-            
+
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
@@ -340,7 +340,7 @@ class MotionTrack(MQTTClient):
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
-    def __calc_servo(self, servo, bbox: dict) -> int:
+    def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
         # Determine axis and image dimensions
         if servo.axis == 'x':
             bbox_edge_1 = bbox['x1']
@@ -366,12 +366,16 @@ class MotionTrack(MQTTClient):
         offset_from_center = (axis_size / 2) - center_of_bbox  # Reverse due to camera movement
         # Calculate the proportion of the offset relative to the image size
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
-        # Calculate the angle adjustment based on the proportion
-        angle_range = servo.max - servo.min
         # Calculate angle adjustment based on camera field of view (FOV)
-        fov = 70  # Camera's field of view in degrees
+        # get the right focal from ENUMS
+        fov = 70
+        if camera == CameraEnum.CAMERA_HEAD.value:
+            fov = CameraEnum.CAMERA_HEAD_FOCAL.value  # Camera's field of view in degrees
+        if camera == CameraEnum.CAMERA_RIGHT.value:
+            fov = CameraEnum.CAMERA_RIGHT_FOCAL.value
+        if camera == CameraEnum.CAMERA_LEFT.value:
+            fov = CameraEnum.CAMERA_LEFT_FOCAL.value
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
-        #angle_adjustment = direction_factor * offset_proportion * (angle_range / 2)
         # Determine the new servo angle based on the current position
         new_servo_angle = servo.current + angle_adjustment
         # Clamp the new angle within servo's min and max

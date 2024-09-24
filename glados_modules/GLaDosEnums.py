@@ -73,6 +73,9 @@ class CameraEnum(Enum):
     CAMERA_HEAD_FACTORY: str = f"{CAMERA_HEAD}_{MSG_FACTORY}"
     CAMERA_LEFT_FACTORY: str = f"{CAMERA_LEFT}_{MSG_FACTORY}"
     CAMERA_RIGHT_FACTORY: str = f"{CAMERA_RIGHT}_{MSG_FACTORY}"
+    CAMERA_HEAD_FOCAL: int = 70
+    CAMERA_RIGHT_FOCAL: int = 160
+    CAMERA_LEFT_FOCAL: int = 160
 
 
 class TrackingEnums(Enum):
