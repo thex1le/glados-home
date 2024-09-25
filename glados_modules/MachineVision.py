@@ -54,6 +54,7 @@ class YoloDetect(Thread, MQTTClient):
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         model = configfile["YOLO"]["model"]
+        self.tracker_yaml = configfile["YOLO"]["tracker"]
 
         self.logger.debug(f"YOLOv8 model started with {model}")
         self.model = YOLO(model)
@@ -143,7 +144,7 @@ class YoloDetect(Thread, MQTTClient):
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
 
         # Process the image using YOLO tracking
-        results = self.model.track(source=image, device="cuda")
+        results = self.model.track(source=image, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
 
         # Annotating and sending the processed image
