@@ -273,7 +273,6 @@ class MotionTrack(MQTTClient):
             # Add a small delay to make the movement seem more deliberate
             self.logger.debug("Leveling out body complete")
 
-
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
         count = 0
