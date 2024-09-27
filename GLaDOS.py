@@ -170,6 +170,8 @@ class MotionTrack(MQTTClient):
                                 self.logger.debug("Couldn't get target on head camera in 5 tries skipping for now")
                             else:
                                 self.logger.debug("Already hanging out")
+            else:
+                self.logger.debug(f"Camera {camera} not found in {vision_map.keys()}")
             with self._lock:
                 self.head_tracking = False
 
