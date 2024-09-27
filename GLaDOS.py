@@ -233,13 +233,13 @@ class MotionTrack(MQTTClient):
             if self.last_bounding_box:
                 # Calculate difference between last and current bounding box
                 bbox_diff = self.__calculate_bbox_difference(self.last_bounding_box, current_bounding_box)
+                self.last_bounding_box = current_bounding_box  # Update the last bounding box
                 # Decide whether to move servos based on bbox_diff
                 if not self.__is_significant_movement(bbox_diff):
                     self.logger.debug("Movement not significant; no servo adjustment needed.")
                     return  # Skip movement to prevent oscillations
             else:
                 bbox_diff = {'x': 0, 'y': 0}
-            self.last_bounding_box = current_bounding_box  # Update the last bounding box
             # Calculate required angle adjustments
             required_adjustments = self.__calculate_required_adjustments(target, camera)
             # Distribute adjustments between head and body
