@@ -479,7 +479,7 @@ class MotionTrack(MQTTClient):
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
         # Return the angle adjustment instead of the new servo angle
-        return servo.current + angle_adjustment
+        return round(servo.current + angle_adjustment)
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
         difference = abs(new_angle - servo.current)
