@@ -332,7 +332,7 @@ class MotionTrack(MQTTClient):
         for servo_name, angle in adjustments.items():
             servo_info = self.head_LR if servo_name == self.head_LR.name else self.head_UD
             servo = self.servos[servo_name]
-            angle = max(min(angle, servo.max), servo.min)
+            angle = round(max(min(angle, servo.max), servo.min))
             if self.__distance_check(servo, angle, self.move_fudge_factor):
                 mv_list.append(servo_info.move(angle))
         return mv_list
@@ -342,7 +342,7 @@ class MotionTrack(MQTTClient):
         for servo_name, angle in adjustments.items():
             servo_info = self.body_LR if servo_name == self.body_LR.name else self.body_UD
             servo = self.servos[servo_name]
-            angle = max(min(angle, servo.max), servo.min)
+            angle = round(max(min(angle, servo.max), servo.min))
             if self.__distance_check(servo, angle, self.move_fudge_factor):
                 mv_list.append(servo_info.move(angle))
         return mv_list
