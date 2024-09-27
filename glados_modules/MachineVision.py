@@ -78,7 +78,7 @@ class YoloDetect(Thread, MQTTClient):
 
     def handle_cmd(self, msg: MQTTMessage):
         j_msg = json_loads(msg.payload.decode())
-        if j_msg.get(TrackingEnums.MSG_COMMAND_KEY.value) == TrackingEnums.MSG_COMMAND_START.value:
+        if j_msg.get(TrackingEnums.MSG_COMMAND_KEY.value) == TrackingEnums.MSG_MOVEMENT_KEY.value:
             movement = j_msg.get(TrackingEnums.MSG_MOVEMENT_KEY.value)
             if movement == TrackingEnums.MSG_MOVING_TRUE.value:
                 with self._lock:

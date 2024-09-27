@@ -78,7 +78,7 @@ class TargetMessageBuilder:
         value = TrackingEnums.MSG_MOVING_FALSE.value
         if movement is True:
             value = TrackingEnums.MSG_MOVING_TRUE.value
-        return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
+        return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_MOVEMENT_KEY.value,
                 TrackingEnums.MSG_MOVEMENT_KEY.value: value}
 
 class CameraMessageBuilder:
