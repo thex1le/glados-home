@@ -80,6 +80,10 @@ class CameraEnum(Enum):
 
 class TrackingEnums(Enum):
     MSG_LOCATION_KEY: str = "system"
+    MSG_MOVEMENT_KEY: str = "moving"
+    MSG_MOVING_TRUE: str = "true"
+    MSG_MOVING_FALSE: str = "false"
+    MQTT_MOVEMENT_ALERT: str = f"{MSG_LOCATION_KEY}/{MSG_MOVEMENT_KEY}"
     MSG_COMMAND_KEY: str = "track"
     MSG_COMMAND_START: str = "start"
     MSG_CAMERA_KEY: str = "camera"

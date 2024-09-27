@@ -2,18 +2,20 @@ from json import loads as json_loads
 from threading import Thread
 from time import time
 from datetime import datetime
+from typing import Dict, Callable
 
 # 3rd party
 import cv2
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
+from paho.mqtt.client import MQTTMessage
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.RxTx import DataRecv
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum
+from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, TrackingEnums
 
 
 class GLaDOSServerException(Exception):
@@ -30,10 +32,13 @@ class YoloDetect(Thread, MQTTClient):
         self.configfile = configfile
         broker = self.configfile['MQTT']['mqtt_server_ip']
         port = self.configfile['MQTT']['mqtt_port']
-        MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
+        self.movent_topic: str = TrackingEnums.MQTT_MOVEMENT_ALERT.value
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
+        MQTTClient.__init__(self, broker, port)
         cam_conf = self.configfile['CAMERAS']
+        self.skip_image: bool = False
 
         # Camera configurations for each camera
         self.cam_configs = {
@@ -69,8 +74,19 @@ class YoloDetect(Thread, MQTTClient):
             status = CameraMessageBuilder.send_status(key, msg)
             self.send_command(status, self.status_topic)
             self.logger.info(msg)
-
         self.rtsp = RTSPServer(self.cam_configs)
+
+    def handle_cmd(self, msg: MQTTMessage):
+        j_msg = json_loads(msg.payload.decode())
+        if j_msg.get(TrackingEnums.MSG_COMMAND_KEY.value) == TrackingEnums.MSG_COMMAND_START.value:
+            movement = j_msg.get(TrackingEnums.MSG_MOVEMENT_KEY.value)
+            if movement == TrackingEnums.MSG_MOVING_TRUE.value:
+                with self._lock:
+                    # robot is moving set the skip image to true
+                    self.skip_image = True
+            elif movement == TrackingEnums.MSG_MOVING_FALSE.value:
+                with self._lock:
+                    self.skip_image = False
 
     def __translate_results(self, results):
         name_key = VisionResultsEnum.YOLO_CLASS_NAME_KEY.value
@@ -119,6 +135,10 @@ class YoloDetect(Thread, MQTTClient):
                     continue
                 self.logger.debug(f"Processing image from {camera_location}")
                 # Process the image and track objects
+                camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
+                if camera_location == CameraEnum.CAMERA_HEAD.value and self.skip_image is True:
+                    # skip this image as robot head is moving and image is blured
+                    continue
                 sight = self.__yolo_process_image(image_dict)
                 # the string slice strips the / off the front of the camera_location
                 results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
@@ -137,11 +157,10 @@ class YoloDetect(Thread, MQTTClient):
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
     def __yolo_process_image(self, image_dict):
+        camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-
-        camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
 
         # Process the image using YOLO tracking
         results = self.model.track(source=image, device="cuda", tracker=self.tracker_yaml)

@@ -73,6 +73,13 @@ class TargetMessageBuilder:
         return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
                 TrackingEnums.MSG_CAMERA_KEY.value: camera}
 
+    @staticmethod
+    def send_moving_command(movement):
+        value = TrackingEnums.MSG_MOVING_FALSE.value
+        if movement is True:
+            value = TrackingEnums.MSG_MOVING_TRUE.value
+        return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
+                TrackingEnums.MSG_MOVEMENT_KEY.value: value}
 
 class CameraMessageBuilder:
     @staticmethod

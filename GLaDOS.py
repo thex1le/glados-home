@@ -31,7 +31,7 @@ from glados_modules.GladosHomeAssistant import HomeAssistantLink
 from glados_modules.GLaDOSGpt import GladosGPT
 from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
-from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
+from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder, TargetMessageBuilder
 from glados_modules.Camera import Camera
 from glados_modules.GladosData import ServoLocation, VisionTracker
 from glados_modules.GLaDosEnums import CameraEnum, ServoEnum, SystemEnums, TrackingEnums, VisionResultsEnum
@@ -126,7 +126,13 @@ class MotionTrack(MQTTClient):
             self.logger.debug(f"Tracking Command Received, {msg.topic}, {j_msg}")
             trigger_camera = j_msg.get(TrackingEnums.MSG_CAMERA_KEY.value, "")
             self.logger.debug(f"Running Track loop for {trigger_camera}")
+            # signal the image processor we are going to move
+            self.servo_status.send_command(command=TargetMessageBuilder.send_moving_command(True),
+                                           topic=TrackingEnums.MQTT_COMMAND_TOPIC.value)
             self.track_loop(trigger_camera)
+            # signal we are done moving
+            self.servo_status.send_command(command=TargetMessageBuilder.send_moving_command(False),
+                                           topic=TrackingEnums.MQTT_COMMAND_TOPIC.value)
             self.logger.debug(f"Tracking complete for {trigger_camera}")
 
     def track_loop(self, camera):
