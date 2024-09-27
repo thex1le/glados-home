@@ -110,8 +110,12 @@ class MotionTrack(MQTTClient):
         # Vision seen Tracker
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
-        #hanging tracker
+        # hanging tracker
         self.hanging = False
+        # Track the last bounding box
+        self.last_bounding_box = None
+        # Lock for thread safety
+        self._lock = Lock()
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         # TODO figure out how we are going to track anger intensity over various body parts
 
@@ -204,7 +208,6 @@ class MotionTrack(MQTTClient):
         if return_message is True:
             return body_movement, mv_list
 
-
     def hang_around(self) -> None:
         # rotate to the center point and then hang with head slightly picked up
         # this is expected to get called when there is nothing else to do so not waiting or blocking for movement
@@ -218,55 +221,135 @@ class MotionTrack(MQTTClient):
         self.servo_status.send_command(msglist, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
     def move_all_servos(self, target: dict, camera: str) -> None:
-        # Get current servo position
+        # Get current servo positions
         self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
         mv_list = list()
         self.logger.debug("Calculating movement for servos")
-        if target != {}:
-            # Move head left-right and up-down first
-            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
-            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
-            if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor):
-                mv_list.append(self.head_LR.move(head_lr))
-            else:
-                # don't try small movements just set it to current
-                head_lr = self.servos[self.head_LR.name].current
-            if self.__distance_check(self.servos[self.head_UD.name], head_ud, self.move_fudge_factor):
-                mv_list.append(self.head_UD.move(head_ud))
-            else:
-                head_ud = self.servos[self.head_UD.name].current
-            if mv_list:
-                self.logger.debug("Sending Move commands for Head and Neck")
-                self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                head_movement = {self.head_LR.name: head_lr, self.head_UD.name: head_ud}
-                self.__block_for_update(head_movement)
-            # Check if head movement reached its limit and compensate with body movement
-            if self.__reached_limit(self.servos[self.head_LR.name]):
-                self.logger.debug("Head reached left/right limit, rotating body to extend range")
-                self.__rotate_body_to_extend_range()
-            if self.__reached_limit(self.servos[self.head_UD.name]):
-                self.logger.debug("Head reached up/down limit, bending body to extend range")
-                self.__bend_body_to_extend_range()
-            # Level the head with the body after movement
-            # servo_1, servo_2 = self.__level_servos(self.head_LR, self.body_LR)
-            body_movement, mv_list = self.rotate_body(target, camera, return_message=True)
-            # level the head
-            middle = self.servos[self.head_LR.name].middle
-            if self.__distance_check(self.servos[self.head_LR.name], middle, self.move_fudge_factor):
-                mv_list.append(self.head_LR.move(middle))
-            self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-            # level the body
-            servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-            # TODO you left off here chasing small movements because we don't calculate fudge factor
-            #  for leveling distances
-            self.logger.debug("Leveling out body")
-            body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
-            body_level.update(body_movement)
-            self.__block_for_update(body_level)
-            # Add a small delay to make the movement seem more deliberate
-            self.logger.debug("Leveling out body complete")
 
+        if target:
+            # Store current bounding box for next iteration
+            current_bounding_box = target
+            if self.last_bounding_box:
+                # Calculate difference between last and current bounding box
+                bbox_diff = self.__calculate_bbox_difference(self.last_bounding_box, current_bounding_box)
+                # Decide whether to move servos based on bbox_diff
+                if not self.__is_significant_movement(bbox_diff):
+                    self.logger.debug("Movement not significant; no servo adjustment needed.")
+                    return  # Skip movement to prevent oscillations
+            else:
+                bbox_diff = {'x': 0, 'y': 0}
+            self.last_bounding_box = current_bounding_box  # Update the last bounding box
+            # Calculate required angle adjustments
+            required_adjustments = self.__calculate_required_adjustments(target, camera)
+            # Distribute adjustments between head and body
+            head_adjustments, body_adjustments = self.__distribute_adjustments(required_adjustments)
+            # Move head servos
+            mv_list.extend(self.__move_head_servos(head_adjustments))
+            # Move body servos
+            mv_list.extend(self.__move_body_servos(body_adjustments))
+            # Send movement commands
+            if mv_list:
+                self.logger.debug("Sending Move commands for Head and Body")
+                self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                # Block until movement is completed
+                self.__block_for_update({**head_adjustments, **body_adjustments})
+            # Add delays or easing functions to make movements snake-like
+            self.__add_snake_like_movement()
+
+    def __is_significant_movement(self, bbox_diff, threshold=10):
+        # Determine if the change in position is significant
+        diff_magnitude = sqrt(bbox_diff['x'] ** 2 + bbox_diff['y'] ** 2)
+        self.logger.debug(f"Bounding box movement magnitude: {diff_magnitude}")
+        if diff_magnitude > threshold:
+            return True
+        else:
+            return False
+
+    def __calculate_bbox_difference(self, last_bbox, current_bbox):
+        # Calculate the difference in the center positions of the bounding boxes
+        last_center_x = (last_bbox['x1'] + last_bbox['x2']) / 2
+        last_center_y = (last_bbox['y1'] + last_bbox['y2']) / 2
+        current_center_x = (current_bbox['x1'] + current_bbox['x2']) / 2
+        current_center_y = (current_bbox['y1'] + current_bbox['y2']) / 2
+        diff_x = current_center_x - last_center_x
+        diff_y = current_center_y - last_center_y
+        return {'x': diff_x, 'y': diff_y}
+
+    def __calculate_required_adjustments(self, bbox, camera):
+        # Calculate the angle adjustments needed to center on the target
+        adjustments = {}
+        for servo_info in [self.head_LR, self.head_UD]:
+            servo_name = servo_info.name
+            servo = self.servos[servo_name]
+            angle_adjustment = self.__calc_servo(servo, bbox, camera) - servo.current
+            adjustments[servo_name] = angle_adjustment
+        return adjustments
+
+    def __distribute_adjustments(self, required_adjustments):
+        head_limits = {
+            self.head_LR.name: (self.servos[self.head_LR.name].min, self.servos[self.head_LR.name].max),
+            self.head_UD.name: (self.servos[self.head_UD.name].min, self.servos[self.head_UD.name].max)
+        }
+        head_adjustments = {}
+        body_adjustments = {}
+
+        for servo_name in [self.head_LR.name, self.head_UD.name]:
+            required_adjustment = required_adjustments[servo_name]
+            servo = self.servos[servo_name]
+            min_limit, max_limit = head_limits[servo_name]
+            potential_new_angle = servo.current + required_adjustment
+
+            # Check if head can make the adjustment
+            if min_limit <= potential_new_angle <= max_limit:
+                # Head can make the full adjustment
+                head_adjustments[servo_name] = potential_new_angle
+                body_servo_name = servo_name.replace('head', 'body')
+                body_adjustments[body_servo_name] = self.servos[body_servo_name].current
+            else:
+                # Head has reached its limit, use body to assist
+                if potential_new_angle < min_limit:
+                    head_adjustment = min_limit - servo.current
+                else:
+                    head_adjustment = max_limit - servo.current
+                remaining_adjustment = required_adjustment - head_adjustment
+                body_servo_name = servo_name.replace('head', 'body')
+                head_adjustments[servo_name] = servo.current + head_adjustment
+                body_servo = self.servos[body_servo_name]
+                body_potential_new_angle = body_servo.current + remaining_adjustment
+
+                # Clamp body servo angle within its limits
+                body_potential_new_angle = max(min(body_potential_new_angle, body_servo.max), body_servo.min)
+                body_adjustments[body_servo_name] = body_potential_new_angle
+
+                # Adjust head angle to maintain the same overall direction
+                head_adjustments[servo_name] -= remaining_adjustment
+
+        return head_adjustments, body_adjustments
+
+    def __move_head_servos(self, adjustments):
+        mv_list = []
+        for servo_name, angle in adjustments.items():
+            servo_info = self.head_LR if servo_name == self.head_LR.name else self.head_UD
+            servo = self.servos[servo_name]
+            angle = max(min(angle, servo.max), servo.min)
+            if self.__distance_check(servo, angle, self.move_fudge_factor):
+                mv_list.append(servo_info.move(angle))
+        return mv_list
+
+    def __move_body_servos(self, adjustments):
+        mv_list = []
+        for servo_name, angle in adjustments.items():
+            servo_info = self.body_LR if servo_name == self.body_LR.name else self.body_UD
+            servo = self.servos[servo_name]
+            angle = max(min(angle, servo.max), servo.min)
+            if self.__distance_check(servo, angle, self.move_fudge_factor):
+                mv_list.append(servo_info.move(angle))
+        return mv_list
+
+    def __add_snake_like_movement(self):
+        # Introduce delays or easing functions between movements
+        time.sleep(0.1)  # Small delay to create a smooth movement
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
@@ -278,10 +361,10 @@ class MotionTrack(MQTTClient):
             for name, target in target_positions.items():
                 if self.servos[name].current != target:
                     all_reached = False
-                    self.logger.debug(f"{name} servo is currently blocking attempting to get to {target}")
+                    self.logger.debug(f"{name} servo is currently moving to {target}")
                     break
                 else:
-                    self.logger.debug(f"{name} servo has updated and reached {target}")
+                    self.logger.debug(f"{name} servo has reached {target}")
             if all_reached:
                 break
             time.sleep(0.2)
@@ -355,7 +438,7 @@ class MotionTrack(MQTTClient):
             return corrected_proportion
         return offset_proportion
 
-    def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
+    def __calc_servo(self, servo, bbox: dict, camera: str) -> float:
         # Determine axis and image dimensions
         if servo.axis == 'x':
             bbox_edge_1 = bbox['x1']
@@ -395,48 +478,17 @@ class MotionTrack(MQTTClient):
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
-        # Determine the new servo angle based on the current position
-        new_servo_angle = servo.current + angle_adjustment
-        # Clamp the new angle within servo's min and max
-        new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
-        # Round to the nearest whole number
-        return round(new_servo_angle)
-
-# we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
-# body needs to calculate rotation distance to track correctly
+        # Return the angle adjustment instead of the new servo angle
+        return servo.current + angle_adjustment
 
     def __distance_check(self, servo, new_angle, degree_diff=2):
-        move = False
-        current_angle = servo.current
-        difference = 0
-        angle_gl = "not greater or less"
-        movement = "not moving"
-        move_factor = angle_gl
-        # TODO figure out why angles being equal falls into greater not moving, likely abs issue
-        if new_angle > current_angle:
-            angle_gl = "greater"
-            difference = new_angle - current_angle
-            if abs(difference) > degree_diff:
-                move_factor = "greater"
-                movement = "moving"
-                move = True
-            else:
-                move_factor = "less"
-                movement = "not moving"
-        elif new_angle < current_angle:
-            difference = new_angle - current_angle
-            angle_gl = "less"
-            if abs(difference) > degree_diff:
-                move = True
-                move_factor = "greater"
-                movement = "moving"
-            else:
-                movement = "not moving"
-                move_factor = "less"
-        self.logger.debug(f"{servo.location} {new_angle} is {angle_gl} than {current_angle} and "
-                          f"with a difference of {abs(difference)} which is {move_factor} than small movement factor"
-                          f" of {degree_diff}, {movement}")
-        return move
+        difference = abs(new_angle - servo.current)
+        if difference > degree_diff:
+            self.logger.debug(f"{servo.location}: Moving from {servo.current} to {new_angle} (difference: {difference})")
+            return True
+        else:
+            self.logger.debug(f"{servo.location}: No significant movement required (difference: {difference})")
+            return False
 
     def __level_servos(self, servo1, servo2) -> tuple:
         # bring servo1 to midpoint by moving servo2
