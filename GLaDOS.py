@@ -87,7 +87,7 @@ class MotionTrack(MQTTClient):
         self.main_camera = CameraEnum.CAMERA_HEAD.value
         self.left_camera = CameraEnum.CAMERA_LEFT.value
         self.right_camera = CameraEnum.CAMERA_RIGHT.value
-        self.move_fudge_factor = move_fudge_factor
+        self.dead_zone_factor = move_fudge_factor
         servo = namedtuple("servo", ["name", "move"])
         # servo names
         self.head_LR = servo(ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, ServoMessageBuilder.head_left_right)
@@ -191,7 +191,7 @@ class MotionTrack(MQTTClient):
         if target != {}:
             # account for left right swap
             body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera)
-            if self.__distance_check(self.servos[self.body_LR.name], body_lr, self.move_fudge_factor):
+            if self.__dead_zone_check(self.servos[self.body_LR.name], body_lr, self.dead_zone_factor):
                 if flip is True:
                     body_lr = self.__mirror_calc(body_lr)
                 mv_list.append(self.body_LR.move(body_lr))
@@ -227,12 +227,12 @@ class MotionTrack(MQTTClient):
             # Move head left-right and up-down first
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
-            if self.__distance_check(self.servos[self.head_LR.name], head_lr, self.move_fudge_factor):
+            if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
                 # don't try small movements just set it to current
                 head_lr = self.servos[self.head_LR.name].current
-            if self.__distance_check(self.servos[self.head_UD.name], head_ud, self.move_fudge_factor):
+            if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud, self.dead_zone_factor):
                 mv_list.append(self.head_UD.move(head_ud))
             else:
                 head_ud = self.servos[self.head_UD.name].current
@@ -253,7 +253,7 @@ class MotionTrack(MQTTClient):
             body_movement, mv_list = self.rotate_body(target, camera, return_message=True)
             # level the head
             middle = self.servos[self.head_LR.name].middle
-            if self.__distance_check(self.servos[self.head_LR.name], middle, self.move_fudge_factor):
+            if self.__dead_zone_check(self.servos[self.head_LR.name], middle, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(middle))
             self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
             # level the body
@@ -405,7 +405,7 @@ class MotionTrack(MQTTClient):
 # we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
 # body needs to calculate rotation distance to track correctly
 
-    def __distance_check(self, servo, new_angle, degree_diff=2):
+    def __dead_zone_check(self, servo, new_angle, degree_diff=2):
         move = False
         current_angle = servo.current
         difference = 0
