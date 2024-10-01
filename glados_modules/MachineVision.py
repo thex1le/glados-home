@@ -126,6 +126,9 @@ class YoloDetect(Thread, MQTTClient):
             except Exception as e:
                 self.logger.error(f"Error in tracker for camera {camera_key}: {e}")
 
+            except KeyboardInterrupt:
+                break
+
     def start_tracking_threads(self):
         """
         Start a separate tracking thread for each camera.
