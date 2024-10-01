@@ -53,11 +53,11 @@ class YoloDetect(Thread, MQTTClient):
 
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
-        model = configfile["YOLO"]["model"]
+        self.model_config = configfile["YOLO"]["model"]
         self.tracker_yaml = configfile["YOLO"]["tracker"]
 
-        self.logger.debug(f"YOLOv8 model started with {model}")
-        self.model = YOLO(model)
+        self.logger.debug(f"YOLOv8 model started with {self.model_config}")
+        self.model = YOLO(self.model_config)
 
         # Image receiver setup
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx")
@@ -103,12 +103,11 @@ class YoloDetect(Thread, MQTTClient):
         self.logger.debug(f"Translated results: {results_dict}")
         return results_dict
 
-    def run_tracker_for_camera(self, camera_key):
+    def run_tracker_for_camera(self, camera_key, model):
         """
         Each camera has its own YOLO tracker running in a separate thread.
         """
         self.logger.info(f"Starting tracker for camera {camera_key}")
-
         # Run the tracker for this camera
         while True:
             try:
@@ -119,7 +118,7 @@ class YoloDetect(Thread, MQTTClient):
                     continue
                 self.logger.debug(f"Processing image from {camera_location}")
                 # Process the image and track objects
-                sight = self.__yolo_process_image(image_dict)
+                sight = self.__yolo_process_image(image_dict, model)
                 # the string slice strips the / off the front of the camera_location
                 results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
                 self.send_command(results, self.cmd_topic, qos=0)
@@ -131,12 +130,14 @@ class YoloDetect(Thread, MQTTClient):
         """
         Start a separate tracking thread for each camera.
         """
+        self.logger.debug(f"YOLOv8 model started with {self.model_config}")
         for camera_key in self.cam_configs.keys():
-            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,), daemon=True)
+            model = YOLO(self.model_config)
+            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key, model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
-    def __yolo_process_image(self, image_dict):
+    def __yolo_process_image(self, image_dict, model):
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
@@ -144,7 +145,7 @@ class YoloDetect(Thread, MQTTClient):
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
 
         # Process the image using YOLO tracking
-        results = self.model.track(source=image, device="cuda", tracker=self.tracker_yaml)
+        results = model.track(source=image, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
 
         # Annotating and sending the processed image
