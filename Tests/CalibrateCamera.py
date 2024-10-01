@@ -1,12 +1,15 @@
 import time
-from picamera2 import PiCamera2
+from picamera2 import Picamera2
 
 # Initialize the camera
-camera = PiCamera2(0)
+picam2 = Picamera2(0)
 
-# Set the camera resolution (you can adjust this as needed)
-camera.resolution = (1920, 1080)  # Full HD resolution
-camera.framerate = 30
+# Configure the camera for still image capture
+config = picam2.create_still_configuration()
+picam2.configure(config)
+
+# Start the camera
+picam2.start()
 
 # Allow the camera to warm up
 print("Warming up the camera...")
@@ -16,9 +19,10 @@ try:
     for i in range(30):
         filename = f'calibration_image_{i+1:02d}.jpg'
         print(f"Capturing {filename}")
-        camera.capture(filename)
+        # Capture the image and save to file
+        picam2.capture_file(filename)
         time.sleep(1)  # Wait for 1 second before capturing the next image
     print("Image capture complete.")
 finally:
-    # Release the camera resources
-    camera.close()
+    # Stop the camera
+    picam2.stop()
