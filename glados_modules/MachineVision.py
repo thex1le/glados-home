@@ -7,6 +7,7 @@ from datetime import datetime
 import cv2
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
+import numpy as np
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -53,10 +54,23 @@ class YoloDetect(Thread, MQTTClient):
 
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
+        self.correction_matrix = {CameraEnum.CAMERA_HEAD.value: {CameraEnum.CAMERA_HEAD_MATRIX.value:
+                                  self.configfile[CameraEnum.CAMERA_HEAD_MATRIX.value],
+                                  CameraEnum.CAMERA_HEAD_COEFFS.value:
+                                  self.configfile[CameraEnum.CAMERA_HEAD_COEFFS.value]},
+                                  CameraEnum.CAMERA_LEFT.value: {CameraEnum.CAMERA_LEFT_MATRIX.value:
+                                  self.configfile[CameraEnum.CAMERA_LEFT_MATRIX.value],
+                                  CameraEnum.CAMERA_LEFT_COEFFS.value:
+                                  self.configfile[CameraEnum.CAMERA_LEFT_COEFFS.value]},
+                                  CameraEnum.CAMERA_RIGHT.value: {CameraEnum.CAMERA_RIGHT_MATRIX.value:
+                                  self.configfile[CameraEnum.CAMERA_RIGHT_MATRIX.value],
+                                  CameraEnum.CAMERA_RIGHT_COEFFS.value:
+                                  self.configfile[CameraEnum.CAMERA_RIGHT_COEFFS.value]}}
         model = configfile["YOLO"]["model"]
         self.tracker_yaml = configfile["YOLO"]["tracker"]
 
         self.logger.debug(f"YOLOv8 model started with {model}")
+        # TODO create different model instances
         self.model = YOLO(model)
 
         # Image receiver setup
@@ -69,7 +83,6 @@ class YoloDetect(Thread, MQTTClient):
             status = CameraMessageBuilder.send_status(key, msg)
             self.send_command(status, self.status_topic)
             self.logger.info(msg)
-
         self.rtsp = RTSPServer(self.cam_configs)
 
     def __translate_results(self, results):

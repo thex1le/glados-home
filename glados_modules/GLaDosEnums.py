@@ -76,6 +76,12 @@ class CameraEnum(Enum):
     CAMERA_HEAD_FOCAL: int = 70
     CAMERA_RIGHT_FOCAL: int = 160
     CAMERA_LEFT_FOCAL: int = 160
+    CAMERA_HEAD_MATRIX: str = "camera_head_matrix"
+    CAMERA_HEAD_COEFFS: str = "camera_head_coeffs"
+    CAMERA_LEFT_MATRIX: str = "camera_left_matrix"
+    CAMERA_LEFT_COEFFS: str = "camera_left_coeffs"
+    CAMERA_RIGHT_MATRIX: str = "camera_right_matrix"
+    CAMERA_RIGHT_COEFFS: str = "camera_right_coeffs"
 
 
 class TrackingEnums(Enum):
