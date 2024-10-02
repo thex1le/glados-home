@@ -54,7 +54,7 @@ class YoloDetect(Thread, MQTTClient):
 
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
-        self.config_cam = CameraEnum.CONFIG_HEAD.value
+        self.config_cam = self.configfile[CameraEnum.CONFIG_HEAD.value]
         self.correction_matrix = {CameraEnum.CAMERA_HEAD.value: {CameraEnum.CAMERA_MATRIX.value:
                                   np.load(self.config_cam[CameraEnum.CAMERA_HEAD_MATRIX.value]),
                                   CameraEnum.CAMERA_COEFFS.value:
