@@ -5,7 +5,7 @@ from picamera2 import Picamera2
 picam2 = Picamera2(0)
 
 # Configure the camera for still image capture
-config = picam2.create_still_configuration()
+config = picam2.create_still_configuration(main={"size": (640, 480)})
 picam2.configure(config)
 
 # Start the camera
