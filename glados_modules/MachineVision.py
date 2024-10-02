@@ -68,13 +68,10 @@ class YoloDetect(Thread, MQTTClient):
                                   CameraEnum.CAMERA_COEFFS.value:
                                   self.__np_load(CameraEnum.CAMERA_RIGHT_COEFFS.value)}
                                   }
-        model = configfile["YOLO"]["model"]
+        self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
+        self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         self.model_config = configfile["YOLO"]["model"]
         self.tracker_yaml = configfile["YOLO"]["tracker"]
-
-        self.logger.debug(f"YOLOv8 model started with {model}")
-        self.logger.debug(f"YOLOv8 model started with {self.model_config}")
-        self.model = YOLO(self.model_config)
 
         # Image receiver setup
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx")
