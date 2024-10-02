@@ -171,7 +171,7 @@ class YoloDetect(Thread, MQTTClient):
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
         # attempt to un-distort the image
-        image_corrected = self.__image_undistorted(width, height, image, camera_location)
+        image_corrected = self.__image_undistorted(width, height, image, camera_location[1:])
         # Process the image using YOLO tracking
         results = model.track(source=image_corrected, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
