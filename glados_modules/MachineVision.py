@@ -71,8 +71,6 @@ class YoloDetect(Thread, MQTTClient):
         self.tracker_yaml = configfile["YOLO"]["tracker"]
 
         self.logger.debug(f"YOLOv8 model started with {model}")
-        # TODO create different model instances
-        self.model = YOLO(model)
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
         self.model = YOLO(self.model_config)
 
