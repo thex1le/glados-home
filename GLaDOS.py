@@ -204,7 +204,6 @@ class MotionTrack(MQTTClient):
         if return_message is True:
             return body_movement, mv_list
 
-
     def hang_around(self) -> None:
         # rotate to the center point and then hang with head slightly picked up
         # this is expected to get called when there is nothing else to do so not waiting or blocking for movement
