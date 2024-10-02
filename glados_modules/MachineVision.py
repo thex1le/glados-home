@@ -54,18 +54,19 @@ class YoloDetect(Thread, MQTTClient):
 
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
-        self.correction_matrix = {CameraEnum.CAMERA_HEAD.value: {CameraEnum.CAMERA_HEAD_MATRIX.value:
-                                  self.configfile[CameraEnum.CAMERA_HEAD_MATRIX.value],
-                                  CameraEnum.CAMERA_HEAD_COEFFS.value:
-                                  self.configfile[CameraEnum.CAMERA_HEAD_COEFFS.value]},
-                                  CameraEnum.CAMERA_LEFT.value: {CameraEnum.CAMERA_LEFT_MATRIX.value:
-                                  self.configfile[CameraEnum.CAMERA_LEFT_MATRIX.value],
-                                  CameraEnum.CAMERA_LEFT_COEFFS.value:
-                                  self.configfile[CameraEnum.CAMERA_LEFT_COEFFS.value]},
-                                  CameraEnum.CAMERA_RIGHT.value: {CameraEnum.CAMERA_RIGHT_MATRIX.value:
-                                  self.configfile[CameraEnum.CAMERA_RIGHT_MATRIX.value],
-                                  CameraEnum.CAMERA_RIGHT_COEFFS.value:
-                                  self.configfile[CameraEnum.CAMERA_RIGHT_COEFFS.value]}}
+        self.correction_matrix = {CameraEnum.CAMERA_HEAD.value: {CameraEnum.CAMERA_MATRIX.value:
+                                  np.load(self.configfile[CameraEnum.CAMERA_MATRIX.value]),
+                                  CameraEnum.CAMERA_COEFFS.value:
+                                  np.load(self.configfile[CameraEnum.CAMERA_COEFFS.value])},
+                                  CameraEnum.CAMERA_LEFT.value: {CameraEnum.CAMERA_MATRIX.value:
+                                  np.load(self.configfile[CameraEnum.CAMERA_MATRIX.value]),
+                                  CameraEnum.CAMERA_COEFFS.value:
+                                  np.load(self.configfile[CameraEnum.CAMERA_COEFFS.value])},
+                                  CameraEnum.CAMERA_RIGHT.value: {CameraEnum.CAMERA_MATRIX.value:
+                                  np.load(self.configfile[CameraEnum.CAMERA_MATRIX.value]),
+                                  CameraEnum.CAMERA_COEFFS.value:
+                                  np.load(self.configfile[CameraEnum.CAMERA_COEFFS.value])}
+                                  }
         model = configfile["YOLO"]["model"]
         self.model_config = configfile["YOLO"]["model"]
         self.tracker_yaml = configfile["YOLO"]["tracker"]
@@ -154,19 +155,26 @@ class YoloDetect(Thread, MQTTClient):
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
+    def __image_undistort(self, w: int, h: int, image, camera_location: str):
+        # Get the optimal new camera matrix
+        camera_matrix = self.correction_matrix[camera_location][CameraEnum.CAMERA_MATRIX.value]
+        dist_coeffs = self.correction_matrix[camera_location][CameraEnum.CAMERA_COEFFS.value]
+        new_camera_mtx, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, dist_coeffs, (w, h), 1, (w, h))
+        return cv2.undistort(image, camera_matrix, dist_coeffs, None, new_camera_mtx)
+
     def __yolo_process_image(self, image_dict, model):
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
-
+        # attempt to undistort the image
+        image_corrected = self.__image_undistort(width, height, image, camera_location)
         # Process the image using YOLO tracking
-        results = model.track(source=image, device="cuda", tracker=self.tracker_yaml)
+        results = model.track(source=image_corrected, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
 
         # Annotating and sending the processed image
-        annotator = Annotator(image)
+        annotator = Annotator(image_corrected)
         image_center = (width // 2, height // 2)
         cv2.line(image, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0),
                  2)
