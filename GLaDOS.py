@@ -387,11 +387,11 @@ class MotionTrack(MQTTClient):
         if camera == CameraEnum.CAMERA_RIGHT.value:
             fov = CameraEnum.CAMERA_RIGHT_FOCAL.value
             # account for fisheye
-            offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
+            #offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         if camera == CameraEnum.CAMERA_LEFT.value:
             fov = CameraEnum.CAMERA_LEFT_FOCAL.value
             # account for fisheye
-            offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
+            #offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
         # Determine the new servo angle based on the current position
         new_servo_angle = servo.current + angle_adjustment
