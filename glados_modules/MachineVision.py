@@ -191,7 +191,7 @@ class YoloDetect(Thread, MQTTClient):
                 x1, y1, x2, y2 = map(int, b.tolist())
                 c = box.cls
                 conf = box.conf.item()
-                label = f"{self.model.names[int(c)]} {conf:.2f}"
+                label = f"{model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
                 self.logger.debug(f"Labeled image with {label}")
                 center_x = int((x1 + x2) / 2)
