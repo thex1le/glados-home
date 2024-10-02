@@ -55,17 +55,17 @@ class YoloDetect(Thread, MQTTClient):
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
         self.correction_matrix = {CameraEnum.CAMERA_HEAD.value: {CameraEnum.CAMERA_MATRIX.value:
-                                  np.load(self.configfile[CameraEnum.CAMERA_MATRIX.value]),
+                                  np.load(self.configfile[CameraEnum.CAMERA_HEAD_MATRIX.value]),
                                   CameraEnum.CAMERA_COEFFS.value:
-                                  np.load(self.configfile[CameraEnum.CAMERA_COEFFS.value])},
+                                  np.load(self.configfile[CameraEnum.CAMERA_HEAD_COEFFS.value])},
                                   CameraEnum.CAMERA_LEFT.value: {CameraEnum.CAMERA_MATRIX.value:
-                                  np.load(self.configfile[CameraEnum.CAMERA_MATRIX.value]),
+                                  np.load(self.configfile[CameraEnum.CAMERA_LEFT_MATRIX.value]),
                                   CameraEnum.CAMERA_COEFFS.value:
-                                  np.load(self.configfile[CameraEnum.CAMERA_COEFFS.value])},
+                                  np.load(self.configfile[CameraEnum.CAMERA_LEFT_COEFFS.value])},
                                   CameraEnum.CAMERA_RIGHT.value: {CameraEnum.CAMERA_MATRIX.value:
-                                  np.load(self.configfile[CameraEnum.CAMERA_MATRIX.value]),
+                                  np.load(self.configfile[CameraEnum.CAMERA_RIGHT_MATRIX.value]),
                                   CameraEnum.CAMERA_COEFFS.value:
-                                  np.load(self.configfile[CameraEnum.CAMERA_COEFFS.value])}
+                                  np.load(self.configfile[CameraEnum.CAMERA_RIGHT_COEFFS.value])}
                                   }
         model = configfile["YOLO"]["model"]
         self.model_config = configfile["YOLO"]["model"]
