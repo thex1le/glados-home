@@ -179,9 +179,9 @@ class YoloDetect(Thread, MQTTClient):
         # Annotating and sending the processed image
         annotator = Annotator(image_corrected)
         image_center = (width // 2, height // 2)
-        cv2.line(image, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0),
+        cv2.line(image_corrected, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0),
                  2)
-        cv2.line(image, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10), (0, 255, 0),
+        cv2.line(image_corrected, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10), (0, 255, 0),
                  2)
 
         for r in results:
@@ -198,9 +198,9 @@ class YoloDetect(Thread, MQTTClient):
                 center_y = int((y1 + y2) / 2)
                 object_center = (center_x, center_y)
                 color_current = (0, 0, 255)
-                cv2.circle(image, object_center, radius=5, color=color_current, thickness=-1)
+                cv2.circle(image_corrected, object_center, radius=5, color=color_current, thickness=-1)
                 self.logger.debug(f"Drew circle at {object_center} (center of bounding box).")
-                cv2.arrowedLine(image, object_center, image_center, color=(255, 0, 0), thickness=2)
+                cv2.arrowedLine(image_corrected, object_center, image_center, color=(255, 0, 0), thickness=2)
                 self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
 
         a_image = annotator.result()
