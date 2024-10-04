@@ -163,10 +163,7 @@ class YoloDetect(Thread, MQTTClient):
         camera_matrix = self.correction_matrix[camera_location][CameraEnum.CAMERA_MATRIX.value]
         dist_coeffs = self.correction_matrix[camera_location][CameraEnum.CAMERA_COEFFS.value]
         new_camera_mtx, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, dist_coeffs, (w, h), 1, (w, h))
-        img = cv2.undistort(image, camera_matrix, dist_coeffs, None, new_camera_mtx)
-        # crop the un-distortion
-        x, y, w, h = roi
-        return img[y:y + h, x:x + w]
+        return cv2.undistort(image, camera_matrix, dist_coeffs, None, new_camera_mtx)
 
     def __yolo_process_image(self, image_dict, model):
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
