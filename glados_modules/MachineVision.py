@@ -203,14 +203,14 @@ class YoloDetect(Thread, MQTTClient):
                 cv2.arrowedLine(image, object_center, image_center, color=(255, 0, 0), thickness=2)
                 self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
 
-        #a_image = annotator.result()
+        a_image = annotator.result()
         timestamp = datetime.now().isoformat(timespec='seconds')
         yellow_orange_color = (0, 140, 255)
-        position = (10, image.shape[0] - 10)
-        cv2.putText(image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
+        position = (10, a_image.shape[0] - 10)
+        cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=1, color=yellow_orange_color, thickness=2)
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
-        self.rtsp.send_data(image_dict["camera"], image)
+        self.rtsp.send_data(image_dict["camera"], a_image)
         return results
 
     def run(self):
