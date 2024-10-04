@@ -21,7 +21,7 @@ try:
         print(f"Capturing {filename}")
         # Capture the image and save to file
         picam2.capture_file(filename)
-        time.sleep(1)  # Wait for 1 second before capturing the next image
+        time.sleep(3)  # Wait for 1 second before capturing the next image
     print("Image capture complete.")
 finally:
     # Stop the camera
