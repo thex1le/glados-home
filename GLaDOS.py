@@ -391,7 +391,7 @@ class MotionTrack(MQTTClient):
             fov = CameraEnum.CAMERA_RIGHT_FOV.value
             if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
                 mounting_angle = 55
-            #direction_factor = 1
+                direction_factor = 1
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         if camera == CameraEnum.CAMERA_LEFT.value:
