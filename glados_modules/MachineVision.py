@@ -184,6 +184,8 @@ class YoloDetect(Thread, MQTTClient):
         position = (10, a_image.shape[0] - 10)
         cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=1, color=yellow_orange_color, thickness=2)
+        position = (10, 10)
+        cv2.putText(a_image, camera_location, position, cv2.FONT_HERSHEY_SIMPLEX)
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
