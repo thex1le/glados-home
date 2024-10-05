@@ -413,7 +413,7 @@ class MotionTrack(MQTTClient):
 # we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
 # body needs to calculate rotation distance to track correctly
 
-    def __dead_zone_check(self, servo, new_angle, degree_diff=2):
+    def __dead_zone_check(self, servo, new_angle, degree_diff=2) -> bool:
         move = False
         current_angle = servo.current
         difference = 0
@@ -466,7 +466,13 @@ class MotionTrack(MQTTClient):
                    servo1.move(self.servos[servo1.name].middle)]
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # servo 1, servo 2
-        return self.servos[servo1.name].middle, angle
+        if abs(self.servos[servo1.name].middle - angle) > self.dead_zone_factor:
+            servo1_move = self.servos[servo1.name].middle
+            servo2_move = angle
+        else:
+            servo1_move = self.servos[servo1.name].current
+            servo2_move = self.servos[servo2.name].current
+        return servo1_move, servo2_move
 
     def __mirror_calc(self, servo_angle) -> int:
         """
