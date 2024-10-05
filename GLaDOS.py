@@ -787,6 +787,8 @@ if __name__ == "__main__":
     left_camera = Camera(configfile=configp, location=left_camera_location)
     right_camera = Camera(configfile=configp, location=right_camera_location)
     left_camera.start()
+    # give time for first camera to start before we spin up the second
+    time.sleep(5)
     right_camera.start()
     while True:
         prompt = gstt.get_text()
