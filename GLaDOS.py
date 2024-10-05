@@ -400,8 +400,8 @@ class MotionTrack(MQTTClient):
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
         # Determine the new servo angle based on the current position, and camera that saw it
         if camera in (CameraEnum.CAMERA_LEFT.value, CameraEnum.CAMERA_RIGHT.value):
-            self.logger.debug(f"Left or Right camera calc is {servo.current+angle_adjustment} \
-             before mounting correction of {mounting_angle}")
+            self.logger.debug(f"Left or Right camera calc is {servo.current+angle_adjustment}" +
+                              "before mounting correction of {mounting_angle}")
         new_servo_angle = (servo.current + angle_adjustment) + mounting_angle
         # Clamp the new angle within servo's min and max
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
