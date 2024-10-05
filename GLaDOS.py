@@ -382,6 +382,7 @@ class MotionTrack(MQTTClient):
         # get the right focal from ENUMS
         fov = 54
         mounting_angle = 0
+        current = servo.current
         if camera == CameraEnum.CAMERA_HEAD.value:
             if servo.axis == ServoEnum.X_AXIS.value:
                 fov = CameraEnum.CAMERA_HEAD_FOV_X.value  # Camera's field of view in degrees
@@ -391,23 +392,28 @@ class MotionTrack(MQTTClient):
             fov = CameraEnum.CAMERA_RIGHT_FOV.value
             if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
                 mounting_angle = 55
-                direction_factor = 1
+                current = 90
+                #direction_factor = 1
+                # make calculations off 90
+
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         if camera == CameraEnum.CAMERA_LEFT.value:
             fov = CameraEnum.CAMERA_LEFT_FOV.value
             if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
                 mounting_angle = -55
-            #direction_factor = 1
+                current = 90
+                #direction_factor = 1
+                # make calcuations off 90
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
         # Determine the new servo angle based on the current position, and camera that saw it
         if camera in (CameraEnum.CAMERA_LEFT.value, CameraEnum.CAMERA_RIGHT.value):
-            self.logger.debug(f"Side camera calc is currently at {servo.current} with an adjustment of {angle_adjustment} " +
+            self.logger.debug(f"Side camera calc is currently at {current} with an adjustment of {angle_adjustment} " +
                               f"before mounting correction of {mounting_angle} and " +
                               f"a direction angle of {direction_factor}")
-        new_servo_angle = servo.current + angle_adjustment + mounting_angle
+        new_servo_angle = current + angle_adjustment + mounting_angle
         # Clamp the new angle within servo's min and max
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
