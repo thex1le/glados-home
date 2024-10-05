@@ -143,7 +143,8 @@ class MotionTrack(MQTTClient):
                     target_ts = vision_map[camera].get(VisionResultsEnum.VISION_RESULTS_TS_KEY.value, None)
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                         self.logger.debug(f"Ready to move all servos for " +
-                                          f"target {self.target} message times stamp {target_ts}")
+                                          f"target {self.target} message times stamp {target_ts}" +
+                                          f"for {camera}")
                         self.move_all_servos(target_bounding, camera)
                         with self._lock:
                             self.side_camera_count = 0
