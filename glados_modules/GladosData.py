@@ -115,6 +115,8 @@ class VisionTracker(MQTTClient):
         self.target = target
         self.tracker_callback = tracker_callback
         self.confidence_score = confidence
+        # TODO get side confidence from config file
+        self.side_confidence_score = .5
         self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.main_camera = CameraEnum.CONFIG_HEAD.value
         self.left_camera = CameraEnum.CAMERA_LEFT.value
@@ -162,7 +164,11 @@ class VisionTracker(MQTTClient):
             with self._lock:
                 for p in sight_results[self.target][self.objects_key]:
                     c = p.get(self.confidence_key, 0.0)
-                    if float(c) >= self.confidence_score:
+                    if camera == CameraEnum.CAMERA_HEAD.value:
+                        cf_score = self.confidence_score
+                    elif camera in (CameraEnum.CAMERA_RIGHT.value, CameraEnum.CAMERA_LEFT.value):
+                        cf_score = self.side_confidence_score
+                    if float(c) >= cf_score:
                         self.logger.debug(f"Confidence of {c} found for {self.target}")
                         # Update response_map
                         self.response_map[camera] = sight_results
