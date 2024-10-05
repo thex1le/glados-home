@@ -382,7 +382,7 @@ class MotionTrack(MQTTClient):
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalize between -1 and 1
         # Calculate angle adjustment based on camera field of view (FOV)
         # get the right focal from ENUMS
-        fov = 70
+        fov = 54
         if camera == CameraEnum.CAMERA_HEAD.value:
             fov = CameraEnum.CAMERA_HEAD_FOCAL.value  # Camera's field of view in degrees
         if camera == CameraEnum.CAMERA_RIGHT.value:
