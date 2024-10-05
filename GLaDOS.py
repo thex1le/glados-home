@@ -157,7 +157,7 @@ class MotionTrack(MQTTClient):
                             with self._lock:
                                 self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
-                            time.sleep(5)
+                            time.sleep(3)
                         else:
                             # move to just hang around
                             if self.hanging is False:
