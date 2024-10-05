@@ -390,13 +390,13 @@ class MotionTrack(MQTTClient):
         if camera == CameraEnum.CAMERA_RIGHT.value:
             fov = CameraEnum.CAMERA_RIGHT_FOV.value
             mounting_angle = 55
-            direction_factor = 1
+            #direction_factor = 1
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         if camera == CameraEnum.CAMERA_LEFT.value:
             fov = CameraEnum.CAMERA_LEFT_FOV.value
             mounting_angle = -55
-            direction_factor = 1
+            #direction_factor = 1
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
@@ -405,7 +405,7 @@ class MotionTrack(MQTTClient):
             self.logger.debug(f"Side camera calc is {servo.current} with an adjustment of {angle_adjustment} " +
                               f"before mounting correction of {mounting_angle} and " +
                               f"a direction angle of {direction_factor}")
-        new_servo_angle = (servo.current + angle_adjustment) + mounting_angle
+        new_servo_angle = servo.current + angle_adjustment + mounting_angle
         # Clamp the new angle within servo's min and max
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
