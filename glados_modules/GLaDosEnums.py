@@ -41,6 +41,8 @@ class ServoEnum(Enum):
     MSG_MIDDLE: str = "middle"
     MSG_CURRENT_ANGLE: str = "current"
     MSG_AXIS: str = "axis"
+    X_AXIS: str = "x"
+    Y_AXIS: str = "y"
     MQTT_COMMAND_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}"
     MQTT_STATUS_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
 

@@ -356,7 +356,7 @@ class MotionTrack(MQTTClient):
 
     def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
         # Determine axis and image dimensions
-        if servo.axis == 'x':
+        if servo.axis == ServoEnum.X_AXIS.value:
             bbox_edge_1 = bbox['x1']
             bbox_edge_2 = bbox['x2']
             axis_size = self.cam_x
@@ -385,7 +385,7 @@ class MotionTrack(MQTTClient):
         fov = 54
         mounting_angle = 0
         if camera == CameraEnum.CAMERA_HEAD.value:
-            if servo.axis == 'x':
+            if servo.axis == ServoEnum.X_AXIS.value:
                 fov = CameraEnum.CAMERA_HEAD_FOV_X.value  # Camera's field of view in degrees
             else:
                 fov = CameraEnum.CAMERA_HEAD_FOV_Y.value
