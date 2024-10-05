@@ -152,7 +152,7 @@ class MotionTrack(MQTTClient):
                     elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
                         if self.side_camera_count <= 5:
                             self.logger.debug(f"Rotating Body to face target {self.target}")
-                            self.rotate_body(target=target_bounding, camera=camera, flip=True)
+                            self.rotate_body(target=target_bounding, camera=camera, flip=False)
                             with self._lock:
                                 self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
