@@ -131,8 +131,8 @@ class VisionTracker(MQTTClient):
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         # Call the superclass constructor
         super().__init__(ip=broker.ip, port=broker.port)
-        # Use a time cache and expire any vision tracking objects after 1 minute
-        self.response_cache = TTLCache(maxsize=1000, ttl=60)
+        # Use a time cache and expire any vision tracking objects after 10 seconds
+        self.response_cache = TTLCache(maxsize=200, ttl=10)
         self.response_map = dict()
         # Tracking variables
         self.head_target = False
