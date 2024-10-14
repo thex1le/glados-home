@@ -143,7 +143,8 @@ class MotionTrack(MQTTClient):
                     target_ts = vision_map[camera].get(VisionResultsEnum.VISION_RESULTS_TS_KEY.value, None)
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                         self.logger.debug(f"Ready to move all servos for " +
-                                          f"target {self.target} message times stamp {target_ts}")
+                                          f"target {self.target} message times stamp {target_ts}" +
+                                          f"for {camera}")
                         self.move_all_servos(target_bounding, camera)
                         with self._lock:
                             self.side_camera_count = 0
@@ -156,7 +157,7 @@ class MotionTrack(MQTTClient):
                             with self._lock:
                                 self.side_camera_count += 1
                             # hold for a while to let main camera capture targets
-                            time.sleep(5)
+                            time.sleep(3)
                         else:
                             # move to just hang around
                             if self.hanging is False:
@@ -257,8 +258,6 @@ class MotionTrack(MQTTClient):
             self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
             # level the body
             servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
-            # TODO you left off here chasing small movements because we don't calculate fudge factor
-            #  for leveling distances
             self.logger.debug("Leveling out body")
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             body_level.update(body_movement)
@@ -383,6 +382,7 @@ class MotionTrack(MQTTClient):
         # get the right focal from ENUMS
         fov = 54
         mounting_angle = 0
+        current = servo.current
         if camera == CameraEnum.CAMERA_HEAD.value:
             if servo.axis == ServoEnum.X_AXIS.value:
                 fov = CameraEnum.CAMERA_HEAD_FOV_X.value  # Camera's field of view in degrees
@@ -390,20 +390,30 @@ class MotionTrack(MQTTClient):
                 fov = CameraEnum.CAMERA_HEAD_FOV_Y.value
         if camera == CameraEnum.CAMERA_RIGHT.value:
             fov = CameraEnum.CAMERA_RIGHT_FOV.value
-            mounting_angle = 55
+            if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
+                mounting_angle = 55
+                current = 90
+                #direction_factor = 1
+                # make calculations off 90
+
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         if camera == CameraEnum.CAMERA_LEFT.value:
             fov = CameraEnum.CAMERA_LEFT_FOV.value
-            mounting_angle = -55
+            if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
+                mounting_angle = -55
+                current = 90
+                #direction_factor = 1
+                # make calcuations off 90
             # account for fisheye
             offset_proportion = MotionTrack.fisheye_correction(offset_proportion=offset_proportion, fov=fov)
         angle_adjustment = direction_factor * offset_proportion * (fov / 2)  # Adjust for FOV
         # Determine the new servo angle based on the current position, and camera that saw it
         if camera in (CameraEnum.CAMERA_LEFT.value, CameraEnum.CAMERA_RIGHT.value):
-            self.logger.debug(f"Left or Right camera calc is {servo.current+angle_adjustment} \
-             before mounting correction of {mounting_angle}")
-        new_servo_angle = (servo.current + angle_adjustment) + mounting_angle
+            self.logger.debug(f"Side camera calc is currently at {current} with an adjustment of {angle_adjustment} " +
+                              f"before mounting correction of {mounting_angle} and " +
+                              f"a direction angle of {direction_factor}")
+        new_servo_angle = current + angle_adjustment + mounting_angle
         # Clamp the new angle within servo's min and max
         new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
         # Round to the nearest whole number
@@ -412,7 +422,7 @@ class MotionTrack(MQTTClient):
 # we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
 # body needs to calculate rotation distance to track correctly
 
-    def __dead_zone_check(self, servo, new_angle, degree_diff=2):
+    def __dead_zone_check(self, servo, new_angle, degree_diff=2) -> bool:
         move = False
         current_angle = servo.current
         difference = 0
@@ -465,7 +475,13 @@ class MotionTrack(MQTTClient):
                    servo1.move(self.servos[servo1.name].middle)]
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # servo 1, servo 2
-        return self.servos[servo1.name].middle, angle
+        if abs(self.servos[servo1.name].middle - angle) > self.dead_zone_factor:
+            servo1_move = self.servos[servo1.name].middle
+            servo2_move = angle
+        else:
+            servo1_move = self.servos[servo1.name].current
+            servo2_move = self.servos[servo2.name].current
+        return servo1_move, servo2_move
 
     def __mirror_calc(self, servo_angle) -> int:
         """
