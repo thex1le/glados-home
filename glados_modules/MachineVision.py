@@ -7,6 +7,11 @@ from datetime import datetime
 import cv2
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
+import numpy as np
+import torch
+from mmpose.api import inference_top_down_pose_model, init_pose_model, vis_pose_result
+from mmpose.datasets import DatasetInfo
+from mmpose.core.post_processing import get_group_preds
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -50,14 +55,20 @@ class YoloDetect(Thread, MQTTClient):
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
                 "tracker_thread": None}
         }
+        # pose model
+        self.coco_key_points = ["Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear",
+                                "Left Shoulder", "Right Shoulder", "Left Elbow", "Right Elbow",
+                                "Left Wrist", "Right Wrist", "Left Hip", "Right Hip",
+                                "Left Knee", "Right Knee", "Left Ankle", "Right Ankle"]
 
+        # rtsp
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
         self.rtsp_server_ip = self.configfile['RTSP']['rtsp_server_ip']
+        # yolo
         self.model_config = configfile["YOLO"]["model"]
         self.tracker_yaml = configfile["YOLO"]["tracker"]
 
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
-        self.model = YOLO(self.model_config)
 
         # Image receiver setup
         self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx")
@@ -166,7 +177,7 @@ class YoloDetect(Thread, MQTTClient):
                 x1, y1, x2, y2 = map(int, b.tolist())
                 c = box.cls
                 conf = box.conf.item()
-                label = f"{self.model.names[int(c)]} {conf:.2f}"
+                label = f"{model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
                 self.logger.debug(f"Labeled image with {label}")
                 center_x = int((x1 + x2) / 2)
