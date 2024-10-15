@@ -154,10 +154,10 @@ class YoloDetect(Thread, MQTTClient):
         # Annotating and sending the processed image
         annotator = Annotator(image)
         image_center = (width // 2, height // 2)
-        cv2.line(image, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0),
-                 2)
-        cv2.line(image, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10), (0, 255, 0),
-                 2)
+        cv2.line(image, (image_center[0] - 10, image_center[1]),
+                 (image_center[0] + 10, image_center[1]), (0, 255, 0),2)
+        cv2.line(image, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10),
+                 (0, 255, 0),2)
 
         for r in results:
             boxes = r.boxes
