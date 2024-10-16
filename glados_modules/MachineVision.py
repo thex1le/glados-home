@@ -111,7 +111,7 @@ class YoloDetect(Thread, MQTTClient):
         self.logger.debug(f"Translated results: {results_dict}")
         return results_dict
 
-    def run_tracker_for_camera(self, camera_key, model):
+    def run_tracker_for_camera(self, camera_key, d_model, p_model):
         """
         Each camera has its own YOLO tracker running in a separate thread.
         """
@@ -126,7 +126,7 @@ class YoloDetect(Thread, MQTTClient):
                     continue
                 self.logger.debug(f"Processing image from {camera_location}")
                 # Process the image and track objects
-                sight = self.__yolo_process_image(image_dict, model)
+                sight = self.__yolo_process_image(image_dict, d_model, p_model)
                 # the string slice strips the / off the front of the camera_location
                 results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
                 self.send_command(results, self.cmd_topic, qos=0)
