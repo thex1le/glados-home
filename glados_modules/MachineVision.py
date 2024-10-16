@@ -7,11 +7,8 @@ from datetime import datetime
 import cv2
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
-import numpy as np
-import torch
-from mmpose.api import inference_top_down_pose_model, init_pose_model, vis_pose_result
-from mmpose.datasets import DatasetInfo
-from mmpose.core.post_processing import get_group_preds
+# get this here, https://github.com/Tau-J/rtmlib/tree/main
+from rtmlib import Wholebody, draw_skeleton
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -145,13 +142,19 @@ class YoloDetect(Thread, MQTTClient):
         Start a separate tracking thread for each camera.
         """
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
+        pose_model = None
         for camera_key in self.cam_configs.keys():
-            model = YOLO(self.model_config)
-            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key, model), daemon=True)
+            detection_model = YOLO(self.model_config)
+            if camera_key == CameraEnum.CAMERA_HEAD.value:
+                # only build a pose model for the camera head
+                openpose_skeleton = False  # True for openpose-style, False for mmpose-style
+                backend = 'onnxruntime'  # opencv, onnxruntime, openvino
+                pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
+            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key, detection_model, pose_model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
-    def __yolo_process_image(self, image_dict, model):
+    def __yolo_process_image(self, image_dict, d_model, p_model) -> dict:
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
@@ -159,9 +162,8 @@ class YoloDetect(Thread, MQTTClient):
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
 
         # Process the image using YOLO tracking
-        results = model.track(source=image, device="cuda", tracker=self.tracker_yaml)
+        results = d_model.track(source=image, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
-
         # Annotating and sending the processed image
         annotator = Annotator(image)
         image_center = (width // 2, height // 2)
@@ -177,7 +179,7 @@ class YoloDetect(Thread, MQTTClient):
                 x1, y1, x2, y2 = map(int, b.tolist())
                 c = box.cls
                 conf = box.conf.item()
-                label = f"{model.names[int(c)]} {conf:.2f}"
+                label = f"{d_model.names[int(c)]} {conf:.2f}"
                 annotator.box_label(b, label)
                 self.logger.debug(f"Labeled image with {label}")
                 center_x = int((x1 + x2) / 2)
@@ -198,6 +200,13 @@ class YoloDetect(Thread, MQTTClient):
         position = (10, 10)
         cv2.putText(a_image, camera_location, position, cv2.FONT_HERSHEY_SIMPLEX, fontScale=1,
                     color=yellow_orange_color, thickness=2)
+        if p_model is not None:
+            # we have a model, must be head camera, run model and draw points
+            key_points, scores = p_model(image)
+            # TODO read key point threshold from enum or config file
+            a_image = draw_skeleton(a_image, key_points, scores, kpt_thr=0.5)
+            print(key_points)
+            print(scores)
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
