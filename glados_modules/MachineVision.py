@@ -24,7 +24,7 @@ class GLaDOSServerException(Exception):
     pass
 
 
-class YoloDetect(Thread, MQTTClient):
+class MLDetect(Thread, MQTTClient):
     def __init__(self, configfile):
         # Internal initialization
         Thread.__init__(self)
