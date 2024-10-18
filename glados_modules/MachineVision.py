@@ -145,8 +145,9 @@ class YoloDetect(Thread, MQTTClient):
         pose_model = None
         for camera_key in self.cam_configs.keys():
             detection_model = YOLO(self.model_config)
-            if camera_key == CameraEnum.CAMERA_HEAD.value:
+            if camera_key[1:] == CameraEnum.CAMERA_HEAD.value:
                 # only build a pose model for the camera head
+                self.logger.debug("Creating Pose model")
                 openpose_skeleton = False  # True for openpose-style, False for mmpose-style
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
