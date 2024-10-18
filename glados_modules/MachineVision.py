@@ -2,6 +2,7 @@ from json import loads as json_loads
 from threading import Thread
 from time import time
 from datetime import datetime
+from typing import List, Dict, Any
 
 # 3rd party
 import cv2
@@ -9,6 +10,7 @@ from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
+import numpy as np
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -151,7 +153,8 @@ class YoloDetect(Thread, MQTTClient):
                 openpose_skeleton = False  # True for openpose-style, False for mmpose-style
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
-            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key, detection_model, pose_model), daemon=True)
+            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
+                                                                      detection_model, pose_model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
@@ -206,11 +209,77 @@ class YoloDetect(Thread, MQTTClient):
             key_points, scores = p_model(image)
             # TODO read key point threshold from enum or config file
             a_image = draw_skeleton(a_image, key_points, scores, kpt_thr=0.5)
-            print(key_points)
-            print(scores)
+            self.assign_key_points_to_response(results, key_points, scores)
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return results
+
+    def merge_keypoints_to_dict(self, coords_list: np.ndarray, scores_list: np.ndarray) -> List[List[Dict[str, float]]]:
+        """
+        Merges coordinates and confidence scores into a list of dictionaries for each person,
+        while tracking the index of each keypoint.
+
+        Args:
+            coords_list (np.ndarray): A list of arrays with shape (N, M, 2), where N is the number of people,
+                                      M is the number of key points, and 2 represents the (x, y) coordinates.
+            scores_list (np.ndarray): A list of arrays with shape (N, M), where N is the number of people
+                                      and M is the number of key points, representing confidence scores.
+        Returns:
+            List[List[Dict[str, float]]]: A list where each element corresponds to a person and contains a list of
+                                          dictionaries with "x", "y", "confidence", and "index" keys for each keypoint.
+        """
+        merged_data = []
+        # Iterate through each person's set of coordinates and scores
+        for coords, scores in zip(coords_list, scores_list):
+            person_data = []
+            # Loop through each keypoint, using enumerate to track the index
+            for index, ((x, y), score) in enumerate(zip(coords, scores)):
+                keypoint = {
+                    "x": float(x),
+                    "y": float(y),
+                    "confidence": float(score),
+                    "location": VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[index]}
+                person_data.append(keypoint)
+            merged_data.append(person_data)
+        return merged_data
+
+    def assign_key_points_to_response(self, response: Dict[str, Any],
+                                      coords_list: np.ndarray, scores_list: np.ndarray) -> Dict[str, Any]:
+        """
+        Assigns keypoints to the appropriate person in the response dictionary if all keypoints
+        lie within the defined bounding box.
+
+        Args:
+            response (Dict[str, Any]): The response dictionary containing objects with bounding boxes.
+            coords_list (np.ndarray): A list of arrays with shape (N, M, 2) for coordinates.
+            scores_list (np.ndarray): A list of arrays with shape (N, M) for confidence scores.
+
+        Returns:
+            Dict[str, Any]: The updated response dictionary with assigned key points.
+        """
+        # Merge the key points and scores into a list of dictionaries
+        merged_key_points = self.merge_keypoints_to_dict(coords_list, scores_list)
+
+        # Iterate over the response dictionary to find matching objects
+        count = 0
+        for person_data in response.get('person', {}).get('objects', []):
+            # Get the bounding box coordinates
+            box = person_data.get('box', {})
+            x1, y1 = box.get('x1', 0), box.get('y1', 0)
+            x2, y2 = box.get('x2', 0), box.get('y2', 0)
+            # Filter key points that fit inside the bounding box
+            filtered_key_points = []
+            for key_points in merged_key_points:
+                # Check if all key points lie within the bounding box
+                if all(x1 <= kp['x'] <= x2 and y1 <= kp['y'] <= y2 for kp in key_points):
+                    filtered_key_points = key_points
+                    break  # Assign the first matching set of key points
+
+            # Assign the filtered key points to the person data
+            if filtered_key_points:
+                response['person']['objects'][count]['pose'] = filtered_key_points
+            count += 1
+        return response
 
     def run(self):
         status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
