@@ -130,7 +130,7 @@ class MLDetect(Thread, MQTTClient):
                 # Process the image and track objects
                 sight = self.__yolo_process_image(image_dict, d_model, p_model)
                 # the string slice strips the / off the front of the camera_location
-                results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
+                results = CameraMessageBuilder.send_results(camera_location[1:], sight)
                 self.send_command(results, self.cmd_topic, qos=0)
 
             except Exception as e:
@@ -162,9 +162,7 @@ class MLDetect(Thread, MQTTClient):
         raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
-
         # Process the image using YOLO tracking
         results = d_model.track(source=image, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
@@ -204,15 +202,16 @@ class MLDetect(Thread, MQTTClient):
         position = (10, 10)
         cv2.putText(a_image, camera_location, position, cv2.FONT_HERSHEY_SIMPLEX, fontScale=1,
                     color=yellow_orange_color, thickness=2)
+        t_results = self.__translate_results(results)
         if p_model is not None:
             # we have a model, must be head camera, run model and draw points
             key_points, scores = p_model(image)
             # TODO read key point threshold from enum or config file
             a_image = draw_skeleton(a_image, key_points, scores, kpt_thr=0.5)
-            self.assign_key_points_to_response(results, key_points, scores)
+            self.assign_key_points_to_response(t_results, key_points, scores)
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
-        return results
+        return t_results
 
     def merge_keypoints_to_dict(self, coords_list: np.ndarray, scores_list: np.ndarray) -> List[List[Dict[str, float]]]:
         """
