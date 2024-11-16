@@ -131,6 +131,10 @@ class MLDetect(Thread, MQTTClient):
                 sight = self.__yolo_process_image(image_dict, d_model, p_model)
                 # the string slice strips the / off the front of the camera_location
                 results = CameraMessageBuilder.send_results(camera_location[1:], sight)
+                # you left off here... you need to take the pose detection out of yolo and do the pose and rtsp sending here
+                # then we can add the results processing to the correct results
+                # the goal is to assign the correct pose to the correct person result for multiple people
+                #results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
                 self.send_command(results, self.cmd_topic, qos=0)
 
             except Exception as e:
