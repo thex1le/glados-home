@@ -3,6 +3,7 @@ from enum import Enum
 
 class SystemEnums(Enum):
     MQTT_INTENSITY_TOPIC: str = "intensity"
+    CONFIG_HEAD: str = "MQTT"
 
 
 class VisionResultsEnum(Enum):
@@ -61,6 +62,8 @@ class CameraEnum(Enum):
     MSG_RESOLUTION: str = "resolution"
     MSG_FPS: str = "fps"
     MSG_FACTORY: str = "factory"
+    CAMERA_AI_SERVER_RX = "camera_ai_server_rx"
+    CAMERA_AI_SERVER_RX_TIMEOUT = "camera_ai_server_rx_timeout"
     CAMERA_HEAD: str = f"{MSG_LOCATION_KEY}_head"
     CAMERA_LEFT: str = f"{MSG_LOCATION_KEY}_left"
     CAMERA_RIGHT: str = f"{MSG_LOCATION_KEY}_right"
@@ -75,6 +78,9 @@ class CameraEnum(Enum):
     CAMERA_HEAD_FACTORY: str = f"{CAMERA_HEAD}_{MSG_FACTORY}"
     CAMERA_LEFT_FACTORY: str = f"{CAMERA_LEFT}_{MSG_FACTORY}"
     CAMERA_RIGHT_FACTORY: str = f"{CAMERA_RIGHT}_{MSG_FACTORY}"
+    CAMERA_HEAD_PORT: str = f"{CAMERA_HEAD}_port"
+    CAMERA_RIGHT_PORT: str = f"{CAMERA_RIGHT}_port"
+    CAMERA_LEFT_PORT: str = f"{CAMERA_LEFT}_port"
     CAMERA_HEAD_FOV_X: int = 54
     CAMERA_HEAD_FOV_Y: int = 41
     CAMERA_RIGHT_FOV: int = 160

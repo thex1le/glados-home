@@ -1,9 +1,11 @@
 # built in
 from multiprocessing import Process, Queue
 from time import sleep, time
+import socket
 # 3rd party
 import cv2
-from picamera2 import Picamera2
+from picamera2.outputs import FileOutput
+from picamera2 import Picamera2, MappedArray
 
 # glados config
 from glados_modules.GlogConfig import setup_logger
@@ -35,56 +37,69 @@ class Camera(Process, MQTTClient):
         self.camera_num = int(self.config[CameraEnum.CONFIG_HEAD.value][self.location])
         self.image = None
         self.status_topic = CameraEnum.MQTT_STATUS_TOPIC.value
+        self.server_ip = self.config[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_AI_SERVER_RX.value]
+        self.server_port = int(self.config[CameraEnum.CONFIG_HEAD.value][f"{self.location}_port"])
+        self.reconnect_timeout = int(
+            self.config[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_AI_SERVER_RX_TIMEOUT.value])
+        self.socket = None
         status = CameraMessageBuilder.send_status(self.location, f"Camera {self.location} Started")
         MQTTClient.__init__(self, broker, port)
         self.send_command(status, CameraEnum.MQTT_STATUS_TOPIC.value)
+# TODO YOU LEFT OFF DOING THE CONFIG AND SETTING UP TO PUSH H264 video to a different port on the AI server to do streaming video in real time
+    def __init_camera(self, server_ip, server_port, reconnect_timeout=5):
+        """
+        Initialize the camera and stream to a remote server.
 
-    def __init_camera(self):
-        # allow us to init the camera inside the multiprocess thread
+        :param server_ip: IP address of the remote server
+        :param server_port: Port of the remote server
+        :param reconnect_timeout: Timeout (in seconds) to wait before reconnecting
+        """
         self.logger.debug(f"Starting sub init for {self.location}")
-        if self.picam is True:
-            self.logger.debug(f"Using PiCam for {self.location}")
-            # pi cam
-            self.cap = Picamera2(self.camera_num)
-            self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
-            self.logger.debug(f" Camera FPS set to {self.fps} and RBG888")
-            self.cam_config = self.cap.create_video_configuration(
-                main={"format": "RGB888", "size": (self.cam_res_x, self.cam_res_y)},
-                lores=None,
-                controls={
-                    "FrameRate": self.fps,  # Balance frame rate and resolution for your task
-                    "Brightness": 0.5,  # Adjust brightness for optimal image clarity
-                    "Sharpness": 1.0,  # Increase sharpness for better edge detection
-                    "Contrast": 1.0,  # Use higher contrast for better feature distinction
-                    "Saturation": 1.0,  # Preserve color information for ML tasks
-                    "NoiseReductionMode": 2  # Enable noise reduction for cleaner images
-                }
-            )
-            self.cap.configure(self.cam_config)
-            self.cap.start()
-            self.__capture_image = self.__capture_image_pi
-        else:
-            # usb webcam
-            self.logger.debug(f"Using USB Webcam for {self.location}")
-            self.cap = cv2.VideoCapture(self.camera_num)
-            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-            self.cap.set(cv2.CAP_PROP_FPS, 30)
-            self.__capture_image = self.__capture_image_cv2
-        self.image = None
-        self.stop = False
-        self.results = dict()
-        self.queue = Queue()
-        self.image_send = RxTx.DataSend(self.config, self.location, mpqueue=self.queue)
-        self.image_send.start()
+        self.logger.debug(f"Using PiCam for {self.location}")
+        self.cap = Picamera2()
+        self.logger.debug(f"Camera resolution of {self.cam_res_x} x {self.cam_res_y}")
+        self.logger.debug(f"Camera FPS set to 8 and H.264 streaming to remote server")
+
+        # Configure the camera for H.264 video streaming
+        self.cam_config = self.cap.create_video_configuration(
+            main={"format": "RGB888", "size": (self.cam_res_x, self.cam_res_y)},
+            controls={
+                "FrameRate": 8,  # Set FPS to 8
+                "Brightness": 0.5,
+                "Sharpness": 1.0,
+                "Contrast": 1.0,
+                "Saturation": 1.0,
+                "NoiseReductionMode": 2
+            }
+        )
+        self.cap.configure(self.cam_config)
+
+        # Attempt to connect to the remote server
+        self.server_ip = server_ip
+        self.server_port = server_port
+        self.reconnect_timeout = reconnect_timeout
+        self.socket = None
+        self.__connect_to_server()
+
+        # Use the socket as the output for the camera
+        self.output = self.socket.makefile('wb')
+        self.cap.start_recording(FileOutput(self.output), codec="h264")
+        self.logger.debug(f"Streaming H.264 video to {self.server_ip}:{self.server_port}")
         self.logger.debug(f"Sub init for {self.location} Complete")
 
-    def get_camera_config(self):
+    def __connect_to_server(self):
         """
-        Return the camera config
+        Connect to the remote server with retry logic.
         """
-        return self.config
+        while True:
+            try:
+                self.logger.debug(f"Attempting to connect to {self.server_ip}:{self.server_port}")
+                self.socket = socket.create_connection((self.server_ip, self.server_port), timeout=10)
+                self.logger.debug(f"Connected to {self.server_ip}:{self.server_port}")
+                break
+            except (socket.timeout, socket.error) as e:
+                self.logger.warning(f"Connection failed: {e}. Retrying in {self.reconnect_timeout} seconds...")
+                sleep(self.reconnect_timeout)
 
     def set_camera_conf(self, config) -> None:
         """
