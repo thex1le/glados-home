@@ -55,6 +55,7 @@ class CameraEnum(Enum):
     CONFIG_HEAD: str = "CAMERAS"
     LOCATION_CORE: str = "vision"
     MSG_LOCATION_KEY: str = "camera"
+    MSG_CAMERA_NUMBER: str = "number"
     MSG_COMMAND_STATUS: str = "status"
     MSG_COMMAND_KEY: str = "cmd"
     MSG_RESULTS: str = "results"
