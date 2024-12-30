@@ -76,7 +76,7 @@ class Camera(Process, MQTTClient):
         """
         self.logger.debug(f"Starting Camera process for {self.location}")
         self.logger.debug("Initializing RTSP Server...")
-        self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port)
+        self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port, vtype="I420")
         self.__init_camera()
         self.logger.debug("Starting main camera loop...")
         while not self.stop_flag:
@@ -108,7 +108,7 @@ class Camera(Process, MQTTClient):
         self.cap = Picamera2(cam_num)
         # Create configuration for raw capture
         video_config = self.cap.create_video_configuration(
-            main={"size": (self.cam_res_x, self.cam_res_y), "format": "RGB888"},
+            main={"size": (self.cam_res_x, self.cam_res_y), "format": "YUV420"},
             controls={"FrameRate": self.fps}
         )
 
