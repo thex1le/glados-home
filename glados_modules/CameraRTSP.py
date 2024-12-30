@@ -30,35 +30,33 @@ class Camera(Process, MQTTClient):
         MQTTClient.__init__(self, broker, port)
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
+        self.cam_configs = {
+            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
+                CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
+            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
+                CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
+            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
+                CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
+        }
         self.logger = setup_logger(name=self.__name__)
         self.config = configfile
         self.rtsp_server = None
         # Camera config
-        self.fps = int(self.config[CameraEnum.CONFIG_HEAD.value][f"{self.location}_{CameraEnum.MSG_FPS.value}"])
-        self.picam = bool(self.config[CameraEnum.CONFIG_HEAD.value][f"{self.location}_Picam"].lower())
-        cam_res = self.config[CameraEnum.CONFIG_HEAD.value][f"{self.location}_Resolution"].split(',')
-        self.cam_res_x = int(cam_res[0])
-        self.cam_res_y = int(cam_res[1])
-        self.camera_num = int(self.config[CameraEnum.CONFIG_HEAD.value][self.location])
+        self.fps = self.cam_configs[self.location][CameraEnum.MSG_FPS.value]
+        self.cam_res_x = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION][0]
+        self.cam_res_y = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION][0]
+        self.camera_num = self.config[CameraEnum.CONFIG_HEAD.value][self.location]
         # Prepare RTSP settings
         # We'll create a single factory path, e.g. f"/{self.location}"
         self.factory_path = f"/{self.location}"
         # TODO get port from the configfile
         self.rtsp_port = 8554
-        self.cam_configs = {
-            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
-                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
-                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
-                "tracker_thread": None},
-            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": {
-                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
-                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
-                "tracker_thread": None},
-            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
-                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
-                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
-                "tracker_thread": None}
-        }
         # We'll instantiate RTSPServer once in run()
         # MQTT status
         status = CameraMessageBuilder.send_status(self.location, f"Camera RAW {self.location} Started")
