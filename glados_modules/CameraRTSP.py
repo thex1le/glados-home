@@ -21,7 +21,7 @@ class Camera(Process, MQTTClient):
     Updated Camera class that uses RTSP streaming (via RtspSystem/RTSPServer)
     instead of raw TCP sockets.
     """
-    def __init__(self, configfile, location):
+    def __init__(self, configfile, location, rtspport: int = 8554) -> None:
         Process.__init__(self)
         # Initialize MQTTClient
         broker = configfile['MQTT']['mqtt_server_ip']
@@ -57,7 +57,7 @@ class Camera(Process, MQTTClient):
         # We'll create a single factory path, e.g. f"/{self.location}"
         self.factory_path = f"/{self.location}"
         # TODO get port from the configfile
-        self.rtsp_port = 8554
+        self.rtsp_port = rtspport
         # We'll instantiate RTSPServer once in run()
         # MQTT status
         status = CameraMessageBuilder.send_status(self.location, f"Camera RAW {self.location} Started")
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     right_camera.start()
     location = config_p["CAMERAS"]["camera_left_factory"]
     # Instantiate and start the camera as a Process
-    left_camera = Camera(configfile=config_p, location=location)
+    left_camera = Camera(configfile=config_p, location=location, rtspport=8846)
     left_camera.start()
     try:
         while True:
