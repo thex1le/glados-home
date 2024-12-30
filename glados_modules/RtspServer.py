@@ -85,7 +85,9 @@ class RTSPServer(GstRtspServer.RTSPServer):
         mount_points = self.get_mount_points()
         for factory_path in cam_configs.keys():
             (cam_x, cam_y) = cam_configs[factory_path][CameraEnum.MSG_RESOLUTION.value]
-            rtsp_system = RtspSystem(cam_x, cam_y, self.vtype, int(cam_configs[factory_path][CameraEnum.MSG_FPS.value]))
+            self.logger.debug(f"RTSP server started with video type {self.vtype}")
+            rtsp_system = RtspSystem(cam_x, cam_y, self.vtype,
+                                     int(cam_configs[factory_path][CameraEnum.MSG_FPS.value]))
             rtsp_system.set_shared(True)
             if factory_path[0] != '/':
                 # append a / if needed
