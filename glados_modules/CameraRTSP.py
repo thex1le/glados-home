@@ -76,7 +76,7 @@ class Camera(Process, MQTTClient):
         """
         self.logger.debug(f"Starting Camera process for {self.location}")
         self.logger.debug("Initializing RTSP Server...")
-        self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port, vtype="I420")
+        self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port, vtype="BGR")
         self.__init_camera()
         self.logger.debug("Starting main camera loop...")
         while not self.stop_flag:
@@ -103,12 +103,13 @@ class Camera(Process, MQTTClient):
         which we'll feed to RTSP.
         """
         # If using Picamera2:
-        self.logger.debug(f"Configuring PiCamera2 for {self.location} at {self.cam_res_x}x{self.cam_res_y}, {self.fps} FPS")
+        self.logger.debug(f"Configuring PiCamera2 for {self.location} at {self.cam_res_x}x{self.cam_res_y}, "
+                          f"{self.fps} FPS")
         cam_num = self.cam_configs[self.location][CameraEnum.MSG_CAMERA_NUMBER.value]
         self.cap = Picamera2(cam_num)
         # Create configuration for raw capture
         video_config = self.cap.create_video_configuration(
-            main={"size": (self.cam_res_x, self.cam_res_y), "format": "YUV420"},
+            main={"size": (self.cam_res_x, self.cam_res_y), "format": "BGR888"},
             controls={"FrameRate": self.fps}
         )
 
