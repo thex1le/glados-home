@@ -31,15 +31,15 @@ class Camera(Process, MQTTClient):
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.cam_configs = {
-            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
+            cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
                 CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
-            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": {
+            cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
                 CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
-            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
+            cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
                 CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
@@ -49,8 +49,9 @@ class Camera(Process, MQTTClient):
         self.rtsp_server = None
         # Camera config
         self.fps = self.cam_configs[self.location][CameraEnum.MSG_FPS.value]
-        self.cam_res_x = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION][0]
-        self.cam_res_y = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION][0]
+        x_y = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION.value]
+        self.cam_res_x = x_y[0]
+        self.cam_res_y = x_y[1]
         self.camera_num = self.config[CameraEnum.CONFIG_HEAD.value][self.location]
         # Prepare RTSP settings
         # We'll create a single factory path, e.g. f"/{self.location}"
