@@ -104,7 +104,8 @@ class Camera(Process, MQTTClient):
         """
         # If using Picamera2:
         self.logger.debug(f"Configuring PiCamera2 for {self.location} at {self.cam_res_x}x{self.cam_res_y}, {self.fps} FPS")
-        self.cap = Picamera2()
+        cam_num = self.cam_configs[self.location][CameraEnum.MSG_CAMERA_NUMBER.value]
+        self.cap = Picamera2(cam_num)
         # Create configuration for raw capture
         cam_config = self.cap.create_still_configuration(
             main={
