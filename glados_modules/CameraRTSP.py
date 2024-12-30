@@ -107,14 +107,12 @@ class Camera(Process, MQTTClient):
         cam_num = self.cam_configs[self.location][CameraEnum.MSG_CAMERA_NUMBER.value]
         self.cap = Picamera2(cam_num)
         # Create configuration for raw capture
-        cam_config = self.cap.create_still_configuration(
-            main={
-                "format": "BGR888",  # We want BGR for easy OpenCV usage
-                "size": (self.cam_res_x, self.cam_res_y)
-            },
-            display=None
+        video_config = self.cap.create_video_configuration(
+            main={"size": (self.cam_res_x, self.cam_res_y), "format": "RGB888"},
+            controls={"FrameRate": self.fps}
         )
-        self.cap.configure(cam_config)
+
+        self.cap.configure(video_config)
         # Start the camera. We'll capture frames via self.cap.capture_array.
         self.cap.start()
 
