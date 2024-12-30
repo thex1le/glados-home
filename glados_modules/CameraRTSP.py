@@ -26,6 +26,7 @@ class Camera(Process, MQTTClient):
         # Initialize MQTTClient
         broker = configfile['MQTT']['mqtt_server_ip']
         port = configfile['MQTT']['mqtt_port']
+        cam_conf = configfile['CAMERAS']
         MQTTClient.__init__(self, broker, port)
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
@@ -45,10 +46,18 @@ class Camera(Process, MQTTClient):
         # TODO get port from the configfile
         self.rtsp_port = 8554
         self.cam_configs = {
-            self.factory_path: {
-                CameraEnum.MSG_RESOLUTION.value: (self.cam_res_x, self.cam_res_y),
-                CameraEnum.MSG_FPS.value: self.fps
-            }
+            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
+                "tracker_thread": None},
+            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
+                "tracker_thread": None},
+            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
+                CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
+                CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
+                "tracker_thread": None}
         }
         # We'll instantiate RTSPServer once in run()
         # MQTT status
@@ -136,14 +145,20 @@ if __name__ == "__main__":
     config_p = ConfigParser()
     config_p.read(args.conf)
     # Example: "Camera_Head_Factory" might be a key in the config
-    head_camera_location = config_p["CAMERAS"]["Camera_Head_Factory"]
+    location = config_p["CAMERAS"]["camera_right_factory"]
     # Instantiate and start the camera as a Process
-    head_camera = Camera(configfile=config_p, location=head_camera_location)
-    head_camera.start()
+    right_camera = Camera(configfile=config_p, location=location)
+    right_camera.start()
+    location = config_p["CAMERAS"]["camera_left_factory"]
+    # Instantiate and start the camera as a Process
+    left_camera = Camera(configfile=config_p, location=location)
+    left_camera.start()
     try:
         while True:
             sleep(1)
     except KeyboardInterrupt:
         print("Keyboard interrupt received, stopping camera.")
-        head_camera.stop_camera()
-        head_camera.join()
+        left_camera.stop_camera()
+        left_camera.join()
+        right_camera.stop_camera()
+        right_camera.join()
