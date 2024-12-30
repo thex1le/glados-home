@@ -149,7 +149,7 @@ if __name__ == "__main__":
     right_camera.start()
     location = config_p["CAMERAS"]["camera_left_factory"]
     # Instantiate and start the camera as a Process
-    left_camera = Camera(configfile=config_p, location=location, rtspport=8846)
+    left_camera = Camera(configfile=config_p, location=location, rtspport=8555)
     left_camera.start()
     try:
         while True:
