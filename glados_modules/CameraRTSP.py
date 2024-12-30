@@ -50,8 +50,8 @@ class Camera(Process, MQTTClient):
         # Camera config
         self.fps = self.cam_configs[self.location][CameraEnum.MSG_FPS.value]
         x_y = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION.value]
-        self.cam_res_x = x_y[0]
-        self.cam_res_y = x_y[1]
+        self.cam_res_x = int(x_y[0])
+        self.cam_res_y = int(x_y[1])
         self.camera_num = self.config[CameraEnum.CONFIG_HEAD.value][self.location]
         # Prepare RTSP settings
         # We'll create a single factory path, e.g. f"/{self.location}"
