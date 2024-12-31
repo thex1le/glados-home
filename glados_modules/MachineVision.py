@@ -10,7 +10,7 @@ from ultralytics.utils.plotting import Annotator
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.RxTx import DataRecv
+from glados_modules.Rtsp_Rx import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum
@@ -34,20 +34,28 @@ class YoloDetect(Thread, MQTTClient):
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
         cam_conf = self.configfile['CAMERAS']
-
         # Camera configurations for each camera
         self.cam_configs = {
-            f"/{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}": {
+            {cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
+                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{
+                    CameraEnum.CAMERA_HEAD_RTSP_IP.value}:{CameraEnum.CAMERA_HEAD_PORT.value}/{
+                        CameraEnum.CAMERA_HEAD.value}",
                 "tracker_thread": None},
-            f"/{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}": {
+            {cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
+                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{
+                    CameraEnum.CAMERA_LEFT_RTSP_IP.value}:{CameraEnum.CAMERA_LEFT_PORT.value}/{
+                    CameraEnum.CAMERA_LEFT.value}",
                 "tracker_thread": None},
-            f"/{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}": {
+            {cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
+                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{
+                    CameraEnum.CAMERA_RIGHT_RTSP_IP.value}:{CameraEnum.CAMERA_RIGHT_PORT.value}/{
+                    CameraEnum.CAMERA_RIGHT.value}",
                 "tracker_thread": None}
         }
 
@@ -58,10 +66,6 @@ class YoloDetect(Thread, MQTTClient):
 
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
         self.model = YOLO(self.model_config)
-
-        # Image receiver setup
-        self.image_get = DataRecv(configfile=self.configfile, location=f"{self.__name__}_zmq_rx")
-        self.image_get.start()
 
         # Start RTSP servers
         for key in self.cam_configs.keys():
@@ -109,18 +113,16 @@ class YoloDetect(Thread, MQTTClient):
         """
         self.logger.info(f"Starting tracker for camera {camera_key}")
         # Run the tracker for this camera
+        image_get = RtspConsumer(location=camera_key,
+                                 uri=self.cam_configs[camera_key][CameraEnum.MSG_RTSP_URI.value])
         while True:
             try:
-                image_dict = self.image_get.get_data_from_queue(True)
-                camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
-                # Ensure the image is from this camera
-                if camera_location != camera_key:
-                    continue
-                self.logger.debug(f"Processing image from {camera_location}")
+                image_dict = image_get.get_frame()
+                self.logger.debug(f"Processing image from {camera_key}")
                 # Process the image and track objects
                 sight = self.__yolo_process_image(image_dict, model)
                 # the string slice strips the / off the front of the camera_location
-                results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
+                results = CameraMessageBuilder.send_results(camera_key, self.__translate_results(sight))
                 self.send_command(results, self.cmd_topic, qos=0)
 
             except Exception as e:
@@ -194,7 +196,6 @@ class YoloDetect(Thread, MQTTClient):
     def run(self):
         status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
         self.send_command(status, self.status_topic)
-
         # Start tracking for each camera in separate threads
         self.start_tracking_threads()
         self.logger.info("Started YOLO tracking threads for all cameras")
