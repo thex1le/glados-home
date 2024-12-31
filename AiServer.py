@@ -21,7 +21,7 @@ if __name__ == "__main__":
         sys.exit(1)
     config_p = ConfigParser()
     if path.isfile(args.conf[0]) is True:
-        config_p.read(args.conf[0])
+        config_p.read(args.conf[0], encoding=('utf-8'))
     else:
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
     # start up machine vision
