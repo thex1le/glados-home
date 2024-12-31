@@ -18,9 +18,11 @@ class RtspConsumer:
         self.__name__ = f"{self.location}_rtsp_consumer"
         self.logger = setup_logger(name=self.__name__)
         # GStreamer pipeline that sets max-lateness to ensure only the latest frame is captured
-        gst_pipeline = (f"rtspsrc location={self.rtsp_uri} latency=0 ! "
-                        f"rtpjitterbuffer drop-on-latency=true ! "
-                        f"decodebin ! videoconvert ! video/x-raw,format=RGB ! appsink drop=true max-buffers=1")
+        gst_pipeline = (
+            f"rtspsrc location={self.rtsp_uri} latency=0 ! "
+            f"rtpjitterbuffer drop-on-latency=true ! "
+            f"decodebin ! videoconvert ! video/x-raw,format=RGB ! appsink drop=true max-buffers=1"
+        )
         self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     def get_frame(self) -> dict:
