@@ -39,20 +39,23 @@ class YoloDetect(Thread, MQTTClient):
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
-                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{CameraEnum.CAMERA_HEAD_RTSP_IP.value}:"
-                                               f"{CameraEnum.CAMERA_HEAD_PORT.value}/{CameraEnum.CAMERA_HEAD.value}",
+                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_HEAD_RTSP_IP.value]}:"
+                                               f"{cam_conf[CameraEnum.CAMERA_HEAD_PORT.value]}/"
+                                               f"{cam_conf[CameraEnum.CAMERA_HEAD.value]}",
                 "tracker_thread": None},
             cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
-                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{CameraEnum.CAMERA_LEFT_RTSP_IP.value}:"
-                                               f"{CameraEnum.CAMERA_LEFT_PORT.value}/{CameraEnum.CAMERA_LEFT.value}",
+                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_LEFT_RTSP_IP.value]}:"
+                                               f"{cam_conf[CameraEnum.CAMERA_LEFT_PORT.value]}/"
+                                               f"{cam_conf[CameraEnum.CAMERA_LEFT.value]}",
                 "tracker_thread": None},
             cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
-                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{CameraEnum.CAMERA_RIGHT_RTSP_IP.value}:"
-                                               f"{CameraEnum.CAMERA_RIGHT_PORT.value}/{CameraEnum.CAMERA_RIGHT.value}",
+                CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_RIGHT_RTSP_IP.value]}:"
+                                               f"{cam_conf[CameraEnum.CAMERA_RIGHT_PORT.value]}/"
+                                               f"{cam_conf[CameraEnum.CAMERA_RIGHT.value]}",
                 "tracker_thread": None}
         }
 
