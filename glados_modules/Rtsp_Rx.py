@@ -21,8 +21,10 @@ class RtspConsumer:
         gst_pipeline = (
             f"rtspsrc location={self.rtsp_uri} latency=0 ! "
             f"rtpjitterbuffer drop-on-latency=true ! "
-            f"decodebin ! videoconvert ! video/x-raw,format=RGB ! appsink drop=true max-buffers=1"
+            f"decodebin ! videoconvert ! video/x-raw,format=RGB ! "
+            f"appsink drop=true max-buffers=1 sync=false emit-signals=false"
         )
+
         self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     def get_frame(self) -> dict:
