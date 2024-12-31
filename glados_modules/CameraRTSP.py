@@ -140,12 +140,14 @@ if __name__ == "__main__":
     config_p.read(args.conf)
     # Example: "Camera_Head_Factory" might be a key in the config
     location = config_p["CAMERAS"]["camera_right_factory"]
+    port = int(config_p["CAMERAS"]["camera_right_rtsp_port"])
     # Instantiate and start the camera as a Process
-    right_camera = Camera(configfile=config_p, location=location)
+    right_camera = Camera(configfile=config_p, location=location, rtspport=port)
     right_camera.start()
     location = config_p["CAMERAS"]["camera_left_factory"]
+    port = int(config_p["CAMERAS"]["camera_left_rtsp_port"])
     # Instantiate and start the camera as a Process
-    left_camera = Camera(configfile=config_p, location=location, rtspport=8555)
+    left_camera = Camera(configfile=config_p, location=location, rtspport=port)
     left_camera.start()
     try:
         while True:
