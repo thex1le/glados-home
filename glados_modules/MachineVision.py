@@ -69,7 +69,7 @@ class YoloDetect(Thread, MQTTClient):
 
         # Start RTSP servers
         for key in self.cam_configs.keys():
-            msg = {"status": f"Starting the RTSP server on rtsp://{self.rtsp_server_ip}:{self.rtsp_port}{key}"}
+            msg = {"status": f"Starting the RTSP server on rtsp://{self.rtsp_server_ip}:{self.rtsp_port}/{key}"}
             status = CameraMessageBuilder.send_status(key, msg)
             self.send_command(status, self.status_topic)
             self.logger.info(msg)
