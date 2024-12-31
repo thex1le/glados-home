@@ -41,21 +41,21 @@ class YoloDetect(Thread, MQTTClient):
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_HEAD_FPS.value]),
                 CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_HEAD_RTSP_IP.value]}:"
                                                f"{cam_conf[CameraEnum.CAMERA_HEAD_PORT.value]}/"
-                                               f"{cam_conf[CameraEnum.CAMERA_HEAD.value]}",
+                                               f"{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}",
                 "tracker_thread": None},
             cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
                 CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_LEFT_RTSP_IP.value]}:"
                                                f"{cam_conf[CameraEnum.CAMERA_LEFT_PORT.value]}/"
-                                               f"{cam_conf[CameraEnum.CAMERA_LEFT.value]}",
+                                               f"{cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]}",
                 "tracker_thread": None},
             cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_RIGHT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
                 CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_RIGHT_RTSP_IP.value]}:"
                                                f"{cam_conf[CameraEnum.CAMERA_RIGHT_PORT.value]}/"
-                                               f"{cam_conf[CameraEnum.CAMERA_RIGHT.value]}",
+                                               f"{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}",
                 "tracker_thread": None}
         }
 
