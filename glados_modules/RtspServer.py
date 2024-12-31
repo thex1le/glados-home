@@ -75,10 +75,10 @@ class RTSPServer(GstRtspServer.RTSPServer):
     def _initialize_factories(self, cam_configs):
         mount_points = self.get_mount_points()
         for factory_path in cam_configs.keys():
-            factory_path = self.path_fixup(factory_path)
             (cam_x, cam_y) = cam_configs[factory_path][CameraEnum.MSG_RESOLUTION.value]
             rtsp_system = RtspSystem(cam_x, cam_y, int(cam_configs[factory_path][CameraEnum.MSG_FPS.value]))
             rtsp_system.set_shared(True)
+            factory_path = self.path_fixup(factory_path)
             mount_points.add_factory(factory_path, rtsp_system)
             rtsp_system.start()
             self.factories[factory_path] = rtsp_system
