@@ -56,13 +56,10 @@ class Camera(Process, MQTTClient):
         # Prepare RTSP settings
         # We'll create a single factory path, e.g. f"/{self.location}"
         self.factory_path = f"/{self.location}"
-        # TODO get port from the configfile
         self.rtsp_port = rtspport
-        # We'll instantiate RTSPServer once in run()
         # MQTT status
         status = CameraMessageBuilder.send_status(self.location, f"Camera RAW {self.location} Started")
         self.send_command(status, CameraEnum.MQTT_STATUS_TOPIC.value)
-
         # For capturing frames
         self.cap = None  # Will be assigned in run()
         self.stop_flag = False
@@ -88,7 +85,6 @@ class Camera(Process, MQTTClient):
             # Send the frame to RTSP server
             self.rtsp_server.send_data(self.factory_path, frame)
             sleep(0.01)  # minimal sleep to prevent CPU hogging
-
         self.logger.debug("Camera loop exiting; cleaning up...")
         self.cap.stop()
         self.cap.close()
@@ -110,9 +106,7 @@ class Camera(Process, MQTTClient):
         # Create configuration for raw capture
         video_config = self.cap.create_video_configuration(
             main={"size": (self.cam_res_x, self.cam_res_y), "format": "RGB888"},
-            controls={"FrameRate": self.fps}
-        )
-
+            controls={"FrameRate": self.fps})
         self.cap.configure(video_config)
         # Start the camera. We'll capture frames via self.cap.capture_array.
         self.cap.start()
@@ -121,12 +115,13 @@ class Camera(Process, MQTTClient):
         """
         Capture a single frame in BGR format using PiCamera2.
         """
+        rtn = None
         try:
             frame = self.cap.capture_array("main")
-            return frame
+            rtn = frame
         except Exception as e:
             self.logger.error(f"Failed to capture frame: {e}")
-            return None
+        return rtn
 
 
 if __name__ == "__main__":
