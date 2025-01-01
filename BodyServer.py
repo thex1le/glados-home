@@ -12,7 +12,7 @@ from adafruit_servokit import ServoKit
 # glados imports
 from glados_modules.BodyControl import Gservo, LedHead, LedShoulders, GladosLCD
 from glados_modules.CameraRTSP import GLaDOSServerException, Camera
-from glados_modules.GLaDosEnums import CameraEnum
+from glados_modules.GLaDosEnums import CameraEnum, ServoEnum, SystemEnums
 
 
 if __name__ == "__main__":
@@ -32,21 +32,25 @@ if __name__ == "__main__":
     else:
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
 
-    animation_path = path.abspath(config_p["DEFAULT"]["aperture_animation"])
-    head_camera_location = config_p["CAMERAS"]["Camera_Head_Factory"]
+    animation_path = path.abspath(
+        config_p[SystemEnums.CONFIG_HEAD_DEFAULT.value][SystemEnums.APERTURE_ANIMATION.value])
+    cefh = config_p[CameraEnum.CONFIG_HEAD.value]
+    head_camera_location = cefh[CameraEnum.CAMERA_HEAD_FACTORY.value]
     max_min_tuple = namedtuple("max_min", ['max', 'min'])
     max_min_center_tuple = namedtuple("max_min_center", ['max', 'min', 'center'])
     Mqtt_tuple = namedtuple("service_address", ["ip", "port"])
-    mqtt_connect = Mqtt_tuple(config_p["MQTT"]["mqtt_server_ip"], int(config_p["MQTT"]["mqtt_port"]))
-    pulse_90 = config_p["SERVOS"]["mg90d_pulse"].split(',')
-    pulse_92 = config_p["SERVOS"]["mg92b_pulse"].split(',')
-    pulse_995 = config_p["SERVOS"]["mg995r_pulse"].split(',')
-    default = config_p["SERVOS"]["default_max_min_center"].split(',')
-    head_min_max = config_p["SERVOS"]["head_min_max_center"].split(',')
-    neck_min_max = config_p["SERVOS"]["head_min_max_center"].split(',')
-    mg92d_speed = float(config_p["SERVOS"]["mg92b_speed"])
-    mg90d_speed = float(config_p["SERVOS"]["mg90d_speed"])
-    mg995_speed = float(config_p["SERVOS"]["mg995r_speed"])
+    mqtt_connect = Mqtt_tuple(config_p[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value],
+                              int(config_p[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value]))
+    sech = config_p[ServoEnum.CONFIG_HEAD.value]
+    pulse_90 = sech[ServoEnum.SERVO_MG90D_PULSE.value].split(',')
+    pulse_92 = sech[ServoEnum.SERVO_MG92B_PULSE.value].split(',')
+    pulse_995 = sech[ServoEnum.SERVO_M995R_PULSE.value].split(',')
+    default = sech[ServoEnum.DEFAULT_MAX_MIN_CENTER.value].split(',')
+    head_min_max = sech[ServoEnum.HEAD_MIN_MAX_CENTER.value].split(',')
+    neck_min_max = sech[ServoEnum.NECK_MIN_MAX_CENTER.value].split(',')
+    mg92d_speed = float(sech[ServoEnum.SERVO_MG92B_SPEED.value])
+    mg90d_speed = float(sech[ServoEnum.SERVO_MG90D_SPEED.value])
+    mg995_speed = float(sech[ServoEnum.SERVO_M995R_SPEED.value])
     mg90d_pulse = max_min_tuple(int(pulse_90[0]), int(pulse_90[1]))
     mg92b_pulse = max_min_tuple(int(pulse_92[0]), int(pulse_92[1]))
     mg995_pulse = max_min_tuple(int(pulse_995[0]), int(pulse_995[1]))
@@ -55,20 +59,25 @@ if __name__ == "__main__":
     neck_angle = max_min_center_tuple(int(neck_min_max[0]), int(neck_min_max[1]), int(neck_min_max[2]))
     kit = ServoKit(channels=16)
     led_head = LedHead(broker=mqtt_connect)
-    body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
+    body_LR = Gservo(location=ServoEnum.LOCATION_BODY_LEFT_RIGHT.value,
+                     servo=kit.servo[0], axis='x', servo_range=default_angle,
                      broker=mqtt_connect, servo_speed=mg995_speed, pulse_max_min=mg995_pulse)
-    body_UD = Gservo(location='body_up_down', servo=kit.servo[1], axis='y', servo_range=default_angle,
+    body_UD = Gservo(location=ServoEnum.LOCATION_BODY_UP_DOWN.value, servo=kit.servo[1],
+                     axis='y', servo_range=default_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
-    head_LR = Gservo(location='head_left_right', servo=kit.servo[2], axis='x', servo_range=neck_angle,
+    head_LR = Gservo(location=ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, servo=kit.servo[2],
+                     axis='x', servo_range=neck_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
-    head_UD = Gservo(location='head_up_down', servo=kit.servo[3], axis='y', servo_range=head_angle,
+    head_UD = Gservo(location=ServoEnum.LOCATION_HEAD_UP_DOWN.value, servo=kit.servo[3],
+                     axis='y', servo_range=head_angle,
                      broker=mqtt_connect, pulse_max_min=mg90d_pulse, servo_speed=mg90d_speed)
     led_shoulders = LedShoulders(broker=mqtt_connect)
-    glados_right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd", animation_path=animation_path)
+    glados_right_lcd = GladosLCD(broker=mqtt_connect, location=SystemEnums.RIGHT_LCD.value,
+                                 animation_path=animation_path)
     glados_right_lcd.start()
     led_head.startup()
-    head_camera = Camera(configfile=config_p, location=head_camera_location, rtspport=int(config_p[
-        CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_HEAD_PORT.value]))
+    head_camera = Camera(configfile=config_p, location=head_camera_location,
+                         rtspport=int(cefh[CameraEnum.CAMERA_HEAD_PORT.value]))
     head_camera.start()
     while True:
         sleep(1)

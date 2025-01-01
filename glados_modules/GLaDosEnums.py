@@ -3,7 +3,19 @@ from enum import Enum
 
 class SystemEnums(Enum):
     MQTT_INTENSITY_TOPIC: str = "intensity"
-    CONFIG_HEAD: str = "MQTT"
+    CONFIG_HEAD_MQTT: str = "MQTT"
+    CONFIG_HEAD_DEFAULT: str = "DEFAULT"
+    MQTT_PORT: str = "mqtt_port"
+    MQTT_SERVER_IP: str = "mqtt_server_ip"
+    CONFIG_HEAD_RTSP: str = "RTSP"
+    RTSP_PORT: str = "rtsp_port"
+    RTSP_SERVER_IP: str = "rtsp_server_ip"
+    APERTURE_ANIMATION: str = "aperture_animation"
+    WORKING_ROOT: str = "working_root"
+    VOLUME_LEVEL: str = "VolumeLevel"
+    VOICE_URL: str = "VoiceUrl"
+    RIGHT_LCD: str = "right_lcd"
+    LEFT_LCD: str = "left_lcd"
 
 
 class VisionResultsEnum(Enum):
@@ -24,6 +36,16 @@ class ServoEnum(Enum):
     """
     Enum of servo location names for use in mqtt topics and other interactions with them
     """
+    CONFIG_HEAD: str = "SERVOS"
+    DEFAULT_MAX_MIN_CENTER = "default_max_min_center"
+    HEAD_MIN_MAX_CENTER = "head_min_max_center"
+    NECK_MIN_MAX_CENTER = "neck_min_max_center"
+    SERVO_MG90D_SPEED: str = "mg90d_speed"
+    SERVO_MG92B_SPEED: str = "mg92d_speed"
+    SERVO_M995R_SPEED: str = "mg995r_speed"
+    SERVO_MG90D_PULSE: str = "mg90d_pulse"
+    SERVO_MG92B_PULSE: str = "mg92d_pulse"
+    SERVO_M995R_PULSE: str = "mg995r_pulse"
     LOCATION_HEAD_UP_DOWN: str = "head_up_down"
     LOCATION_HEAD_LEFT_RIGHT: str = "head_left_right"
     LOCATION_BODY_UP_DOWN: str = "body_up_down"
