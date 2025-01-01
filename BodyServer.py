@@ -34,8 +34,6 @@ if __name__ == "__main__":
 
     animation_path = path.abspath(
         config_p[SystemEnums.CONFIG_HEAD_DEFAULT.value][SystemEnums.APERTURE_ANIMATION.value])
-    cefh = config_p[CameraEnum.CONFIG_HEAD.value]
-    head_camera_location = cefh[CameraEnum.CAMERA_HEAD_FACTORY.value]
     max_min_tuple = namedtuple("max_min", ['max', 'min'])
     max_min_center_tuple = namedtuple("max_min_center", ['max', 'min', 'center'])
     Mqtt_tuple = namedtuple("service_address", ["ip", "port"])
@@ -76,7 +74,8 @@ if __name__ == "__main__":
                                  animation_path=animation_path)
     glados_right_lcd.start()
     led_head.startup()
-    head_camera = Camera(configfile=config_p, location=head_camera_location,
+    cefh = config_p[CameraEnum.CONFIG_HEAD.value]
+    head_camera = Camera(configfile=config_p, location=cefh[CameraEnum.CAMERA_HEAD_FACTORY.value],
                          rtspport=int(cefh[CameraEnum.CAMERA_HEAD_PORT.value]))
     head_camera.start()
     while True:
