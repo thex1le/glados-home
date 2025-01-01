@@ -143,23 +143,18 @@ class YoloDetect(Thread, MQTTClient):
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
     def __yolo_process_image(self, image_dict, model):
-        raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
+        image = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
-        image = raw.reshape((height, width, 3))  # RGB888 format has 3 channels
-
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
-
         # Process the image using YOLO tracking
         results = model.track(source=image, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
 
         # Annotating and sending the processed image
         annotator = Annotator(image)
-        image_center = (width // 2, height // 2)
-        cv2.line(image, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0),
-                 2)
-        cv2.line(image, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10), (0, 255, 0),
-                 2)
+        image_center = (int(width // 2), int(height // 2))
+        cv2.line(image, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0), 2)
+        cv2.line(image, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10), (0, 255, 0), 2)
 
         for r in results:
             boxes = r.boxes
