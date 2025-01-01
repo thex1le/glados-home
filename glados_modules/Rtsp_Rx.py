@@ -64,13 +64,14 @@ if __name__ == "__main__":
     # stand allow debugging stub
     import argparse
     import sys
+
     # Initialize Argument Parser
     parser = argparse.ArgumentParser(description="RTSP Consumer Test Handler")
     # Define command-line arguments
-    parser.add_argument( '--uri', type=str, required=True,
-        help='RTSP stream URI (e.g., rtsp://192.168.1.100:8554/test)')
-    parser.add_argument('--location',type=str,required=True,
-        help='Location identifier for the RTSP stream (e.g., FrontDoor)')
+    parser.add_argument('--uri', type=str, required=True,
+                        help='RTSP stream URI (e.g., rtsp://192.168.1.100:8554/test)')
+    parser.add_argument('--location', type=str, required=True,
+                        help='Location identifier for the RTSP stream (e.g., FrontDoor)')
     # Parse the arguments
     args = parser.parse_args()
     # Initialize RtspConsumer
@@ -90,4 +91,3 @@ if __name__ == "__main__":
     print(f"Location: {location}")
     print(f"Resolution: {resolution[0]}x{resolution[1]}")
     print(frame)
-
