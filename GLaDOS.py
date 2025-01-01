@@ -32,7 +32,7 @@ from glados_modules.GLaDOSGpt import GladosGPT
 from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
-from glados_modules.Camera import Camera
+from glados_modules.CameraRTSP import Camera
 from glados_modules.GladosData import ServoLocation, VisionTracker
 from glados_modules.GLaDosEnums import CameraEnum, ServoEnum, SystemEnums, TrackingEnums, VisionResultsEnum
 
@@ -800,7 +800,9 @@ if __name__ == "__main__":
     broker = mqtt_broker(configp["MQTT"]["mqtt_server_ip"], configp["MQTT"]["mqtt_port"])
     confidence = float(configp["REACTIONS"]["VisionConfidence"])
     mt = MotionTrack(broker=broker, camera_resolution=head_cam_resolution, target="person", confidence=confidence)
-    left_camera = Camera(configfile=configp, location=left_camera_location)
+    port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
+    left_camera = Camera(configfile=configp, location=left_camera_location, rtspport=port)
+    port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_PORT.value])
     right_camera = Camera(configfile=configp, location=right_camera_location)
     left_camera.start()
     # give time for first camera to start before we spin up the second
