@@ -11,7 +11,8 @@ from adafruit_servokit import ServoKit
 
 # glados imports
 from glados_modules.BodyControl import Gservo, LedHead, LedShoulders, GladosLCD
-from glados_modules.Camera import GLaDOSServerException, Camera
+from glados_modules.CameraRTSP import GLaDOSServerException, Camera
+from glados_modules.GLaDosEnums import CameraEnum
 
 
 if __name__ == "__main__":
@@ -66,7 +67,8 @@ if __name__ == "__main__":
     glados_right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd", animation_path=animation_path)
     glados_right_lcd.start()
     led_head.startup()
-    head_camera = Camera(configfile=config_p, location=head_camera_location)
+    head_camera = Camera(configfile=config_p, location=head_camera_location, rtspport=int(config_p[
+        CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_HEAD_PORT.value]))
     head_camera.start()
     while True:
         sleep(1)
