@@ -121,7 +121,6 @@ class YoloDetect(Thread, MQTTClient):
                 self.logger.debug(f"Processing image from {camera_key}")
                 # Process the image and track objects
                 sight = self.__yolo_process_image(image_dict, model)
-                # the string slice strips the / off the front of the camera_location
                 results = CameraMessageBuilder.send_results(camera_key, self.__translate_results(sight))
                 self.send_command(results, self.cmd_topic, qos=0)
 
