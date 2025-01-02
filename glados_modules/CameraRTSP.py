@@ -9,7 +9,7 @@ from picamera2 import Picamera2, MappedArray, Preview
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum
-from glados_modules.RtspServer import RTSPServer  # This is the module code you shared
+from glados_modules.RtspServer import RTSPServer
 
 
 class GLaDOSServerException(Exception):
