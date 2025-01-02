@@ -1,6 +1,9 @@
+# native imports
+from typing import Optional, Dict
+from time import sleep
+
 # 3rd party imports
 import cv2
-from time import sleep
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -12,12 +15,28 @@ class RtspConsumerError(Exception):
 
 
 class RtspConsumer:
-    def __init__(self, uri: str, location: str) -> None:
+    def __init__(self, uri: str, location: str, reconnect_delay: int = 5, max_retries: int = 25) -> None:
+        """
+        Initializes the RtspConsumer.
+
+        :param uri: The RTSP URI of the stream.
+        :param location: The location identifier for the consumer.
+        :param reconnect_delay: Seconds to wait before attempting to reconnect.
+        :param max_retries: Maximum number of retries before giving up.
+        """
         self.rtsp_uri = uri
         self.location = location
         self.__name__ = f"{self.location}_rtsp_consumer"
         self.logger = setup_logger(name=self.__name__)
-        # GStreamer pipeline that sets max-lateness to ensure only the latest frame is captured
+        self.reconnect_delay = reconnect_delay
+        self.max_retries = max_retries
+        self.cap: Optional[cv2.VideoCapture] = None
+        self.connect()
+
+    def connect(self) -> None:
+        """
+        Attempts to connect to the RTSP stream. Retries on failure.
+        """
         gst_pipeline = (
             f"rtspsrc location={self.rtsp_uri} latency=0 ! "
             f"rtpjitterbuffer drop-on-latency=true ! "
@@ -25,41 +44,77 @@ class RtspConsumer:
             f"appsink drop=true max-buffers=1 sync=false emit-signals=false"
         )
 
-        self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-
-    def get_frame(self) -> dict:
-        """
-        Return a from a rtsp stream frame for further processing
-        """
-        if not self.cap.isOpened():
-            msg = f"Error: Cannot open RTSP stream at {self.rtsp_uri}"
-            self.logger.error(msg)
-            raise RtspConsumerError(msg)
-        image_dict = {CameraEnum.MSG_LOCATION_KEY.value: self.location,
-                      CameraEnum.MSG_RAW_IMAGE.value: None,
-                      CameraEnum.MSG_RESOLUTION.value: (self.cap.get(cv2.CAP_PROP_FRAME_WIDTH),
-                                                        self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                                                        )}
-        frame = None
-        c = 0
-        while frame is None:
-            ret, frame = self.cap.read()
-            if not ret:
-                if c >= 10:
-                    self.logger.debug(f"{self.__name__} failed to retrieve frame {c} times exiting")
+        attempt = 0
+        while True:
+            try:
+                self.logger.info(f"Attempting to connect to RTSP stream at {self.rtsp_uri} (Attempt {attempt + 1})...")
+                self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+                if self.cap.isOpened():
+                    self.logger.info(f"Successfully connected to RTSP stream {self.rtsp_uri}.")
                     break
-                c += 1
-        image_dict[CameraEnum.MSG_RAW_IMAGE.value] = frame
-        return image_dict
+                else:
+                    self.logger.error(
+                        f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay} seconds...")
+                    self.cap.release()
+                    self.cap = None
+            except Exception as e:
+                self.logger.error(f"Exception occurred while connecting: {e}")
+
+            attempt += 1
+            if 0 < self.max_retries <= attempt:
+                msg = f"Exceeded maximum connection attempts ({self.max_retries}). Giving up."
+                self.logger.error(msg)
+                raise RtspConsumerError(msg)
+            sleep(self.reconnect_delay)
+
+    def get_frame(self) -> Dict[str, Optional[any]]:
+        """
+        Retrieves a frame from the RTSP stream. Blocks until a frame is successfully retrieved.
+
+        :return: A dictionary containing the location, raw image, and resolution.
+        :raises RtspConsumerError: If unable to retrieve a frame after multiple attempts.
+        """
+        if not self.cap or not self.cap.isOpened():
+            self.logger.warning("VideoCapture not opened. Attempting to reconnect...")
+            self.connect()
+
+        image_dict = {
+            CameraEnum.MSG_LOCATION_KEY.value: self.location,
+            CameraEnum.MSG_RAW_IMAGE.value: None,
+            CameraEnum.MSG_RESOLUTION.value: (
+                self.cap.get(cv2.CAP_PROP_FRAME_WIDTH),
+                self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            )
+        }
+
+        retries = 0
+        while True:
+            ret, frame = self.cap.read()
+            if ret and frame is not None:
+                image_dict[CameraEnum.MSG_RAW_IMAGE.value] = frame
+                return image_dict
+            else:
+                self.logger.warning(
+                    f"Failed to retrieve frame (Attempt {retries + 1}/{self.max_retries}). Reconnecting...")
+                self.cap.release()
+                self.cap = None
+                retries += 1
+                if 0 < self.max_retries <= retries:
+                    msg = f"Failed to retrieve frame after {retries} attempts. Raising error."
+                    self.logger.error(msg)
+                    raise RtspConsumerError(msg)
+                sleep(self.reconnect_delay)
+                self.connect()
 
     def close(self) -> None:
         """
-        Close out all connections
+        Closes the VideoCapture resource and releases all connections.
         """
-        self.cap.release()
-        self.logger.info(f"{self.__name__} Resources released")
-
-
+        if self.cap and self.cap.isOpened():
+            self.cap.release()
+            self.logger.info(f"{self.__name__} Resources released.")
+        else:
+            self.logger.info(f"{self.__name__} Resources were already released or never opened.")
 if __name__ == "__main__":
     # stand allow debugging stub
     import argparse
