@@ -5,7 +5,7 @@ import sys
 from os import path
 
 # glados imports
-from glados_modules.MachineVision import YoloDetect, GLaDOSServerException
+from glados_modules.MachineVision import MLDetect, GLaDOSServerException
 from gladosTTS import engine as glados_voice
 
 if __name__ == "__main__":
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     else:
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
     # start up machine vision
-    mv = YoloDetect(config_p)
+    mv = MLDetect(config_p)
     mv.start()
     # start the text to speech engine
     glados_voice.main()
