@@ -19,6 +19,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
+        # TODO figur out how to do hardware encoding
         self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
