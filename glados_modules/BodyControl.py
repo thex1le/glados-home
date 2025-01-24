@@ -340,7 +340,7 @@ class Gservo(MQTTClient):
     def set_speed(self, speed: int) -> None:
         if speed >= 5:
             speed = 5
-        if speed <= 1:
+        elif speed <= 1:
             speed = 1
         with self._lock:
             self.speed = round(speed)
