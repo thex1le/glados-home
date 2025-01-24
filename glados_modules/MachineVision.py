@@ -2,7 +2,7 @@ from json import loads as json_loads
 from threading import Thread
 from time import time
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 # 3rd party
 import cv2
@@ -17,7 +17,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.Rtsp_Rx import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum
+from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, SystemEnums
 
 
 class GLaDOSServerException(Exception):
@@ -29,15 +29,16 @@ class MLDetect(Thread, MQTTClient):
         # Internal initialization
         Thread.__init__(self)
         self.daemon = True
-        self.__name__ = "yolo_detector"
+        self.__name__ = "vision_detector"
         self.logger = setup_logger(name=self.__name__)
         self.configfile = configfile
-        broker = self.configfile['MQTT']['mqtt_server_ip']
-        port = self.configfile['MQTT']['mqtt_port']
+        mh = SystemEnums.CONFIG_HEAD_MQTT.value
+        broker = self.configfile[mh][SystemEnums.MQTT_SERVER_IP.value]
+        port = self.configfile[mh][SystemEnums.MQTT_PORT.value]
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
-        cam_conf = self.configfile['CAMERAS']
+        cam_conf = self.configfile[CameraEnum.CONFIG_HEAD.value]
         # Camera configurations for each camera
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
@@ -117,6 +118,68 @@ class MLDetect(Thread, MQTTClient):
         self.logger.debug(f"Translated results: {results_dict}")
         return results_dict
 
+    @staticmethod
+    def is_point_in_box(point: Tuple[float, float], box: Dict[str, float]) -> bool:
+        """
+        Check if a point (x, y) is inside a bounding box.
+
+        Args:
+            point (Tuple[float, float]): The x and y coordinates of the point.
+            box (Dict[str, float]): A dictionary containing 'x_min', 'y_min', 'x_max', 'y_max'.
+
+        Returns:
+            bool: True if the point is inside the bounding box, False otherwise.
+        """
+        x, y = point
+        return box["x_min"] <= x <= box["x_max"] and box["y_min"] <= y <= box["y_max"]
+
+    def check_keypoints_in_boxes(self,
+                                 yolo_results_dict: Dict[str, Any],
+                                 rtmpose_keypoints: List[List[Tuple[float, float]]],
+                                 rtmpose_confidences: List[List[float]],
+                                 confidence_threshold: float = 0.5
+                                 ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Check if RTMpose key points are in YOLO person bounding boxes.
+
+        Args:
+            yolo_results_dict (Dict[str, Any]): Translated YOLO results dictionary.
+            rtmpose_keypoints (List[List[Tuple[float, float]]]): RTMpose key points for each person.
+            rtmpose_confidences (List[List[float]]): Confidence scores for each keypoint.
+            confidence_threshold (float): Minimum confidence score to consider a keypoint.
+
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: A dictionary where each
+            bounding box ID maps to a list of associated key points.
+        """
+        # Extract all person bounding boxes
+        person_objects = yolo_results_dict.get("person", {}).get(
+            VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value, [])
+        person_boxes = [
+            {
+                "box": obj[VisionResultsEnum.VISION_RESULTS_BOX_KEY.value],
+                "id": f"person_{idx}"  # Unique ID for each bounding box
+            }
+            for idx, obj in enumerate(person_objects)
+        ]
+        # Dictionary to store key points associated with each bounding box
+        box_key_points: Dict[str, List[Dict[str, Any]]] = {box["id"]: [] for box in person_boxes}
+        # Iterate through each bounding box
+        for box_data in person_boxes:
+            box = box_data["box"]
+            box_id = box_data["id"]
+            # Check all key points for this bounding box
+            for person_idx, (keypoints, confidences) in enumerate(zip(rtmpose_keypoints, rtmpose_confidences)):
+                for kp, conf in zip(keypoints, confidences):
+                    if conf > confidence_threshold and MLDetect.is_point_in_box(kp, box):
+                        box_key_points[box_id].append({
+                            "person_idx": person_idx,
+                            "keypoint": kp,
+                            "confidence": conf
+                        })
+
+        return box_key_points
+
     def run_tracker_for_camera(self, camera_key, d_model, p_model):
         """
         Each camera has its own YOLO tracker running in a separate thread.
@@ -130,11 +193,8 @@ class MLDetect(Thread, MQTTClient):
                 image_dict = image_get.get_frame()
                 self.logger.debug(f"Processing image from {camera_key}")
                 # Process the image and track objects
-                sight = self.__yolo_process_image(image_dict, model)
-                results = CameraMessageBuilder.send_results(camera_key, self.__translate_results(sight))
                 sight = self.__yolo_process_image(image_dict, d_model, p_model)
-                # the string slice strips the / off the front of the camera_location
-                results = CameraMessageBuilder.send_results(camera_location[1:], sight)
+                results = CameraMessageBuilder.send_results(camera_key, sight)
                 # you left off here... you need to take the pose detection out of yolo and do the pose and rtsp sending here
                 # then we can add the results processing to the correct results
                 # the goal is to assign the correct pose to the correct person result for multiple people
@@ -167,7 +227,7 @@ class MLDetect(Thread, MQTTClient):
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
     def __yolo_process_image(self, image_dict, d_model, p_model) -> dict:
-        raw = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
+        image = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
         # Process the image using YOLO tracking
