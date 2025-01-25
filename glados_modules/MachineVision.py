@@ -14,6 +14,7 @@ from glados_modules.Rtsp_Rx import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum
+from glados_modules.GladosData import ServoLocation
 
 
 class GLaDOSServerException(Exception):
@@ -33,6 +34,9 @@ class YoloDetect(Thread, MQTTClient):
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
+        # track servo movement, only process images from head camera when were not moving
+        bt = MQTTClient.broker_tuple(broker, port)
+        self.servos = ServoLocation(bt)
         cam_conf = self.configfile['CAMERAS']
         # Camera configurations for each camera
         self.cam_configs = {
@@ -118,6 +122,12 @@ class YoloDetect(Thread, MQTTClient):
         while True:
             try:
                 image_dict = image_get.get_frame()
+                # check if we are moving
+                if camera_key == CameraEnum.CAMERA_HEAD.value:
+                    # camera head thread, don't process image if we are moving to reduce noise
+                    if self.servos.check_movement() is True:
+                        continue
+
                 self.logger.debug(f"Processing image from {camera_key}")
                 # Process the image and track objects
                 sight = self.__yolo_process_image(image_dict, model)
