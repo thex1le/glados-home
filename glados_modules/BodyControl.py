@@ -301,7 +301,7 @@ class Gservo(MQTTClient):
 
     def send_status(self) -> None:
         """
-        Send current angle status to mqtt"
+        Send current angle status to mqtt
         :return:
         """
         # Send current status
