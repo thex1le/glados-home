@@ -66,7 +66,7 @@ class ServoLocation(MQTTClient):
                             self.send_command(
                                 ServoMessageBuilder.get_status(servo),
                                 ServoEnum.MQTT_COMMAND_TOPIC.value)
-                sleep(0.2)
+                sleep(0.1)
                 self.logger.debug("Waiting for servo statuses to update...")
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
