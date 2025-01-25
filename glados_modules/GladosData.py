@@ -111,6 +111,10 @@ class ServoLocation(MQTTClient):
         Check if any servos are moving and return true or false
         :return: return bool true if moving, false if not
         """
+        if not self.body_map or len(self.body_map) != len(self.servo_list):
+            # Empty or not fully populated map, trigger a status update
+            self.logger.debug("Servo map incomplete, updating servo statuses.")
+            self.update_servo_status()
         ret = False
         for s in self.servo_list:
             if self.body_map[s].moving is True:
