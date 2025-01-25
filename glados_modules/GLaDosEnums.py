@@ -63,6 +63,7 @@ class ServoEnum(Enum):
     MSG_MIN: str = "min"
     MSG_MIDDLE: str = "middle"
     MSG_CURRENT_ANGLE: str = "current"
+    MSG_MOVING: str = "moving"
     MSG_AXIS: str = "axis"
     X_AXIS: str = "x"
     Y_AXIS: str = "y"
