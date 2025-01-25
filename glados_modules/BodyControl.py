@@ -347,7 +347,8 @@ class Gservo(MQTTClient):
                 ServoEnum.MSG_MIN.value: self.servo_range.min,
                 ServoEnum.MSG_MIDDLE.value: self.middle_angle,
                 ServoEnum.MSG_CURRENT_ANGLE.value: self.current_angle,
-                ServoEnum.MSG_AXIS.value: self.axis
+                ServoEnum.MSG_AXIS.value: self.axis,
+                ServoEnum.MSG_MOVING.value: self.moving
             }
 
     def set_speed(self, speed: int) -> None:
@@ -425,6 +426,8 @@ class Gservo(MQTTClient):
                 with self._lock:
                     self.servo.angle = new_angle
                     self.current_angle = target_angle
+                    # signal were moving
+                    self.send_status()
                     # allow for dynamic updates and break the loop if there is an update
                     if target_angle != self.angle:
                         # we have a new angle break the loop
