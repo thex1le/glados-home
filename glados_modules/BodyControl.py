@@ -409,6 +409,8 @@ class Gservo(MQTTClient):
             target_angle = copy(self.angle)
             current_angle = copy(self.current_angle)
             speed_setting = copy(self.speed_settings[self.speed])
+        # signal were moving
+        self.send_status()
 
         if total_distance != 0:
             # Time for full move
@@ -426,8 +428,6 @@ class Gservo(MQTTClient):
                 with self._lock:
                     self.servo.angle = new_angle
                     self.current_angle = target_angle
-                    # signal were moving
-                    self.send_status()
                     # allow for dynamic updates and break the loop if there is an update
                     if target_angle != self.angle:
                         # we have a new angle break the loop
