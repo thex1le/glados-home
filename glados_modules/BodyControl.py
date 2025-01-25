@@ -296,14 +296,19 @@ class Gservo(MQTTClient):
                           f"at speed setting {self.speed} ({speed_in_degrees_per_second} degrees/second)")
         return move_time
 
-    def send_status(self):
+    def send_status(self) -> None:
+        """
+        Send current angle status to mqtt"
+        :return:
+        """
         # Send current status
         status = ServoMessageBuilder.send_status(self.location, self.get_angles())
         self.send_command(topic=self.status_topic, command=status)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
-        Handle incoming MQTT commands for the servo.
+        Handle incoming MQTT commands for the servo
+        :return:
         """
         try:
             j_msg = loads(msg.payload.decode())
@@ -329,6 +334,10 @@ class Gservo(MQTTClient):
         pass
 
     def get_angles(self) -> dict:
+        """
+        Return a dict object with severo values
+        :return: dict object of max, min, middle, current_angle and axis location
+        """
         with self._lock:
             return {
                 ServoEnum.MSG_MAX.value: self.servo_range.max,
@@ -339,6 +348,10 @@ class Gservo(MQTTClient):
             }
 
     def set_speed(self, speed: int) -> None:
+        """
+        Scrub any input and make sure it fits the speed between 1-5
+        :return:
+        """
         if speed >= 5:
             speed = 5
         elif speed <= 1:
@@ -348,6 +361,10 @@ class Gservo(MQTTClient):
             self.logger.debug(f"Speed set to {self.speed}")
 
     def set_angle(self, angle: int) -> None:
+        """
+        Set angle for servo and make sure it fits with in max and min range for servo
+        :return:
+        """
         max_angle = self.servo_range.max
         min_angle = self.servo_range.min
         with self._lock:
@@ -362,15 +379,27 @@ class Gservo(MQTTClient):
                 self.logger.debug(f"Angle set to {self.angle}")
 
     def set_speed_angle(self, speed_angle: Tuple[int, int]) -> None:
+        """
+        Set speed an angle as one call
+        :return:
+        """
         speed, angle = speed_angle
         self.set_speed(speed)
         self.set_angle(angle)
 
     def get_angle(self) -> int:
+        """
+        Return value of current angle
+        :return: int value of current angle
+        """
         with self._lock:
             return self.current_angle
 
     def s_curve_move(self) -> None:
+        """
+        Calculate S curves and send small steps to the servo to move
+        :return:
+        """
         with self._lock:
             total_distance = abs(self.angle - self.current_angle)
             angle = copy(self.angle)
@@ -400,10 +429,18 @@ class Gservo(MQTTClient):
             self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
 
     def get_moving_status(self) -> bool:
+        """
+        Return boolean if we are moving
+        :return: boolean
+        """
         with self._lock:
             return self.moving
 
     def move(self) -> None:
+        """
+        Move the robot
+        :return:
+        """
         with self._lock:
             angle = self.angle
             current_angle = self.current_angle
