@@ -28,9 +28,10 @@ class ServoLocation(MQTTClient):
         self.max = ServoEnum.MSG_MAX.value
         self.current_angle = ServoEnum.MSG_CURRENT_ANGLE.value
         self.middle = ServoEnum.MSG_MIDDLE.value
+        self.moving = ServoEnum.MSG_MOVING.value
         self.axis = ServoEnum.MSG_AXIS.value
         self.ServoTuple = namedtuple('servo', [self.current_angle, self.max,
-                                     self.min, self.middle, self.axis, "location"])
+                                     self.min, self.middle, self.axis, self.moving, "location"])
         self.servo_list = (
             ServoEnum.LOCATION_BODY_UP_DOWN.value,
             ServoEnum.LOCATION_HEAD_UP_DOWN.value,
@@ -90,6 +91,7 @@ class ServoLocation(MQTTClient):
                     results.get(self.min),
                     results.get(self.middle),
                     results.get(self.axis),
+                    results.get(self.moving),
                     location)
 
     def get_angle_map(self) -> dict:
@@ -103,6 +105,18 @@ class ServoLocation(MQTTClient):
         # Return a copy to prevent external modifications
         angle_map_copy = self.body_map.copy()
         return angle_map_copy
+
+    def check_movement(self) -> bool:
+        """
+        Check if any servos are moving and return true or false
+        :return: return bool true if moving, false if not
+        """
+        ret = False
+        for s in self.servo_list:
+            if self.body_map[s].moving is True:
+                ret = True
+                break
+        return ret
 
 
 class VisionTracker(MQTTClient):
