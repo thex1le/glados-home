@@ -6,6 +6,7 @@ from typing import Dict, Callable, Tuple, NamedTuple
 from os import path
 from glob import glob
 from collections import namedtuple
+from copy import copy
 
 # 3rd party
 from paho.mqtt.client import MQTTMessage
@@ -372,9 +373,9 @@ class Gservo(MQTTClient):
     def s_curve_move(self) -> None:
         with self._lock:
             total_distance = abs(self.angle - self.current_angle)
-            angle = self.angle
-            current_angle = self.current_angle
-            speed_setting = self.speed_settings[self.speed]
+            angle = copy(self.angle)
+            current_angle = copy(self.current_angle)
+            speed_setting = copy(self.speed_settings[self.speed])
 
         if total_distance == 0:
             # No movement needed
