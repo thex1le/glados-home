@@ -1,7 +1,7 @@
 import random
-from time import sleep, time
+from time import sleep
 from threading import Thread
-from json import loads, dumps, JSONDecodeError
+from json import loads, JSONDecodeError
 from typing import Dict, Callable, Tuple, NamedTuple
 from os import path
 from glob import glob
