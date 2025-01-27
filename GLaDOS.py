@@ -113,6 +113,7 @@ class MotionTrack(MQTTClient):
         self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         #hanging tracker
         self.hanging = False
+        self._last_move_time = time.time()  # Update the last move time
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         # TODO figure out how we are going to track anger intensity over various body parts
 
@@ -227,6 +228,10 @@ class MotionTrack(MQTTClient):
         mv_list = list()
         self.logger.debug("Calculating movement for servos")
         if target != {}:
+            if hasattr(self, '_last_move_time') and not self.rate_limited_update(self._last_move_time):
+                return
+            self._last_move_time = time.time()  # Update the last move time
+
             # Move head left-right and up-down first
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
@@ -356,6 +361,18 @@ class MotionTrack(MQTTClient):
             corrected_proportion = offset_proportion * (1 + k1 * (radial_distance ** 2))
             return corrected_proportion
         return offset_proportion
+
+    def rate_limited_update(self, last_update_time: float, interval: float = 0.2) -> bool:
+        """
+        Check if enough time has passed since the last update.
+        :return: bool
+        """
+
+        current_time = time.time()
+        if current_time - last_update_time < interval:
+            self.logger.debug("Rate limiting: Skipping update.")
+            return False
+        return True
 
     def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
         # Determine axis and image dimensions
