@@ -78,6 +78,7 @@ class MotionTrack(MQTTClient):
         self.intensity_topic: str = SystemEnums.MQTT_INTENSITY_TOPIC.value
         self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         self.intensity: Tuple[float, float] = (.1, .1)
+        self._bbox_history: dict = {}
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         # head camera resolution
@@ -145,6 +146,8 @@ class MotionTrack(MQTTClient):
                         self.logger.debug(f"Ready to move all servos for " +
                                           f"target {self.target} message times stamp {target_ts}" +
                                           f"for {camera}")
+                        # attempt to smooth the bounding box for visual noise
+                        target_bounding = self.smooth_bounding_box(vision_map[camera][self.target][self.objects])
                         self.move_all_servos(target_bounding, camera)
                         with self._lock:
                             self.side_camera_count = 0
@@ -484,6 +487,22 @@ class MotionTrack(MQTTClient):
             servo1_move = self.servos[servo1.name].current
             servo2_move = self.servos[servo2.name].current
         return servo1_move, servo2_move
+
+    def smooth_bounding_box(self, bbox: dict, alpha: float = 0.8) -> dict:
+        """
+        Smooth bounding box data using exponential moving average.
+        :return: dict of bounding box
+        """
+        if not hasattr(self, '_bbox_history'):
+            self._bbox_history = bbox  # Initialize history on the first call
+        for key in bbox:
+            if key in self._bbox_history:
+                bbox[key] = alpha * self._bbox_history[key] + (1 - alpha) * bbox[key]
+            else:
+                self._bbox_history[key] = bbox[key]  # Initialize missing keys
+        self._bbox_history = bbox
+        self.logger.debug(f"Smoothed bounding box: {bbox}")
+        return bbox
 
     def __mirror_calc(self, servo_angle) -> int:
         """
