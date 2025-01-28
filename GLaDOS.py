@@ -228,7 +228,7 @@ class MotionTrack(MQTTClient):
         mv_list = list()
         self.logger.debug("Calculating movement for servos")
         if target != {}:
-            if hasattr(self, '_last_move_time') and not self.rate_limited_update(self._last_move_time):
+            if hasattr(self, '_last_move_time') and not self.rate_limited_update(self._last_move_time, interval=.4):
                 self.logger.debug("Rate limited, moved too soon")
                 return
             self._last_move_time = time.time()  # Update the last move time
