@@ -383,18 +383,18 @@ class MotionTrack(MQTTClient):
             axis_size = self.cam_x
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
-                direction_factor = 1  # Head LR servo moves with image shift
+                direction_factor = 1  # direct servo drive
             else:
-                direction_factor = -1  # Body LR servo compensates
+                direction_factor = -1  # inverse because we use a 2 gear drive
         else:
             bbox_edge_1 = bbox['y1']
             bbox_edge_2 = bbox['y2']
             axis_size = self.cam_y
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-                direction_factor = 1  # Head UD servo moves with image shift
+                direction_factor = 1  # head up down direct drive
             else:
-                direction_factor = -1  # Body UD servo compensates
+                direction_factor = -1  #
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
