@@ -204,8 +204,10 @@ class MotionTrack(MQTTClient):
                     self.logger.debug("Sending Move commands for Head and Neck")
                     body_movement = {self.body_LR.name: body_lr}
                     if return_message is False:
-                        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                        self.__block_for_update(body_movement)
+                        # todo break for testing
+                        pass
+                        #self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                        #self.__block_for_update(body_movement)
         if return_message is True:
             return body_movement, mv_list
 
@@ -236,6 +238,10 @@ class MotionTrack(MQTTClient):
             # Move head left-right and up-down first
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
+
+            # TODO stop breaking the x axis
+            head_lr = self.servos[self.head_LR.name].current
+
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
