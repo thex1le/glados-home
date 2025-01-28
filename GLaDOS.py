@@ -148,7 +148,7 @@ class MotionTrack(MQTTClient):
                                           f"target {self.target} message times stamp {target_ts}" +
                                           f"for {camera}")
                         # attempt to smooth the bounding box for visual noise
-                        target_bounding = self.smooth_bounding_box(vision_map[camera][self.target][self.objects])
+                        target_bounding = self.smooth_bounding_box(target_bounding)
                         self.move_all_servos(target_bounding, camera)
                         with self._lock:
                             self.side_camera_count = 0
@@ -506,40 +506,28 @@ class MotionTrack(MQTTClient):
             servo2_move = self.servos[servo2.name].current
         return servo1_move, servo2_move
 
-    def smooth_bounding_box(self, bbox_list: list, alpha=0.8) -> list:
+    def smooth_bounding_box(self, bbox: dict, alpha=0.8) -> dict:
         """
-        Smooth bounding box data using exponential moving average.
-        :param bbox_list: List of bounding box dictionaries to process.
+        Smooth a single bounding box using exponential moving average.
+
+        :param bbox: Dictionary with bounding box coordinates {'x1', 'y1', 'x2', 'y2'}.
         :param alpha: Smoothing factor, higher values give more weight to the previous value.
-        :return: List of smoothed bounding box dictionaries.
+        :return: Dictionary with smoothed bounding box coordinates.
         """
         if not hasattr(self, '_bbox_history'):
-            # Initialize history for each track ID
-            self._bbox_history = {}
-        smoothed_list = []
-        for bbox_entry in bbox_list:
-            track_id = bbox_entry.get('track_id')
-            if track_id is None:
-                self.logger.warning("Bounding box entry is missing 'track_id'. Skipping smoothing.")
-                smoothed_list.append(bbox_entry)
-                continue
-            # Initialize history for this track ID if not present
-            if track_id not in self._bbox_history:
-                self._bbox_history[track_id] = bbox_entry['box']
-            # Smooth each coordinate in the bounding box
-            smoothed_box = {}
-            for coord_key in ['x1', 'y1', 'x2', 'y2']:
-                prev_value = self._bbox_history[track_id].get(coord_key, bbox_entry['box'][coord_key])
-                current_value = bbox_entry['box'][coord_key]
-                smoothed_box[coord_key] = alpha * prev_value + (1 - alpha) * current_value
-            # Update history
-            self._bbox_history[track_id] = smoothed_box
-            # Add the smoothed bounding box back to the entry
-            smoothed_entry = bbox_entry.copy()
-            smoothed_entry['box'] = smoothed_box
-            smoothed_list.append(smoothed_entry)
-        self.logger.debug(f"Smoothed bounding boxes: {smoothed_list}")
-        return smoothed_list
+            # Initialize history on the first call
+            self._bbox_history = bbox.copy()
+
+        # Smooth each coordinate
+        smoothed_bbox = {}
+        for key in ['x1', 'y1', 'x2', 'y2']:
+            prev_value = self._bbox_history.get(key, bbox[key])
+            smoothed_bbox[key] = alpha * prev_value + (1 - alpha) * bbox[key]
+
+        # Update history
+        self._bbox_history = smoothed_bbox
+        self.logger.debug(f"Smoothed bounding box: {smoothed_bbox}")
+        return smoothed_bbox
 
     def __mirror_calc(self, servo_angle) -> int:
         """
