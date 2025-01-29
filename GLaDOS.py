@@ -506,12 +506,14 @@ class MotionTrack(MQTTClient):
 
         # Smooth each coordinate
         smoothed_bbox = {}
+        # TODO convert to enums
         for key in ['x1', 'y1', 'x2', 'y2']:
             prev_value = self._bbox_history.get(key, bbox[key])
             smoothed_bbox[key] = alpha * prev_value + (1 - alpha) * bbox[key]
-
         # Update history
         self._bbox_history = smoothed_bbox
+        # add confidence back
+        smoothed_bbox[TrackingEnums.KEY_CONFIDENCE.value] = bbox[TrackingEnums.KEY_CONFIDENCE.value]
         self.logger.debug(f"Smoothed bounding box: {smoothed_bbox}")
         return smoothed_bbox
 
