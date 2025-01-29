@@ -492,30 +492,38 @@ class MotionTrack(MQTTClient):
             servo2_move = self.servos[servo2.name].current
         return servo1_move, servo2_move
 
-    def smooth_bounding_box(self, bbox: dict, alpha=0.8) -> dict:
+    def smooth_bounding_box(self, bbox: dict, alpha_x=0.8, alpha_y=0.6) -> dict:
         """
-        Smooth a single bounding box using exponential moving average.
+        Smooth a single bounding box using an exponential moving average,
+        applying separate smoothing factors for X and Y axes.
 
         :param bbox: Dictionary with bounding box coordinates {'x1', 'y1', 'x2', 'y2'}.
-        :param alpha: Smoothing factor, higher values give more weight to the previous value.
+        :param alpha_x: Smoothing factor for horizontal (X) movement.
+        :param alpha_y: Smoothing factor for vertical (Y) movement.
         :return: Dictionary with smoothed bounding box coordinates.
         """
         if not hasattr(self, '_bbox_history'):
             # Initialize history on the first call
             self._bbox_history = bbox.copy()
 
-        # Smooth each coordinate
-        smoothed_bbox = {}
-        # TODO convert to enums
-        for key in ['x1', 'y1', 'x2', 'y2']:
+        # Smooth X-axis movements (left/right)
+        for key in ['x1', 'x2']:
             prev_value = self._bbox_history.get(key, bbox[key])
-            smoothed_bbox[key] = alpha * prev_value + (1 - alpha) * bbox[key]
+            bbox[key] = alpha_x * prev_value + (1 - alpha_x) * bbox[key]
+
+        # Smooth Y-axis movements (up/down)
+        for key in ['y1', 'y2']:
+            prev_value = self._bbox_history.get(key, bbox[key])
+            bbox[key] = alpha_y * prev_value + (1 - alpha_y) * bbox[key]
+
         # Update history
-        self._bbox_history = smoothed_bbox
-        # add confidence back
-        smoothed_bbox[TrackingEnums.KEY_CONFIDENCE.value] = float(bbox[TrackingEnums.KEY_CONFIDENCE.value])
-        self.logger.debug(f"Smoothed bounding box: {smoothed_bbox}")
-        return smoothed_bbox
+        self._bbox_history = bbox
+
+        # Preserve confidence value
+        bbox[TrackingEnums.KEY_CONFIDENCE.value] = float(bbox[TrackingEnums.KEY_CONFIDENCE.value])
+
+        self.logger.debug(f"Smoothed bounding box: {bbox}")
+        return bbox
 
     def __mirror_calc(self, servo_angle) -> int:
         """
