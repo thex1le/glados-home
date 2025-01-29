@@ -131,6 +131,15 @@ class MotionTrack(MQTTClient):
             self.track_loop(trigger_camera)
             self.logger.debug(f"Tracking complete for {trigger_camera}")
 
+    def __dead_zone_check(self, servo, new_angle, degree_diff=2, confidence=0.8) -> bool:
+        """Adjust dead zone dynamically based on confidence."""
+        dynamic_diff = degree_diff * (1 - confidence) + 1  # Wider threshold for low confidence
+        current_angle = servo.current
+        move = abs(new_angle - current_angle) > dynamic_diff
+        self.logger.debug(f"{servo.location}: Angle {new_angle}, Current {current_angle}, "
+                          f"Diff {abs(new_angle - current_angle)}, Threshold {dynamic_diff}, Move: {move}")
+        return move
+
     def track_loop(self, camera):
         # main tracking loop
         # find target
@@ -282,8 +291,6 @@ class MotionTrack(MQTTClient):
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
         # Loop until all servos reach their target positions
-        pass
-        """
         count = 0
         self.logger.debug(f"Waiting for updates on {len(target_positions.keys())}")
         while True:
@@ -305,7 +312,7 @@ class MotionTrack(MQTTClient):
                 count = 0
                 self.servo_status.update_servo_status()
         self.logger.debug(f"Blocking Updates Complete")
-        """
+
     def __reached_limit(self, servo) -> bool:
         """
         Check if the servo has reached its movement limit.
@@ -450,39 +457,6 @@ class MotionTrack(MQTTClient):
 
 # we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
 # body needs to calculate rotation distance to track correctly
-
-    def __dead_zone_check(self, servo, new_angle, degree_diff=2) -> bool:
-        move = False
-        current_angle = servo.current
-        difference = 0
-        angle_gl = "not greater or less"
-        movement = "not moving"
-        move_factor = angle_gl
-        # TODO figure out why angles being equal falls into greater not moving, likely abs issue
-        if new_angle > current_angle:
-            angle_gl = "greater"
-            difference = new_angle - current_angle
-            if abs(difference) > degree_diff:
-                move_factor = "greater"
-                movement = "moving"
-                move = True
-            else:
-                move_factor = "less"
-                movement = "not moving"
-        elif new_angle < current_angle:
-            difference = new_angle - current_angle
-            angle_gl = "less"
-            if abs(difference) > degree_diff:
-                move = True
-                move_factor = "greater"
-                movement = "moving"
-            else:
-                movement = "not moving"
-                move_factor = "less"
-        self.logger.debug(f"{servo.location} {new_angle} is {angle_gl} than {current_angle} and "
-                          f"with a difference of {abs(difference)} which is {move_factor} than small movement factor"
-                          f" of {degree_diff}, {movement}")
-        return move
 
     def __level_servos(self, servo1, servo2) -> tuple:
         # bring servo1 to midpoint by moving servo2
