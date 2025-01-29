@@ -126,5 +126,5 @@ class TrackingEnums(Enum):
     BODY_HEAD_CAMERA: str = f"{MSG_CAMERA_KEY}_head"
     BODY_LEFT_CAMERA: str = f"{MSG_CAMERA_KEY}_left"
     BODY_RIGHT_CAMERA: str = f"{MSG_CAMERA_KEY}_right"
-
+    KEY_CONFIDENCE: str = "confidence"
 

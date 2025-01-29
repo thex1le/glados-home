@@ -205,7 +205,8 @@ class MotionTrack(MQTTClient):
         if target != {}:
             # account for left right swap
             body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera)
-            if self.__dead_zone_check(self.servos[self.body_LR.name], body_lr, self.dead_zone_factor):
+            if self.__dead_zone_check(self.servos[self.body_LR.name], body_lr, degree_diff=self.dead_zone_factor,
+                                      confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 if flip is True:
                     body_lr = self.__mirror_calc(body_lr)
                 mv_list.append(self.body_LR.move(body_lr))
@@ -256,7 +257,9 @@ class MotionTrack(MQTTClient):
             else:
                 # don't try small movements just set it to current
                 head_lr = self.servos[self.head_LR.name].current
-            if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud, self.dead_zone_factor):
+            if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud,
+                                      degree_diff=self.dead_zone_factor,
+                                      confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 mv_list.append(self.head_UD.move(head_ud))
             else:
                 head_ud = self.servos[self.head_UD.name].current
@@ -278,7 +281,8 @@ class MotionTrack(MQTTClient):
             # level the head
             middle = self.servos[self.head_LR.name].middle
             if self.__dead_zone_check(self.servos[self.head_LR.name], middle,
-                                      degree_diff=self.dead_zone_factor, confidence=target['confidence']):
+                                      degree_diff=self.dead_zone_factor,
+                                      confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 mv_list.append(self.head_LR.move(middle))
             self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
             # level the body
@@ -364,7 +368,7 @@ class MotionTrack(MQTTClient):
             if p[confidence] > highest_confidence:
                 highest_confidence = p[confidence]
                 rtn = p[bbox]
-        rtn['confidence'] = confidence
+        rtn[TrackingEnums.KEY_CONFIDENCE.value] = confidence
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
