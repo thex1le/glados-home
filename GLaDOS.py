@@ -513,7 +513,7 @@ class MotionTrack(MQTTClient):
         # Update history
         self._bbox_history = smoothed_bbox
         # add confidence back
-        smoothed_bbox[TrackingEnums.KEY_CONFIDENCE.value] = bbox[TrackingEnums.KEY_CONFIDENCE.value]
+        smoothed_bbox[TrackingEnums.KEY_CONFIDENCE.value] = float(bbox[TrackingEnums.KEY_CONFIDENCE.value])
         self.logger.debug(f"Smoothed bounding box: {smoothed_bbox}")
         return smoothed_bbox
 
