@@ -131,7 +131,7 @@ class MotionTrack(MQTTClient):
             self.track_loop(trigger_camera)
             self.logger.debug(f"Tracking complete for {trigger_camera}")
 
-    def __dead_zone_check(self, servo, new_angle, degree_diff=2, confidence=0.8) -> bool:
+    def __dead_zone_check(self, servo, new_angle, degree_diff: int = 2, confidence: float = 0.8) -> bool:
         """Adjust dead zone dynamically based on confidence."""
         dynamic_diff = degree_diff * (1 - confidence) + 1  # Wider threshold for low confidence
         current_angle = servo.current
@@ -140,7 +140,7 @@ class MotionTrack(MQTTClient):
                           f"Diff {abs(new_angle - current_angle)}, Threshold {dynamic_diff}, Move: {move}")
         return move
 
-    def track_loop(self, camera):
+    def track_loop(self, camera: str) -> None:
         # main tracking loop
         # find target
         # don't double call if head_tracking is True, just skip this detection
@@ -277,7 +277,8 @@ class MotionTrack(MQTTClient):
             body_movement, mv_list = self.rotate_body(target, camera, return_message=True)
             # level the head
             middle = self.servos[self.head_LR.name].middle
-            if self.__dead_zone_check(self.servos[self.head_LR.name], middle, self.dead_zone_factor):
+            if self.__dead_zone_check(self.servos[self.head_LR.name], middle,
+                                      degree_diff=self.dead_zone_factor, confidence=target['confidence']):
                 mv_list.append(self.head_LR.move(middle))
             self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
             # level the body
@@ -363,6 +364,7 @@ class MotionTrack(MQTTClient):
             if p[confidence] > highest_confidence:
                 highest_confidence = p[confidence]
                 rtn = p[bbox]
+        rtn['confidence'] = confidence
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
