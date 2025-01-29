@@ -368,7 +368,7 @@ class MotionTrack(MQTTClient):
             if p[confidence] > highest_confidence:
                 highest_confidence = p[confidence]
                 rtn = p[bbox]
-        rtn[TrackingEnums.KEY_CONFIDENCE.value] = confidence
+            rtn[TrackingEnums.KEY_CONFIDENCE.value] = p[confidence]
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
