@@ -136,7 +136,7 @@ class MotionTrack(MQTTClient):
         """Adaptive dead zone for filtering jittery movements."""
         # Use a higher dead zone for vertical movement (Y-axis)
         if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-            degree_diff = 3  # Increase to stabilize head nodding
+            degree_diff = 5  # Increase to stabilize head nodding
         # Adjust dead zone dynamically based on confidence
         dynamic_diff = (degree_diff * (1 - confidence) + 1)
         # Increase tolerance for medium confidence (0.6-0.7)
@@ -271,9 +271,8 @@ class MotionTrack(MQTTClient):
                 # don't try small movements just set it to current
                 head_lr = self.servos[self.head_LR.name].current
             # get rid of smaller movements on the head
-            # TODO set a dgree diff for just the head in config file
             if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud,
-                                      degree_diff=4,
+                                      degree_diff=self.dead_zone_factor,
                                       confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 mv_list.append(self.head_UD.move(head_ud))
             else:
@@ -507,7 +506,7 @@ class MotionTrack(MQTTClient):
             servo2_move = self.servos[servo2.name].current
         return servo1_move, servo2_move
 
-    def smooth_bounding_box(self, bbox: dict, alpha_x=0.8, alpha_y=0.6) -> dict:
+    def smooth_bounding_box(self, bbox: dict, alpha_x=0.8, alpha_y=0.9) -> dict:
         """
         Smooth a single bounding box using an exponential moving average,
         applying separate smoothing factors for X and Y axes.
