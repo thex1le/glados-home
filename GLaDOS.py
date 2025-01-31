@@ -507,7 +507,7 @@ class MotionTrack(MQTTClient):
             servo2_move = self.servos[servo2.name].current
         return servo1_move, servo2_move
 
-    def smooth_bounding_box(self, bbox: dict, alpha_x=0.8, alpha_y=0.6) -> dict:
+    def smooth_bounding_box(self, bbox: dict, alpha_x: float = 0.8, alpha_y: float=0.6) -> dict:
         """
         Smooth a single bounding box using an exponential moving average,
         applying separate smoothing factors for X and Y axes.
