@@ -227,10 +227,8 @@ class MotionTrack(MQTTClient):
                     self.logger.debug("Sending Move commands for Head and Neck")
                     body_movement = {self.body_LR.name: body_lr}
                     if return_message is False:
-                        # todo break for testing
-                        pass
-                        #self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                        #self.__block_for_update(body_movement)
+                        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                        self.__block_for_update(body_movement)
         if return_message is True:
             return body_movement, mv_list
 
