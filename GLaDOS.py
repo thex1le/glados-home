@@ -131,9 +131,22 @@ class MotionTrack(MQTTClient):
             self.track_loop(trigger_camera)
             self.logger.debug(f"Tracking complete for {trigger_camera}")
 
-    def __dead_zone_check(self, servo, new_angle, degree_diff: int = 2, confidence: float = 0.8) -> bool:
-        """Adjust dead zone dynamically based on confidence."""
-        dynamic_diff = degree_diff * (1 - confidence) + 1  # Wider threshold for low confidence
+    def __dead_zone_check(self, servo, new_angle: int, degree_diff: int = 2,
+                          confidence: float = 0.8, depth: float = 1.0) -> int:
+        """Adaptive dead zone for filtering jittery movements."""
+        # Use a higher dead zone for vertical movement (Y-axis)
+        if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
+            degree_diff = 3  # Increase to stabilize head nodding
+        # Adjust dead zone dynamically based on confidence
+        dynamic_diff = (degree_diff * (1 - confidence) + 1)
+        # Increase tolerance for medium confidence (0.6-0.7)
+        if 0.6 <= confidence <= 0.7:
+            dynamic_diff += 1.5  # More aggressive filtering
+        # Modify by distance
+        distance_factor = max(0.5, min(2.0, depth))
+        dynamic_diff *= distance_factor
+        # Apply a hard minimum threshold
+        dynamic_diff = max(dynamic_diff, 3)  # Ensure no movement for <3° differences
         current_angle = servo.current
         move = abs(new_angle - current_angle) > dynamic_diff
         self.logger.debug(f"{servo.location}: Angle {new_angle}, Current {current_angle}, "
