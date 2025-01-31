@@ -270,8 +270,10 @@ class MotionTrack(MQTTClient):
             else:
                 # don't try small movements just set it to current
                 head_lr = self.servos[self.head_LR.name].current
+            # get rid of smaller movements on the head
+            # TODO set a dgree diff for just the head in config file
             if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud,
-                                      degree_diff=self.dead_zone_factor,
+                                      degree_diff=4,
                                       confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 mv_list.append(self.head_UD.move(head_ud))
             else:
