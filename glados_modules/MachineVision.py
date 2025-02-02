@@ -2,7 +2,7 @@ from json import loads as json_loads
 from threading import Thread
 from time import time
 from datetime import datetime
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional,
 
 # 3rd party
 import cv2
@@ -22,11 +22,27 @@ from glados_modules.GladosData import ServoLocation
 
 
 class GLaDOSServerException(Exception):
+    """
+    Custom exception class used for GLaDOS server errors.
+    """
     pass
 
 
 class MLDetect(Thread, MQTTClient):
-    def __init__(self, configfile):
+    """
+    Handles YOLOv8 object detection and RTM (Whole body) pose estimation.
+    Manages reading frames from RTSP, running detection and pose estimation,
+    sending results via MQTT, and streaming annotated frames via an RTSP server.
+    """
+
+    def __init__(self, configfile: Dict[str, Any]) -> None:
+        """
+        Initialize the MLDetect class with a given configuration.
+
+        Args:
+            configfile (Dict[str, Any]): The configuration dictionary containing
+                                         MQTT settings, camera settings, YOLO model settings, etc.
+        """
         # Internal initialization
         Thread.__init__(self)
         self.daemon = True
@@ -40,7 +56,7 @@ class MLDetect(Thread, MQTTClient):
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
         cam_conf = self.configfile[CameraEnum.CONFIG_HEAD.value]
-        # track servo movement, only process images from head camera when were not moving
+        # track servo movement, only process images from head camera when we're not moving
         bt = MQTTClient.broker_tuple(broker, port)
         self.servos = ServoLocation(bt)
         # Camera configurations for each camera
@@ -51,7 +67,7 @@ class MLDetect(Thread, MQTTClient):
                 CameraEnum.MSG_RTSP_URI.value: f"rtsp://{cam_conf[CameraEnum.CAMERA_HEAD_RTSP_IP.value]}:"
                                                f"{cam_conf[CameraEnum.CAMERA_HEAD_PORT.value]}/"
                                                f"{cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]}",
-                "tracker_thread": None},
+                "tracker_thread" : None},
             cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_LEFT_RESOLUTION.value].split(',')),
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_LEFT_FPS.value]),
@@ -86,13 +102,24 @@ class MLDetect(Thread, MQTTClient):
 
         self.rtsp = RTSPServer(self.cam_configs)
 
-    def __translate_results(self, results):
+    def __translate_results(self, results: List[Any]) -> Dict[str, Any]:
+        """
+        Convert YOLO detection/tracking results into a dictionary.
+
+        Args:
+            results (List[Any]): YOLO detection results, which are objects that can be
+                                 converted to JSON format for each class.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing translated results with counts, timestamps, and objects.
+        """
         name_key = VisionResultsEnum.YOLO_CLASS_NAME_KEY.value
         count_key = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         class_name_key = VisionResultsEnum.VISION_RESULTS_CLASS_KEY.value
         objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
         ts_key = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
-        results_dict = {}
+        results_dict: Dict[str, Any] = {}
+
         for y_class in results:
             if y_class is None:
                 continue
@@ -132,56 +159,14 @@ class MLDetect(Thread, MQTTClient):
         x, y = point
         return box["x_min"] <= x <= box["x_max"] and box["y_min"] <= y <= box["y_max"]
 
-    def check_keypoints_in_boxes(self,
-                                 yolo_results_dict: Dict[str, Any],
-                                 rtmpose_keypoints: List[List[Tuple[float, float]]],
-                                 rtmpose_confidences: List[List[float]],
-                                 confidence_threshold: float = 0.5
-                                 ) -> Dict[str, List[Dict[str, Any]]]:
+    def run_tracker_for_camera(self, camera_key: str, d_model: YOLO, p_model: Optional[Wholebody]) -> None:
         """
-        Check if RTMpose key points are in YOLO person bounding boxes.
+        Run the YOLO tracker for a specific camera in a loop.
 
         Args:
-            yolo_results_dict (Dict[str, Any]): Translated YOLO results dictionary.
-            rtmpose_keypoints (List[List[Tuple[float, float]]]): RTMpose key points for each person.
-            rtmpose_confidences (List[List[float]]): Confidence scores for each keypoint.
-            confidence_threshold (float): Minimum confidence score to consider a keypoint.
-
-        Returns:
-            Dict[str, List[Dict[str, Any]]]: A dictionary where each
-            bounding box ID maps to a list of associated key points.
-        """
-        # Extract all person bounding boxes
-        person_objects = yolo_results_dict.get("person", {}).get(
-            VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value, [])
-        person_boxes = [
-            {
-                "box": obj[VisionResultsEnum.VISION_RESULTS_BOX_KEY.value],
-                "id": f"person_{idx}"  # Unique ID for each bounding box
-            }
-            for idx, obj in enumerate(person_objects)
-        ]
-        # Dictionary to store key points associated with each bounding box
-        box_key_points: Dict[str, List[Dict[str, Any]]] = {box["id"]: [] for box in person_boxes}
-        # Iterate through each bounding box
-        for box_data in person_boxes:
-            box = box_data["box"]
-            box_id = box_data["id"]
-            # Check all key points for this bounding box
-            for person_idx, (keypoints, confidences) in enumerate(zip(rtmpose_keypoints, rtmpose_confidences)):
-                for kp, conf in zip(keypoints, confidences):
-                    if conf > confidence_threshold and MLDetect.is_point_in_box(kp, box):
-                        box_key_points[box_id].append({
-                            "person_idx": person_idx,
-                            "keypoint": kp,
-                            "confidence": conf
-                        })
-
-        return box_key_points
-
-    def run_tracker_for_camera(self, camera_key, d_model, p_model):
-        """
-        Each camera has its own YOLO tracker running in a separate thread.
+            camera_key (str): The identifier for the camera (factory name).
+            d_model (YOLO): The YOLO detection model.
+            p_model (Optional[Whole body]): The Whole body pose model or None if not used.
         """
         self.logger.info(f"Starting tracker for camera {camera_key}")
         # Run the tracker for this camera
@@ -198,12 +183,8 @@ class MLDetect(Thread, MQTTClient):
 
                 self.logger.debug(f"Processing image from {camera_key}")
                 # Process the image and track objects
-                sight = self.__yolo_process_image(image_dict, d_model, p_model)
+                sight = self.__process_image(image_dict, d_model, p_model)
                 results = CameraMessageBuilder.send_results(camera_key, sight)
-                # you left off here... you need to take the pose detection out of yolo and do the pose and rtsp sending here
-                # then we can add the results processing to the correct results
-                # the goal is to assign the correct pose to the correct person result for multiple people
-                #results = CameraMessageBuilder.send_results(camera_location[1:], self.__translate_results(sight))
                 self.send_command(results, self.cmd_topic, qos=0)
 
             except Exception as e:
@@ -212,12 +193,12 @@ class MLDetect(Thread, MQTTClient):
             except KeyboardInterrupt:
                 break
 
-    def start_tracking_threads(self):
+    def start_tracking_threads(self) -> None:
         """
         Start a separate tracking thread for each camera.
         """
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
-        pose_model = None
+        pose_model: Optional[Wholebody] = None
         for camera_key in self.cam_configs.keys():
             detection_model = YOLO(self.model_config)
             if camera_key[1:] == CameraEnum.CAMERA_HEAD.value:
@@ -231,7 +212,21 @@ class MLDetect(Thread, MQTTClient):
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
-    def __yolo_process_image(self, image_dict, d_model, p_model) -> dict:
+    def __process_image(self, image_dict: Dict[str, Any], d_model: YOLO,
+                        p_model: Optional[Wholebody]) -> Dict[str, Any]:
+        """
+        Process a single image with YOLO detection and optional RTM pose estimation.
+        Annotate the image, draw bounding boxes and pose skeleton, and stream via RTSP.
+
+        Args:
+            image_dict (Dict[str, Any]): Dictionary containing the raw image and metadata like
+                                         resolution and camera location.
+            d_model (YOLO): The YOLO detection model.
+            p_model (Optional[Whole body]): The Whole body pose model, None if no pose detection.
+
+        Returns:
+            Dict[str, Any]: The translated results containing detections (and pose assignments if pose model is used).
+        """
         image = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
@@ -241,9 +236,12 @@ class MLDetect(Thread, MQTTClient):
         # Annotating and sending the processed image
         annotator = Annotator(image)
         image_center = (int(width // 2), int(height // 2))
-        cv2.line(image, (image_center[0] - 10, image_center[1]), (image_center[0] + 10, image_center[1]), (0, 255, 0), 2)
-        cv2.line(image, (image_center[0], image_center[1] - 10), (image_center[0], image_center[1] + 10), (0, 255, 0), 2)
+        cv2.line(image, (image_center[0] - 10, image_center[1]),
+                 (image_center[0] + 10, image_center[1]), (0, 255, 0), 2)
+        cv2.line(image, (image_center[0], image_center[1] - 10),
+                 (image_center[0], image_center[1] + 10), (0, 255, 0), 2)
 
+        # loop over all the results and draw and log the discovered items on the image
         for r in results:
             boxes = r.boxes
             for box in boxes:
@@ -267,67 +265,78 @@ class MLDetect(Thread, MQTTClient):
         timestamp = datetime.now().isoformat(timespec='seconds')
         yellow_orange_color = (0, 140, 255)
         position = (10, a_image.shape[0] - 10)
+        # place a yellow orange time stamp at the bottom of left of the frame
         cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=1, color=yellow_orange_color, thickness=2)
         position = (10, 10)
         cv2.putText(a_image, camera_location, position, cv2.FONT_HERSHEY_SIMPLEX, fontScale=1,
                     color=yellow_orange_color, thickness=2)
         t_results = self.__translate_results(results)
+
+        # if a pose model exists, plot the pose on the camera
         if p_model is not None:
             # we have a model, must be head camera, run model and draw points
             key_points, scores = p_model(image)
             # TODO read key point threshold from enum or config file
             a_image = draw_skeleton(a_image, key_points, scores, kpt_thr=0.5)
-            self.assign_key_points_to_response(t_results, key_points, scores)
+            # assign results to bounding boxes
+            t_results = self.assign_key_points_to_response(t_results, key_points, scores)
+
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict["camera"], a_image)
         return t_results
 
-    def merge_keypoints_to_dict(self, coords_list: np.ndarray, scores_list: np.ndarray) -> List[List[Dict[str, float]]]:
+    @staticmethod
+    def merge_key_points_to_dict(cords_list: np.ndarray, scores_list: np.ndarray) -> List[List[Dict[str, float]]]:
         """
-        Merges coordinates and confidence scores into a list of dictionaries for each person,
+        Merge coordinates and confidence scores into a list of dictionaries for each person,
         while tracking the index of each keypoint.
 
         Args:
-            coords_list (np.ndarray): A list of arrays with shape (N, M, 2), where N is the number of people,
-                                      M is the number of key points, and 2 represents the (x, y) coordinates.
+            cords_list (np.ndarray): A list of arrays with shape (N, M, 2), where N is the number of people,
+                                     M is the number of key points, and 2 represents the (x, y) coordinates.
             scores_list (np.ndarray): A list of arrays with shape (N, M), where N is the number of people
                                       and M is the number of key points, representing confidence scores.
+
         Returns:
             List[List[Dict[str, float]]]: A list where each element corresponds to a person and contains a list of
-                                          dictionaries with "x", "y", "confidence", and "index" keys for each keypoint.
+                                          dictionaries with "x", "y",
+                                          "confidence", and "location" keys for each keypoint.
         """
-        merged_data = []
+        merged_data: List[List[Dict[str, float]]] = []
         # Iterate through each person's set of coordinates and scores
-        for coords, scores in zip(coords_list, scores_list):
-            person_data = []
+        for cords, scores in zip(cords_list, scores_list):
+            person_data: List[Dict[str, float]] = []
             # Loop through each keypoint, using enumerate to track the index
-            for index, ((x, y), score) in enumerate(zip(coords, scores)):
+            for index, ((x, y), score) in enumerate(zip(cords, scores)):
                 keypoint = {
                     "x": float(x),
                     "y": float(y),
                     "confidence": float(score),
-                    "location": VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[index]}
+                    "location": VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[index]
+                }
                 person_data.append(keypoint)
             merged_data.append(person_data)
         return merged_data
 
-    def assign_key_points_to_response(self, response: Dict[str, Any],
-                                      coords_list: np.ndarray, scores_list: np.ndarray) -> Dict[str, Any]:
+    def assign_key_points_to_response(self,
+                                      response: Dict[str, Any],
+                                      cords_list: np.ndarray,
+                                      scores_list: np.ndarray) -> Dict[str, Any]:
         """
-        Assigns keypoints to the appropriate person in the response dictionary if all keypoints
+        Assign key points to the appropriate person in the response dictionary if all key points
         lie within the defined bounding box.
 
         Args:
             response (Dict[str, Any]): The response dictionary containing objects with bounding boxes.
-            coords_list (np.ndarray): A list of arrays with shape (N, M, 2) for coordinates.
+            cords_list (np.ndarray): A list of arrays with shape (N, M, 2) for coordinates.
             scores_list (np.ndarray): A list of arrays with shape (N, M) for confidence scores.
 
         Returns:
             Dict[str, Any]: The updated response dictionary with assigned key points.
         """
         # Merge the key points and scores into a list of dictionaries
-        merged_key_points = self.merge_keypoints_to_dict(coords_list, scores_list)
+        merged_key_points = MLDetect.merge_key_points_to_dict(cords_list, scores_list)
 
         # Iterate over the response dictionary to find matching objects
         count = 0
@@ -342,6 +351,7 @@ class MLDetect(Thread, MQTTClient):
                 # Check if all key points lie within the bounding box
                 if all(x1 <= kp['x'] <= x2 and y1 <= kp['y'] <= y2 for kp in key_points):
                     filtered_key_points = key_points
+                    self.logger.debug(f"Linking {key_points} to {person_data}")
                     break  # Assign the first matching set of key points
 
             # Assign the filtered key points to the person data
@@ -350,7 +360,11 @@ class MLDetect(Thread, MQTTClient):
             count += 1
         return response
 
-    def run(self):
+    def run(self) -> None:
+        """
+        Entry point for the MLDetect thread. Publishes a startup status message
+        and then starts tracking threads for each camera.
+        """
         status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
         self.send_command(status, self.status_topic)
         # Start tracking for each camera in separate threads
