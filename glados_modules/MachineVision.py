@@ -2,7 +2,7 @@ from json import loads as json_loads
 from threading import Thread
 from time import time
 from datetime import datetime
-from typing import List, Dict, Any, Tuple, Optional,
+from typing import List, Dict, Any, Tuple, Optional
 
 # 3rd party
 import cv2
