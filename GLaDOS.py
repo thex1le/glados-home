@@ -30,7 +30,7 @@ from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.MqttClient import MQTTClient
 from glados_modules.CameraRTSP import Camera
-from glados_modules.GLaDosEnums import CameraEnum, SystemEnums, MQTTEnums
+from glados_modules.GLaDosEnums import CameraEnum, SystemEnums, MQTTEnums, LoggingEnums
 
 
 # silence some errors on the terminal
@@ -68,7 +68,7 @@ class GladosLocal(Thread, MQTTClient):
         ip = configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
         port = int(configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value])
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_INFO.value )
         MQTTClient.__init__(self, ip=ip, port=port)
         self.cmd_topic: str = MQTTEnums.VISION_RESULTS_MQTT_TOPIC.value
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
