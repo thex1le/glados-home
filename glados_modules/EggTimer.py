@@ -3,6 +3,7 @@ import time
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
+from glados_modules.GLaDosEnums import LoggingEnums
 
 
 class EggTimer(Thread):
@@ -10,7 +11,7 @@ class EggTimer(Thread):
         Thread.__init__(self)
         self.daemon = True
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__class__.__name__)
+        self.logger = setup_logger(name=self.__class__.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.duration = duration_in_seconds
         self.start_time = None
         self.is_running = False

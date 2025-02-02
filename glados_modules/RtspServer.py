@@ -8,7 +8,7 @@ import cv2
 
 # glados modules
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import CameraEnum
+from glados_modules.GLaDosEnums import CameraEnum, LoggingEnums
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
@@ -58,7 +58,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
 class RTSPServer(GstRtspServer.RTSPServer):
     def __init__(self, cam_configs, port=8554, **properties):
         super(RTSPServer, self).__init__(**properties)
-        self.logger = setup_logger(name=self.__class__.__name__)
+        self.logger = setup_logger(name=self.__class__.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.set_service(str(port))
         Gst.init(None)
         self.factories = {}

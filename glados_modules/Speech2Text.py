@@ -8,6 +8,7 @@ import speech_recognition as sr
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
+from glados_modules.GLaDosEnums import LoggingEnums
 
 
 class GladosSTT(Thread):
@@ -16,7 +17,7 @@ class GladosSTT(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.text = None
         self.glocal = glocal
         self.mplist = list()

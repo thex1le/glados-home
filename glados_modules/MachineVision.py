@@ -17,7 +17,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.Rtsp_Rx import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, SystemEnums
+from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums
 from glados_modules.GladosData import ServoLocation
 
 
@@ -47,7 +47,7 @@ class MLDetect(Thread, MQTTClient):
         Thread.__init__(self)
         self.daemon = True
         self.__name__ = "vision_detector"
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.configfile = configfile
         mh = SystemEnums.CONFIG_HEAD_MQTT.value
         broker = self.configfile[mh][SystemEnums.MQTT_SERVER_IP.value]

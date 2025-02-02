@@ -11,7 +11,8 @@ from paho.mqtt.client import MQTTMessage
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.GladosData import ServoLocation, VisionTracker
-from glados_modules.GLaDosEnums import CameraEnum, ServoEnum, SystemEnums, TrackingEnums, VisionResultsEnum
+from glados_modules.GLaDosEnums import (CameraEnum, ServoEnum, SystemEnums,
+                                        TrackingEnums, VisionResultsEnum, LoggingEnums)
 
 
 class MotionTrack(MQTTClient):
@@ -39,7 +40,7 @@ class MotionTrack(MQTTClient):
         """
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
-        self.logger = setup_logger(self.__name__)
+        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
 
         # MQTT topics and triggers
         self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value

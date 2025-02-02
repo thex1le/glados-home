@@ -4,12 +4,13 @@ from homeassistant_api import Client
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
+from glados_modules.GLaDosEnums import LoggingEnums
 
 
 class HomeAssistantLink:
     def __init__(self, config_file):
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         base = config_file['HOMEASSISTANT']
         self.token = base['token']
         self.api = base['api']

@@ -68,7 +68,7 @@ class GladosLocal(Thread, MQTTClient):
         ip = configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
         port = int(configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value])
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_INFO.value )
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         MQTTClient.__init__(self, ip=ip, port=port)
         self.cmd_topic: str = MQTTEnums.VISION_RESULTS_MQTT_TOPIC.value
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value

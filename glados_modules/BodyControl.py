@@ -23,7 +23,7 @@ from adafruit_rgb_display import st7789
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, SystemEnums
+from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -34,7 +34,7 @@ class GladosLCD(Thread, MQTTClient):
         Thread.daemon = True
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.location: str = location
         self.animation_path: str = animation_path
         self.cmd_topic: str = "body/lcd"
@@ -246,7 +246,7 @@ class Gservo(MQTTClient):
     def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         degree_per_second = 60 / servo_speed
         self.speed_settings = {
             1: degree_per_second * 0.2,  # Calm movement
@@ -481,7 +481,7 @@ class Gservo(MQTTClient):
 class LedShoulders(MQTTClient):
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = "LED_Shoulder_Controller"
-        self.logger = setup_logger(self.__name__)
+        self.logger = setup_logger(self.__name__, LoggingEnums.LOG_LEVEL_INFO.value)
         led_num: int = 64
         self.pixels = neopixel.NeoPixel(board.D12, led_num, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.lh = LedHelper
@@ -544,6 +544,7 @@ class DumbLEDController(Thread):
     """
     def __init__(self, channel: int, duty_cycle: int = 100) -> None:
         Thread.__init__(self)
+        # TODO add a logger and mqtt here
         self.daemon = True
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
         self.led = self.hat.channels[channel]
@@ -608,7 +609,7 @@ class LedHead(MQTTClient):
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
-        self.logger = setup_logger(self.__name__)
+        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
@@ -617,8 +618,8 @@ class LedHead(MQTTClient):
         self.hat.frequency = 60
         self.pwm_led.duty_cycle = 250
         self.intensity: Tuple[float, float] = (.1, .5)
-        self.cmd_topic: str = "body/led"
-        self.intensity_topic: str = "intensity"
+        self.cmd_topic: str = MQTTEnums.BODY_LED_CONTROL_MQTT_TOPIC.value
+        self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         self.location: str = "eye_led"

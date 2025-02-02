@@ -10,7 +10,7 @@ from cachetools import TTLCache
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums, LoggingEnums
 
 
 class ServoLocation(MQTTClient):
@@ -19,7 +19,7 @@ class ServoLocation(MQTTClient):
     """
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         # Initialize shared resources before calling the superclass constructor
         self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
@@ -129,7 +129,7 @@ class VisionTracker(MQTTClient):
     """
     def __init__(self, broker: NamedTuple, target: str, confidence: float, tracker_callback) -> None:
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.target = target
         self.tracker_callback = tracker_callback
         self.confidence_score = confidence

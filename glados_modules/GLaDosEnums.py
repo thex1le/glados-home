@@ -5,8 +5,8 @@ from typing import Dict
 
 class LoggingEnums(Enum):
     """Enum class to store logging-related constants."""
-    LOG_DEBUG: int = DEBUG
-    LOG_INFO: int = INFO
+    LOG_LEVEL_DEBUG: int = DEBUG
+    LOG_LEVEL_INFO: int = INFO
     LOG_FOLDER_DEFAULT_NAME: str = "logs"
     LOG_FILE_TYPE: str = ".log"
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -37,6 +37,7 @@ class MQTTEnums(Enum):
     Enum for MQTT Topics
     """
     VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
+    BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
 
 

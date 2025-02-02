@@ -7,7 +7,7 @@ import cv2
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import CameraEnum
+from glados_modules.GLaDosEnums import CameraEnum, LoggingEnums
 
 
 class RtspConsumerError(Exception):
@@ -27,7 +27,7 @@ class RtspConsumer:
         self.rtsp_uri = uri
         self.location = location
         self.__name__ = f"{self.location}_rtsp_consumer"
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.reconnect_delay = reconnect_delay
         self.max_retries = max_retries
         self.cap: Optional[cv2.VideoCapture] = None
@@ -115,6 +115,8 @@ class RtspConsumer:
             self.logger.info(f"{self.__name__} Resources released.")
         else:
             self.logger.info(f"{self.__name__} Resources were already released or never opened.")
+
+
 if __name__ == "__main__":
     # stand allow debugging stub
     import argparse
