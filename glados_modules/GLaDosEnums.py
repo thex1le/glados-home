@@ -17,6 +17,7 @@ class SystemEnums(Enum):
     MQTT_INTENSITY_TOPIC: str = "intensity"
     CONFIG_HEAD_MQTT: str = "MQTT"
     CONFIG_HEAD_DEFAULT: str = "DEFAULT"
+    CONFIG_HEAD_LOCALSPEAK: str = "LOCALSPEAK"
     MQTT_PORT: str = "mqtt_port"
     MQTT_SERVER_IP: str = "mqtt_server_ip"
     CONFIG_HEAD_RTSP: str = "RTSP"
@@ -29,6 +30,14 @@ class SystemEnums(Enum):
     RIGHT_LCD: str = "right_lcd"
     LEFT_LCD: str = "left_lcd"
     LIB_ASOUND: str = "libasound.so"
+
+
+class MQTTEnums(Enum):
+    """
+    Enum for MQTT Topics
+    """
+    VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
+    SYSTEM_INTENSITY_TOPIC: str = "intensity"
 
 
 class VisionResultsEnum(Enum):
@@ -51,7 +60,6 @@ class VisionResultsEnum(Enum):
     VISION_RESULTS_CONFIDENCE_KEY: str = "confidence"
     VISION_RESULTS_TS_KEY: str = "ts"
     VISION_RESULTS_BOX_KEY: str = "box"
-
     # Key used for class name in YOLO results
     YOLO_CLASS_NAME_KEY: str = "name"
 

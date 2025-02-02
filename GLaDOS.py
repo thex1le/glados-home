@@ -30,7 +30,7 @@ from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.MqttClient import MQTTClient
 from glados_modules.CameraRTSP import Camera
-from glados_modules.GLaDosEnums import CameraEnum, SystemEnums
+from glados_modules.GLaDosEnums import CameraEnum, SystemEnums, MQTTEnums
 
 
 # silence some errors on the terminal
@@ -65,15 +65,15 @@ class GladosLocal(Thread, MQTTClient):
     def __init__(self, config_file, remote_llm):
         Thread.__init__(self)
         Thread.daemon = True
-        ip = configp["MQTT"]["mqtt_server_ip"]
-        port = int(configp["MQTT"]["mqtt_port"])
+        ip = configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
+        port = int(configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value])
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__)
         MQTTClient.__init__(self, ip=ip, port=port)
-        self.cmd_topic: str = "vision/camera_response"
-        self.intensity_topic: str = "intensity"
+        self.cmd_topic: str = MQTTEnums.VISION_RESULTS_MQTT_TOPIC.value
+        self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         # TODO consider how we want to handle all 3 cameras...
-        self.main_camera = "Camera_Head"
+        self.main_camera = CameraEnum.CAMERA_HEAD.value
         self.topic_handler: Dict[str, Callable] = {self.intensity_topic: self.handle_intensity}
         self.llm = remote_llm
         self.last_greeting = None
@@ -85,9 +85,9 @@ class GladosLocal(Thread, MQTTClient):
         self.last_cresponse = None
         self.timers = Queue()
         self.configFile = config_file
-        # TODO need to fix config file
-        self.voiceurl = config_file["DEFAULT"]["VoiceUrl"]
-        self.configp = config_file["LOCALSPEAK"]
+        # TODO finish converting all of this into enums
+        self.voiceurl = config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value][SystemEnums.VOICE_URL.value]
+        self.configp = config_file[SystemEnums.CONFIG_HEAD_LOCALSPEAK.value]
         root_path = self.configp.get("localpath", "./txt_responses")
         self.greetings = self.llp(self.configp.get("greetings", list()), root_path)
         self.processing = self.llp(self.configp.get("processing", list()), root_path)
@@ -98,7 +98,7 @@ class GladosLocal(Thread, MQTTClient):
         self.vision_confidence = float(self.configp.get("VisionConfidence", 0.0))
         self.fuck = self.llp(self.configp.get("fuck", list()), root_path)
         self.mixer = Mixer("Speaker")
-        self.__change_volume(int(config_file["DEFAULT"]["VolumeLevel"]))
+        self.__change_volume(int(config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value]["VolumeLevel"]))
         self.current_vol = int(self.mixer.getvolume()[0])
         self.sight_results = mp.Manager().dict()
         self.stop = False
