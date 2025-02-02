@@ -7,8 +7,8 @@ def setup_logger(
         name: str = __name__,
         level: int = logging.DEBUG,
         log_dir: str = LoggingEnums.LOG_FOLDER_DEFAULT_NAME.value,
-        file_logging: int = LoggingEnums.LOG_DEBUG.value,
-        console_logging: int = LoggingEnums.LOG_DEBUG.value
+        file_logging: int = LoggingEnums.LOG_LEVEL_DEBUG.value,
+        console_logging: int = LoggingEnums.LOG_LEVEL_DEBUG.value
 ) -> logging.Logger:
     """
     Sets up a logger with both file and console handlers.
@@ -21,8 +21,8 @@ def setup_logger(
         name (str): The name of the logger. Defaults to `__name__`.
         level (int): The overall logging level for the logger. Defaults to `logging.DEBUG`.
         log_dir (str): The directory where log files are stored. Defaults to `LoggingEnums.LOG_FOLDER_DEFAULT_NAME.value`.
-        file_logging (int): The logging level for file output. Defaults to `LoggingEnums.LOG_DEBUG.value`.
-        console_logging (int): The logging level for console output. Defaults to `LoggingEnums.LOG_DEBUG.value`.
+        file_logging (int): The logging level for file output. Defaults to `LoggingEnums.LOG_LEVEL_DEBUG.value`.
+        console_logging (int): The logging level for console output. Defaults to `LoggingEnums.LOG_LEVEL_DEBUG.value`.
 
     Returns:
         logging.Logger: A configured logger instance.
