@@ -28,6 +28,7 @@ class SystemEnums(Enum):
     VOICE_URL: str = "VoiceUrl"
     RIGHT_LCD: str = "right_lcd"
     LEFT_LCD: str = "left_lcd"
+    LIB_ASOUND: str = "libasound.so"
 
 
 class VisionResultsEnum(Enum):

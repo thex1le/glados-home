@@ -49,7 +49,7 @@ c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
 
 @contextmanager
 def noalsaerr():
-    asound = cdll.LoadLibrary('libasound.so')
+    asound = cdll.LoadLibrary(SystemEnums.LIB_ASOUND.value)
     asound.snd_lib_error_set_handler(c_error_handler)
     yield
     asound.snd_lib_error_set_handler(None)
@@ -853,7 +853,6 @@ if __name__ == "__main__":
     head_cam_resolution = cam_resolution(int(r_x), int(r_y))
     broker = mqtt_broker(configp["MQTT"]["mqtt_server_ip"], configp["MQTT"]["mqtt_port"])
     confidence = float(configp["REACTIONS"]["VisionConfidence"])
-    mt = MotionTrack(broker=broker, camera_resolution=head_cam_resolution, target="person", confidence=confidence)
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
     left_camera = Camera(configfile=configp, location=left_camera_location, rtspport=port)
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_PORT.value])
