@@ -1,7 +1,19 @@
 from enum import Enum
+from logging import DEBUG, INFO
+from typing import Dict
+
+
+class LoggingEnums(Enum):
+    """Enum class to store logging-related constants."""
+    LOG_DEBUG: int = DEBUG
+    LOG_INFO: int = INFO
+    LOG_FOLDER_DEFAULT_NAME: str = "logs"
+    LOG_FILE_TYPE: str = ".log"
+    LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
 class SystemEnums(Enum):
+    """Enum class to store GLaDOS system-related constants."""
     MQTT_INTENSITY_TOPIC: str = "intensity"
     CONFIG_HEAD_MQTT: str = "MQTT"
     CONFIG_HEAD_DEFAULT: str = "DEFAULT"
@@ -20,19 +32,31 @@ class SystemEnums(Enum):
 
 class VisionResultsEnum(Enum):
     """
-    Enum for dict that tracks objects found by yolo
+    Enum for dictionary keys that track objects detected by YOLO.
+
+    This enum defines string keys used in vision result dictionaries to
+    standardize the format of object detection outputs, including count,
+    class names, confidence levels, timestamps, and bounding boxes.
+
+    Additionally, it includes COCO WholeBody keypoint mappings for
+    133 key points (body, face, hands, and feet).
     """
-    VISION_RESULTS_COUNT_KEY = "count"
-    VISION_RESULTS_RESULTS_KEY = "results"
-    VISION_RESULTS_OBJECTS_KEY = "objects"
-    VISION_RESULTS_CLASS_KEY = "class_name"
-    VISION_RESULTS_CONFIDENCE_KEY = "confidence"
-    VISION_RESULTS_TS_KEY = "ts"
-    VISION_RESULTS_BOX_KEY = "box"
-    YOLO_CLASS_NAME_KEY = "name"
-    VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY = {
-                # COCO WholeBody keypoint mapping (133 Keypoints)
-                # Body Keypoints (0-16)
+
+    # Keys for object detection results
+    VISION_RESULTS_COUNT_KEY: str = "count"
+    VISION_RESULTS_RESULTS_KEY: str = "results"
+    VISION_RESULTS_OBJECTS_KEY: str = "objects"
+    VISION_RESULTS_CLASS_KEY: str = "class_name"
+    VISION_RESULTS_CONFIDENCE_KEY: str = "confidence"
+    VISION_RESULTS_TS_KEY: str = "ts"
+    VISION_RESULTS_BOX_KEY: str = "box"
+
+    # Key used for class name in YOLO results
+    YOLO_CLASS_NAME_KEY: str = "name"
+
+    VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY: Dict[int, str] = {
+                # COCO WholeBody keypoint mapping (133 Key points)
+                # Body Key points (0-16)
                 0: "Nose",
                 1: "Left Eye",
                 2: "Right Eye",
@@ -50,7 +74,7 @@ class VisionResultsEnum(Enum):
                 14: "Right Knee",
                 15: "Left Ankle",
                 16: "Right Ankle",
-                # Face Keypoints (17-84)
+                # Face Key points (17-84)
                 # Jawline (17 points)
                 17: "Face_Jawline_0",
                 18: "Face_Jawline_1",
@@ -127,7 +151,7 @@ class VisionResultsEnum(Enum):
                 82: "Face_Mouth_Inner_5",
                 83: "Face_Mouth_Inner_6",
                 84: "Face_Mouth_Inner_7",
-                # Left Hand Keypoints (85-105)
+                # Left Hand Key points (85-105)
                 85: "Left_Hand_Wrist",
                 86: "Left_Hand_Thumb_1",
                 87: "Left_Hand_Thumb_2",
@@ -149,7 +173,7 @@ class VisionResultsEnum(Enum):
                 103: "Left_Hand_Pinky_2",
                 104: "Left_Hand_Pinky_3",
                 105: "Left_Hand_Pinky_4",
-                # Right Hand Keypoints (106-126)
+                # Right Hand Key points (106-126)
                 106: "Right_Hand_Wrist",
                 107: "Right_Hand_Thumb_1",
                 108: "Right_Hand_Thumb_2",
@@ -171,7 +195,7 @@ class VisionResultsEnum(Enum):
                 124: "Right_Hand_Pinky_2",
                 125: "Right_Hand_Pinky_3",
                 126: "Right_Hand_Pinky_4",
-                # Foot Keypoints (127-132)
+                # Foot Key points (127-132)
                 127: "Left_Foot_BigToe",
                 128: "Left_Foot_SmallToe",
                 129: "Left_Foot_Heel",
@@ -275,4 +299,3 @@ class TrackingEnums(Enum):
     BODY_LEFT_CAMERA: str = f"{MSG_CAMERA_KEY}_left"
     BODY_RIGHT_CAMERA: str = f"{MSG_CAMERA_KEY}_right"
     KEY_CONFIDENCE: str = "confidence"
-
