@@ -1,5 +1,5 @@
 # native imports
-from typing import Dict, Callable
+from typing import Dict, Callable, NamedTuple
 from json import dumps, loads
 from uuid import uuid4
 from time import time
@@ -18,6 +18,7 @@ from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums
 class MQTTClient:
     broker_tuple = namedtuple('broker', ["ip", "port"])
 
+    #TODO convert this to named tuple
     def __init__(self, ip: str = 'localhost', port: int = 1883) -> None:
         self.ip = ip
         self.port = int(port)
