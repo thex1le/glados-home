@@ -211,6 +211,7 @@ class ServoEnum(Enum):
     MSG_MIN: str = "min"
     MSG_MIDDLE: str = "middle"
     MSG_CURRENT_ANGLE: str = "current"
+    MSG_MOVING: str = "moving"
     MSG_AXIS: str = "axis"
     X_AXIS: str = "x"
     Y_AXIS: str = "y"
@@ -273,5 +274,5 @@ class TrackingEnums(Enum):
     BODY_HEAD_CAMERA: str = f"{MSG_CAMERA_KEY}_head"
     BODY_LEFT_CAMERA: str = f"{MSG_CAMERA_KEY}_left"
     BODY_RIGHT_CAMERA: str = f"{MSG_CAMERA_KEY}_right"
-
+    KEY_CONFIDENCE: str = "confidence"
 

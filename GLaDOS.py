@@ -78,6 +78,7 @@ class MotionTrack(MQTTClient):
         self.intensity_topic: str = SystemEnums.MQTT_INTENSITY_TOPIC.value
         self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         self.intensity: Tuple[float, float] = (.1, .1)
+        self._bbox_history: dict = {}
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
         # head camera resolution
@@ -112,6 +113,7 @@ class MotionTrack(MQTTClient):
         self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
         #hanging tracker
         self.hanging = False
+        self._last_move_time = time.time()  # Update the last move time
         # TODO do we need these there? are we sending signals? maybe trigger LED events? Maybe pulse eye down?
         # TODO figure out how we are going to track anger intensity over various body parts
 
@@ -129,7 +131,29 @@ class MotionTrack(MQTTClient):
             self.track_loop(trigger_camera)
             self.logger.debug(f"Tracking complete for {trigger_camera}")
 
-    def track_loop(self, camera):
+    def __dead_zone_check(self, servo, new_angle: int, degree_diff: int = 2,
+                          confidence: float = 0.8, depth: float = 1.0) -> int:
+        """Adaptive dead zone for filtering jittery movements."""
+        # Use a higher dead zone for vertical movement (Y-axis)
+        if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
+            degree_diff = 5  # Increase to stabilize head nodding
+        # Adjust dead zone dynamically based on confidence
+        dynamic_diff = (degree_diff * (1 - confidence) + 1)
+        # Increase tolerance for medium confidence (0.6-0.7)
+        if 0.6 <= confidence <= 0.7:
+            dynamic_diff += 1.5  # More aggressive filtering
+        # Modify by distance
+        distance_factor = max(0.5, min(2.0, depth))
+        dynamic_diff *= distance_factor
+        # Apply a hard minimum threshold
+        dynamic_diff = max(dynamic_diff, 3)  # Ensure no movement for <3° differences
+        current_angle = servo.current
+        move = abs(new_angle - current_angle) > dynamic_diff
+        self.logger.debug(f"{servo.location}: Angle {new_angle}, Current {current_angle}, "
+                          f"Diff {abs(new_angle - current_angle)}, Threshold {dynamic_diff}, Move: {move}")
+        return move
+
+    def track_loop(self, camera: str) -> None:
         # main tracking loop
         # find target
         # don't double call if head_tracking is True, just skip this detection
@@ -145,6 +169,8 @@ class MotionTrack(MQTTClient):
                         self.logger.debug(f"Ready to move all servos for " +
                                           f"target {self.target} message times stamp {target_ts}" +
                                           f"for {camera}")
+                        # attempt to smooth the bounding box for visual noise
+                        target_bounding = self.smooth_bounding_box(target_bounding)
                         self.move_all_servos(target_bounding, camera)
                         with self._lock:
                             self.side_camera_count = 0
@@ -192,7 +218,8 @@ class MotionTrack(MQTTClient):
         if target != {}:
             # account for left right swap
             body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera)
-            if self.__dead_zone_check(self.servos[self.body_LR.name], body_lr, self.dead_zone_factor):
+            if self.__dead_zone_check(self.servos[self.body_LR.name], body_lr, degree_diff=self.dead_zone_factor,
+                                      confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 if flip is True:
                     body_lr = self.__mirror_calc(body_lr)
                 mv_list.append(self.body_LR.move(body_lr))
@@ -224,15 +251,27 @@ class MotionTrack(MQTTClient):
         mv_list = list()
         self.logger.debug("Calculating movement for servos")
         if target != {}:
+            if hasattr(self, '_last_move_time') and not self.rate_limited_update(self._last_move_time, interval=.4):
+                self.logger.debug("Rate limited, moved too soon")
+                return
+            self._last_move_time = time.time()  # Update the last move time
+
             # Move head left-right and up-down first
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
+
+            # TODO stop breaking the x axis
+            head_lr = self.servos[self.head_LR.name].current
+
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
                 # don't try small movements just set it to current
                 head_lr = self.servos[self.head_LR.name].current
-            if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud, self.dead_zone_factor):
+            # get rid of smaller movements on the head
+            if self.__dead_zone_check(self.servos[self.head_UD.name], head_ud,
+                                      degree_diff=self.dead_zone_factor,
+                                      confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 mv_list.append(self.head_UD.move(head_ud))
             else:
                 head_ud = self.servos[self.head_UD.name].current
@@ -253,7 +292,9 @@ class MotionTrack(MQTTClient):
             body_movement, mv_list = self.rotate_body(target, camera, return_message=True)
             # level the head
             middle = self.servos[self.head_LR.name].middle
-            if self.__dead_zone_check(self.servos[self.head_LR.name], middle, self.dead_zone_factor):
+            if self.__dead_zone_check(self.servos[self.head_LR.name], middle,
+                                      degree_diff=self.dead_zone_factor,
+                                      confidence=target[TrackingEnums.KEY_CONFIDENCE.value]):
                 mv_list.append(self.head_LR.move(middle))
             self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
             # level the body
@@ -339,6 +380,7 @@ class MotionTrack(MQTTClient):
             if p[confidence] > highest_confidence:
                 highest_confidence = p[confidence]
                 rtn = p[bbox]
+            rtn[TrackingEnums.KEY_CONFIDENCE.value] = p[confidence]
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
@@ -352,6 +394,18 @@ class MotionTrack(MQTTClient):
             return corrected_proportion
         return offset_proportion
 
+    def rate_limited_update(self, last_update_time: float, interval: float = 0.2) -> bool:
+        """
+        Check if enough time has passed since the last update.
+        :return: bool
+        """
+
+        current_time = time.time()
+        if current_time - last_update_time < interval:
+            self.logger.debug("Rate limiting: Skipping update.")
+            return False
+        return True
+
     def __calc_servo(self, servo, bbox: dict, camera: str) -> int:
         # Determine axis and image dimensions
         if servo.axis == ServoEnum.X_AXIS.value:
@@ -360,18 +414,18 @@ class MotionTrack(MQTTClient):
             axis_size = self.cam_x
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
-                direction_factor = 1  # Head LR servo moves with image shift
+                direction_factor = 1  # direct servo drive
             else:
-                direction_factor = -1  # Body LR servo compensates
+                direction_factor = -1  # inverse because we use a 2 gear drive
         else:
             bbox_edge_1 = bbox['y1']
             bbox_edge_2 = bbox['y2']
             axis_size = self.cam_y
             # Determine direction factor based on servo location
             if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-                direction_factor = 1  # Head UD servo moves with image shift
+                direction_factor = 1  # head up down direct drive
             else:
-                direction_factor = -1  # Body UD servo compensates
+                direction_factor = -1  #
         # Calculate the center of the bounding box on the axis
         center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
         # Calculate the offset from the image center (in pixels)
@@ -422,39 +476,6 @@ class MotionTrack(MQTTClient):
 # we are over rotating because of leveling 52 on a head.. is not the same as 52 on the rotation of the body...
 # body needs to calculate rotation distance to track correctly
 
-    def __dead_zone_check(self, servo, new_angle, degree_diff=2) -> bool:
-        move = False
-        current_angle = servo.current
-        difference = 0
-        angle_gl = "not greater or less"
-        movement = "not moving"
-        move_factor = angle_gl
-        # TODO figure out why angles being equal falls into greater not moving, likely abs issue
-        if new_angle > current_angle:
-            angle_gl = "greater"
-            difference = new_angle - current_angle
-            if abs(difference) > degree_diff:
-                move_factor = "greater"
-                movement = "moving"
-                move = True
-            else:
-                move_factor = "less"
-                movement = "not moving"
-        elif new_angle < current_angle:
-            difference = new_angle - current_angle
-            angle_gl = "less"
-            if abs(difference) > degree_diff:
-                move = True
-                move_factor = "greater"
-                movement = "moving"
-            else:
-                movement = "not moving"
-                move_factor = "less"
-        self.logger.debug(f"{servo.location} {new_angle} is {angle_gl} than {current_angle} and "
-                          f"with a difference of {abs(difference)} which is {move_factor} than small movement factor"
-                          f" of {degree_diff}, {movement}")
-        return move
-
     def __level_servos(self, servo1, servo2) -> tuple:
         # bring servo1 to midpoint by moving servo2
         # ensure servos are on the same axis
@@ -482,6 +503,39 @@ class MotionTrack(MQTTClient):
             servo1_move = self.servos[servo1.name].current
             servo2_move = self.servos[servo2.name].current
         return servo1_move, servo2_move
+
+    def smooth_bounding_box(self, bbox: dict, alpha_x: float = 0.8, alpha_y: float=0.9) -> dict:
+        """
+        Smooth a single bounding box using an exponential moving average,
+        applying separate smoothing factors for X and Y axes.
+
+        :param bbox: Dictionary with bounding box coordinates {'x1', 'y1', 'x2', 'y2'}.
+        :param alpha_x: Smoothing factor for horizontal (X) movement.
+        :param alpha_y: Smoothing factor for vertical (Y) movement.
+        :return: Dictionary with smoothed bounding box coordinates.
+        """
+        if not hasattr(self, '_bbox_history'):
+            # Initialize history on the first call
+            self._bbox_history = bbox.copy()
+
+        # Smooth X-axis movements (left/right)
+        for key in ['x1', 'x2']:
+            prev_value = self._bbox_history.get(key, bbox[key])
+            bbox[key] = alpha_x * prev_value + (1 - alpha_x) * bbox[key]
+
+        # Smooth Y-axis movements (up/down)
+        for key in ['y1', 'y2']:
+            prev_value = self._bbox_history.get(key, bbox[key])
+            bbox[key] = alpha_y * prev_value + (1 - alpha_y) * bbox[key]
+
+        # Update history
+        self._bbox_history = bbox
+
+        # Preserve confidence value
+        bbox[TrackingEnums.KEY_CONFIDENCE.value] = float(bbox[TrackingEnums.KEY_CONFIDENCE.value])
+
+        self.logger.debug(f"Smoothed bounding box: {bbox}")
+        return bbox
 
     def __mirror_calc(self, servo_angle) -> int:
         """
@@ -786,7 +840,7 @@ if __name__ == "__main__":
         raise GladosException("Unable to load file {}".format(args.conf[0]))
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    gl.speak("Oh Its you! , , Its been a long time...")
+    #gl.speak("Oh Its you! , , Its been a long time...")
     gstt = GladosSTT(gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)

@@ -4,6 +4,7 @@ from json import dumps, loads
 from uuid import uuid4
 from time import time
 from threading import Lock
+from collections import namedtuple
 
 # 3rd party imports
 import paho.mqtt.client as mqtt
@@ -15,6 +16,8 @@ from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums
 
 
 class MQTTClient:
+    broker_tuple = namedtuple('broker', ["ip", "port"])
+
     def __init__(self, ip: str = 'localhost', port: int = 1883) -> None:
         self.ip = ip
         self.port = int(port)
@@ -120,6 +123,6 @@ class ServoMessageBuilder:
 
     @staticmethod
     def send_status(location, results):
-        return  {ServoEnum.MSG_LOCATION_KEY.value: location,
-                 ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_STATUS.value,
-                 ServoEnum.MSG_RESULTS.value: results}
+        return {ServoEnum.MSG_LOCATION_KEY.value: location,
+                ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_STATUS.value,
+                ServoEnum.MSG_RESULTS.value: results}

@@ -18,6 +18,7 @@ from glados_modules.Rtsp_Rx import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, SystemEnums
+from glados_modules.GladosData import ServoLocation
 
 
 class GLaDOSServerException(Exception):
@@ -39,6 +40,9 @@ class MLDetect(Thread, MQTTClient):
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
         cam_conf = self.configfile[CameraEnum.CONFIG_HEAD.value]
+        # track servo movement, only process images from head camera when were not moving
+        bt = MQTTClient.broker_tuple(broker, port)
+        self.servos = ServoLocation(bt)
         # Camera configurations for each camera
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
@@ -63,11 +67,6 @@ class MLDetect(Thread, MQTTClient):
                                                f"{cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]}",
                 "tracker_thread": None}
         }
-        # pose model
-        self.coco_key_points = ["Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear",
-                                "Left Shoulder", "Right Shoulder", "Left Elbow", "Right Elbow",
-                                "Left Wrist", "Right Wrist", "Left Hip", "Right Hip",
-                                "Left Knee", "Right Knee", "Left Ankle", "Right Ankle"]
 
         # rtsp
         self.rtsp_port = int(self.configfile['RTSP']['rtsp_port'])
@@ -191,6 +190,12 @@ class MLDetect(Thread, MQTTClient):
         while True:
             try:
                 image_dict = image_get.get_frame()
+                # check if we are moving
+                if camera_key == CameraEnum.CAMERA_HEAD.value:
+                    # camera head thread, don't process image if we are moving to reduce noise
+                    if self.servos.check_movement() is True:
+                        continue
+
                 self.logger.debug(f"Processing image from {camera_key}")
                 # Process the image and track objects
                 sight = self.__yolo_process_image(image_dict, d_model, p_model)

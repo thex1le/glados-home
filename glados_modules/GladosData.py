@@ -28,9 +28,10 @@ class ServoLocation(MQTTClient):
         self.max = ServoEnum.MSG_MAX.value
         self.current_angle = ServoEnum.MSG_CURRENT_ANGLE.value
         self.middle = ServoEnum.MSG_MIDDLE.value
+        self.moving = ServoEnum.MSG_MOVING.value
         self.axis = ServoEnum.MSG_AXIS.value
         self.ServoTuple = namedtuple('servo', [self.current_angle, self.max,
-                                     self.min, self.middle, self.axis, "location"])
+                                     self.min, self.middle, self.axis, self.moving, "location"])
         self.servo_list = (
             ServoEnum.LOCATION_BODY_UP_DOWN.value,
             ServoEnum.LOCATION_HEAD_UP_DOWN.value,
@@ -65,7 +66,7 @@ class ServoLocation(MQTTClient):
                             self.send_command(
                                 ServoMessageBuilder.get_status(servo),
                                 ServoEnum.MQTT_COMMAND_TOPIC.value)
-                sleep(0.2)
+                sleep(0.1)
                 self.logger.debug("Waiting for servo statuses to update...")
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
@@ -90,6 +91,7 @@ class ServoLocation(MQTTClient):
                     results.get(self.min),
                     results.get(self.middle),
                     results.get(self.axis),
+                    results.get(self.moving),
                     location)
 
     def get_angle_map(self) -> dict:
@@ -103,6 +105,22 @@ class ServoLocation(MQTTClient):
         # Return a copy to prevent external modifications
         angle_map_copy = self.body_map.copy()
         return angle_map_copy
+
+    def check_movement(self) -> bool:
+        """
+        Check if any servos are moving and return true or false
+        :return: return bool true if moving, false if not
+        """
+        if not self.body_map or len(self.body_map) != len(self.servo_list):
+            # Empty or not fully populated map, trigger a status update
+            self.logger.debug("Servo map incomplete, updating servo statuses.")
+            self.update_servo_status()
+        ret = False
+        for s in self.servo_list:
+            if self.body_map[s].moving is True:
+                ret = True
+                break
+        return ret
 
 
 class VisionTracker(MQTTClient):
