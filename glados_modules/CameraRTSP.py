@@ -26,7 +26,7 @@ class Camera(Process, MQTTClient):
         # Initialize MQTTClient
         broker = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
         port = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value]
-        cam_conf = configfile[CameraEnum.CAMERA_HEAD.value]
+        cam_conf = configfile[CameraEnum.CONFIG_HEAD.value]
         MQTTClient.__init__(self, broker, port)
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
