@@ -356,7 +356,11 @@ class MLDetect(Thread, MQTTClient):
 
             # Assign the filtered key points to the person data
             if filtered_key_points:
-                response['person']['objects'][count]['pose'] = filtered_key_points
+                pose_dict = dict()
+                for kp in filtered_key_points:
+                    loc = kp["location"]
+                    pose_dict[loc] = kp
+                response['person']['objects'][count]['pose'] = pose_dict
             count += 1
         return response
 
