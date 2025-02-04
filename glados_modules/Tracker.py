@@ -208,7 +208,7 @@ class MotionTrack(MQTTClient):
                             f"message times stamp {target_ts} for {camera}"
                         )
                         # track pose data if we have it
-                        pose_data = vision_map[camera][self.target][self.objects][TrackingEnums.KEY_POSE.value]
+                        pose_data = best_target[TrackingEnums.KEY_POSE.value]
                         if self.pose_target in pose_data.keys():
                             current_pose_target = pose_data[self.pose_target]
                         else:
