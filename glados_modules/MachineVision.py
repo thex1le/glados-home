@@ -322,15 +322,20 @@ class MLDetect(Thread, MQTTClient):
     def assign_key_points_to_response(self,
                                       response: Dict[str, Any],
                                       cords_list: np.ndarray,
-                                      scores_list: np.ndarray) -> Dict[str, Any]:
+                                      scores_list: np.ndarray,
+                                      percentage_threshold: float = 1.0) -> Dict[str, Any]:
         """
         Assign key points to the appropriate person in the response dictionary if all key points
         lie within the defined bounding box.
+        Assign key points to the appropriate person in the response dictionary if at least a certain percentage
+        of key points lie within the defined bounding box.
 
         Args:
             response (Dict[str, Any]): The response dictionary containing objects with bounding boxes.
             cords_list (np.ndarray): A list of arrays with shape (N, M, 2) for coordinates.
             scores_list (np.ndarray): A list of arrays with shape (N, M) for confidence scores.
+            percentage_threshold (float): The required percentage (0.0 to 1.0) of key points that must be
+                                            within the bounding box to assign them.
 
         Returns:
             Dict[str, Any]: The updated response dictionary with assigned key points.
@@ -345,23 +350,30 @@ class MLDetect(Thread, MQTTClient):
             box = person_data.get('box', {})
             x1, y1 = box.get('x1', 0), box.get('y1', 0)
             x2, y2 = box.get('x2', 0), box.get('y2', 0)
-            # Filter key points that fit inside the bounding box
+
+            # Filter key points that fit inside the bounding box based on the given threshold
             filtered_key_points = []
             for key_points in merged_key_points:
-                # Check if all key points lie within the bounding box
-                if all(x1 <= kp['x'] <= x2 and y1 <= kp['y'] <= y2 for kp in key_points):
+                total_points = len(key_points)
+                if total_points == 0:
+                    continue  # Avoid division by zero if no key points are present
+
+                # Count the number of key points inside the bounding box
+                points_in_box = sum(
+                    1 for kp in key_points if x1 <= kp['x'] <= x2 and y1 <= kp['y'] <= y2
+                )
+                # If the percentage of points inside the box meets or exceeds the threshold, assign them.
+                if (points_in_box / total_points) >= percentage_threshold:
                     filtered_key_points = key_points
                     self.logger.debug(f"Linking {key_points} to {person_data}")
-                    break  # Assign the first matching set of key points
+                    break  # Use the first matching set of key points
 
-            # Assign the filtered key points to the person data
+            # Assign the filtered key points to the person data if any were found
             if filtered_key_points:
-                pose_dict = dict()
-                for kp in filtered_key_points:
-                    loc = kp["location"]
-                    pose_dict[loc] = kp
+                pose_dict = {kp["location"]: kp for kp in filtered_key_points}
                 response['person']['objects'][count]['pose'] = pose_dict
             count += 1
+
         return response
 
     def run(self) -> None:
