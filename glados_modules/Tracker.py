@@ -208,11 +208,11 @@ class MotionTrack(MQTTClient):
                             f"message times stamp {target_ts} for {camera}"
                         )
                         # track pose data if we have it
-                        pose_data = best_target[TrackingEnums.KEY_POSE.value]
-                        if self.pose_target in pose_data.keys():
-                            current_pose_target = pose_data[self.pose_target]
-                        else:
-                            current_pose_target = None
+                        current_pose_target = None
+                        if TrackingEnums.KEY_POSE.value in best_target.keys():
+                            pose_data = best_target[TrackingEnums.KEY_POSE.value]
+                            if self.pose_target in pose_data.keys():
+                                current_pose_target = pose_data[self.pose_target]
                         # Attempt to smooth the bounding box for visual noise
                         target_bounding = self.smooth_bounding_box(target_bounding)
 
