@@ -150,21 +150,6 @@ class MLDetect(Thread, MQTTClient):
         self.logger.debug(f"Translated results: {results_dict}")
         return results_dict
 
-    @staticmethod
-    def is_point_in_box(point: Tuple[float, float], box: Dict[str, float]) -> bool:
-        """
-        Check if a point (x, y) is inside a bounding box.
-
-        Args:
-            point (Tuple[float, float]): The x and y coordinates of the point.
-            box (Dict[str, float]): A dictionary containing 'x_min', 'y_min', 'x_max', 'y_max'.
-
-        Returns:
-            bool: True if the point is inside the bounding box, False otherwise.
-        """
-        x, y = point
-        return box["x_min"] <= x <= box["x_max"] and box["y_min"] <= y <= box["y_max"]
-
     def run_tracker_for_camera(self, camera_key: str, d_model: YOLO, p_model: Optional[Wholebody]) -> None:
         """
         Run the YOLO tracker for a specific camera in a loop.
