@@ -19,6 +19,7 @@ from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums
 from glados_modules.GladosData import ServoLocation
+from glados_modules.Tracker import MotionTrack
 
 
 class GLaDOSServerException(Exception):
@@ -49,9 +50,13 @@ class MLDetect(Thread, MQTTClient):
         self.__name__ = "vision_detector"
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.configfile = configfile
+        r_x, r_y = self.configfile[CameraEnum.CONFIG_HEAD.value][
+            f"{CameraEnum.CAMERA_HEAD.value}_{CameraEnum.MSG_RESOLUTION.value}"].split(',')
+        head_cam_resolution = MotionTrack.camera_tuple(int(r_x), int(r_y))
         mh = SystemEnums.CONFIG_HEAD_MQTT.value
         broker = self.configfile[mh][SystemEnums.MQTT_SERVER_IP.value]
         port = self.configfile[mh][SystemEnums.MQTT_PORT.value]
+        mqtt_broker = MotionTrack.broker_tuple(broker, port)
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
@@ -59,6 +64,7 @@ class MLDetect(Thread, MQTTClient):
         # track servo movement, only process images from head camera when we're not moving
         bt = MQTTClient.broker_tuple(broker, port)
         self.servos = ServoLocation(bt)
+        self.motion_tracking = MotionTrack(broker=mqtt_broker, camera_resolution=head_cam_resolution)
         # Camera configurations for each camera
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
@@ -325,8 +331,6 @@ class MLDetect(Thread, MQTTClient):
                                       scores_list: np.ndarray,
                                       percentage_threshold: float = 1.0) -> Dict[str, Any]:
         """
-        Assign key points to the appropriate person in the response dictionary if all key points
-        lie within the defined bounding box.
         Assign key points to the appropriate person in the response dictionary if at least a certain percentage
         of key points lie within the defined bounding box.
 
