@@ -197,7 +197,7 @@ class MotionTrack(MQTTClient):
                     best_target = self.__find_target(vision_map[camera][self.target][self.objects])
                     target_ts = vision_map[camera].get(VisionResultsEnum.VISION_RESULTS_TS_KEY.value, None)
                     # create just a bounding box and confidence object
-                    target_bounding = best_target[VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value]
+                    target_bounding = best_target[TrackingEnums.KEY_BOX.value]
                     target_bounding[
                         TrackingEnums.KEY_CONFIDENCE.value] = best_target[
                         VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value]
