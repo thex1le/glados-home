@@ -20,12 +20,16 @@ class MotionTrack(MQTTClient):
     A class for motion tracking on a target. Inherits from MQTTClient to utilize MQTT functionality
     for receiving commands and sending servo movement instructions.
     """
+    broker_tuple = MQTTClient.broker_tuple
+    camera_tuple = namedtuple("cam_resolution", ['x', 'y'])
 
     def __init__(
         self,
         broker: NamedTuple,
         camera_resolution: NamedTuple,
         target: str = "person",
+        # set pose_target to nose
+        pose_target: str = VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[0],
         confidence: float = 0.65,
         move_fudge_factor: int = 3
     ) -> None:
@@ -82,6 +86,7 @@ class MotionTrack(MQTTClient):
 
         # Tracking-related attributes
         self.target = target
+        self.pose_target = pose_target
         self.confidence = confidence
         self.servos: Dict[str, object] = dict()
         self.dms: int = 3  # default movement speed
@@ -96,7 +101,8 @@ class MotionTrack(MQTTClient):
 
         # Vision seen Tracker
         self.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
-        self.vision_tracker = VisionTracker(broker, self.target, self.confidence, self.track_loop)
+        self.vision_tracker = VisionTracker(broker=broker, target=self.target,
+                                            confidence=self.confidence, tracker_callback=self.track_loop)
 
         # Hanging tracker: indicates if the robot is in "hang around" mode
         self.hanging = False
@@ -188,20 +194,35 @@ class MotionTrack(MQTTClient):
             if camera in vision_map.keys():
                 if vision_map[camera][self.target].get(self.count, 0) != 0:
                     # If we have detections for the target, find the bounding box with the highest confidence
-                    target_bounding = self.__find_target(vision_map[camera][self.target][self.objects])
+                    best_target = self.__find_target(vision_map[camera][self.target][self.objects])
                     target_ts = vision_map[camera].get(VisionResultsEnum.VISION_RESULTS_TS_KEY.value, None)
-
+                    # create just a bounding box and confidence object
+                    target_bounding = best_target[VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value]
+                    target_bounding[
+                        TrackingEnums.KEY_CONFIDENCE.value] = best_target[
+                        VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value]
                     # If the camera is the head camera, move all servos
                     if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                         self.logger.debug(
                             f"Ready to move all servos for target {self.target} "
                             f"message times stamp {target_ts} for {camera}"
                         )
+                        # track pose data if we have it
+                        pose_data = vision_map[camera][self.target][self.objects][TrackingEnums.KEY_POSE.value]
+                        if self.pose_target in pose_data.keys():
+                            current_pose_target = pose_data[self.pose_target]
+                        else:
+                            current_pose_target = None
                         # Attempt to smooth the bounding box for visual noise
                         target_bounding = self.smooth_bounding_box(target_bounding)
 
+                        # maybe also pass the point for the center point of a pose target or pose targets?
                         # Move head and body servos based on the bounding box
-                        self.move_all_servos(target_bounding, camera)
+                        if current_pose_target is not None:
+                            self.move_all_servos(current_pose_target, camera, pose=True)
+                        else:
+                            self.move_all_servos(target_bounding, camera)
+
                         with self._lock:
                             self.side_camera_count = 0
                             self.hanging = False
@@ -253,7 +274,8 @@ class MotionTrack(MQTTClient):
         target: dict,
         camera: str,
         flip: bool = False,
-        return_message: bool = False
+        return_message: bool = False,
+        pose: bool = False
     ) -> None | tuple:
         """
         Rotate the body servo to face the detected target, primarily used by side cameras.
@@ -263,6 +285,7 @@ class MotionTrack(MQTTClient):
         :param camera: String indicating which camera sees the target ("LEFT" or "RIGHT").
         :param flip: Boolean indicating if the angle should be mirrored (default: False).
         :param return_message: If True, returns a tuple of (movement_dict, mqtt_message_list) instead of sending.
+        :param pose: Boolean indication if we are working with pose point data
         :return: None or tuple of (dict, list) depending on return_message.
         """
         self.logger.debug("Moving servos getting angle map")
@@ -273,7 +296,7 @@ class MotionTrack(MQTTClient):
         body_movement = dict()
 
         if target != {}:
-            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera)
+            body_lr = self.__calc_servo(self.servos[self.body_LR.name], target, camera=camera, point=pose)
             # Check if movement is needed based on dead zone
             if self.__dead_zone_check(
                 self.servos[self.body_LR.name],
@@ -312,7 +335,7 @@ class MotionTrack(MQTTClient):
         # Send the hang-around servo commands
         self.servo_status.send_command(msg_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
-    def move_all_servos(self, target: dict, camera: str) -> None:
+    def move_all_servos(self, target: dict, camera: str, pose: bool=False) -> None:
         """
         Move the head and body servos based on the location of the target in the frame.
 
@@ -334,8 +357,8 @@ class MotionTrack(MQTTClient):
             self._last_move_time = time.time()
 
             # Calculate angles for head left-right (X-axis) and up-down (Y-axis)
-            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera)
-            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera)
+            head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera, point=pose)
+            head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera, point=pose)
 
             # Check if the LR movement is outside the dead zone
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
@@ -371,7 +394,7 @@ class MotionTrack(MQTTClient):
                 self.__bend_body_to_extend_range()
 
             # Rotate body to face the target, then attempt to level the head and body
-            body_movement, mv_list = self.rotate_body(target, camera, return_message=True)
+            body_movement, mv_list = self.rotate_body(target, camera, return_message=True, pose=pose)
 
             # Level the head left-right to its middle
             middle = self.servos[self.head_LR.name].middle
@@ -483,7 +506,7 @@ class MotionTrack(MQTTClient):
         # Block until movement completes
         self.__block_for_update({self.body_UD.name: new_body_angle})
 
-    def __find_target(self, seen_data: object) -> dict:
+    def __find_target(self, seen_data: dict) -> dict:
         """
         From the list/dict of detection data, return the bounding box of the target
         with the highest confidence.
@@ -493,16 +516,12 @@ class MotionTrack(MQTTClient):
         :return: A dictionary with the bounding box coordinates of the highest confidence target.
         """
         confidence = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-        bbox = VisionResultsEnum.VISION_RESULTS_BOX_KEY.value
-        rtn = dict()
+        rtn = {}
         highest_confidence = 0
-
         for p in seen_data:
             if p[confidence] > highest_confidence:
                 highest_confidence = p[confidence]
-                rtn = p[bbox]
-            rtn[TrackingEnums.KEY_CONFIDENCE.value] = p[confidence]
-
+                rtn = p
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
@@ -537,7 +556,7 @@ class MotionTrack(MQTTClient):
             return False
         return True
 
-    def __calc_servo(self, servo: object, bbox: dict, camera: str) -> int:
+    def __calc_servo(self, servo: object, bbox: dict, camera: str, point: bool = False) -> int:
         """
         Calculate the new servo angle based on the bounding box center offset from
         the frame center. Applies FOV-based scaling and optional fisheye correction.
@@ -545,34 +564,41 @@ class MotionTrack(MQTTClient):
         :param servo: Servo object containing current angle, axis, min, max, etc.
         :param bbox: Dictionary with 'x1', 'x2', 'y1', 'y2' bounding box cords, plus confidence.
         :param camera: The camera that captured the bounding box (e.g., HEAD, LEFT, RIGHT).
+        :param point: Bool if we are dealing with a 2 X 2 Y bounding box or pose single point x y dict
         :return: New servo angle (clamped within servo min and max).
         """
-        # Determine axis and image dimensions
-        if servo.axis == ServoEnum.X_AXIS.value:
-            bbox_edge_1 = bbox['x1']
-            bbox_edge_2 = bbox['x2']
-            axis_size = self.cam_x
-            # Determine direction factor based on servo location
-            if servo.location == ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value:
-                direction_factor = 1  # direct servo drive
+        if point is False:
+            # Determine axis and image dimensions
+            if servo.axis == ServoEnum.X_AXIS.value:
+                bbox_edge_1 = bbox['x1']
+                bbox_edge_2 = bbox['x2']
+                axis_size = self.cam_x
             else:
-                direction_factor = -1  # inverse for a 2-gear drive
-        else:
-            bbox_edge_1 = bbox['y1']
-            bbox_edge_2 = bbox['y2']
-            axis_size = self.cam_y
-            # Determine direction factor based on servo location
-            if servo.location == ServoEnum.LOCATION_HEAD_UP_DOWN.value:
-                direction_factor = 1  # head up-down direct drive
-            else:
-                direction_factor = -1
+                bbox_edge_1 = bbox['y1']
+                bbox_edge_2 = bbox['y2']
+                axis_size = self.cam_y
 
-        # Calculate the center of the bounding box on the axis
-        center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
+            # Calculate the center of the bounding box on the axis
+            center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
+
+        elif point is True:
+            if servo.axis == ServoEnum.X_AXIS.value:
+                axis_size = self.cam_x
+                center_of_bbox = bbox['x']
+            else:
+                axis_size = self.cam_y
+                center_of_bbox = bbox['y']
+
         # Offset from the image center (in pixels)
         offset_from_center = (axis_size / 2) - center_of_bbox  # Reverse due to camera movement
         # Proportion of offset relative to image size
         offset_proportion = offset_from_center / (axis_size / 2)  # Normalized -1 to 1
+
+        # Determine direction factor based on servo location
+        if servo.location in (ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, ServoEnum.LOCATION_HEAD_UP_DOWN.value):
+            direction_factor = 1  # direct servo drive
+        else:
+            direction_factor = -1  # inverse for a 2-gear drive
 
         # Default field of view
         fov = 54
