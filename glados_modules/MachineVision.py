@@ -64,7 +64,7 @@ class MLDetect(Thread, MQTTClient):
         # track servo movement, only process images from head camera when we're not moving
         bt = MQTTClient.broker_tuple(broker, port)
         self.servos = ServoLocation(bt)
-        self.motion_tracking = MotionTrack(broker=mqtt_broker, camera_resolution=head_cam_resolution)
+        self.motion_tracking = MotionTrack(broker=bt, camera_resolution=head_cam_resolution)
         # Camera configurations for each camera
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
@@ -314,7 +314,7 @@ class MLDetect(Thread, MQTTClient):
                                       response: Dict[str, Any],
                                       cords_list: np.ndarray,
                                       scores_list: np.ndarray,
-                                      percentage_threshold: float = 1.0) -> Dict[str, Any]:
+                                      percentage_threshold: float = 0.8) -> Dict[str, Any]:
         """
         Assign key points to the appropriate person in the response dictionary if at least a certain percentage
         of key points lie within the defined bounding box.
