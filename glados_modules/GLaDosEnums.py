@@ -228,6 +228,8 @@ class ServoEnum(Enum):
     SERVO_MG90D_PULSE: str = "mg90d_pulse"
     SERVO_MG92B_PULSE: str = "mg92b_pulse"
     SERVO_M995R_PULSE: str = "mg995r_pulse"
+    SERVO_GS3508MG_PULSE: str = "gs3508mg_pulse"
+    SERVO_GS3508MG_SPEED: str = "gs3508mg_speed"
     LOCATION_HEAD_UP_DOWN: str = "head_up_down"
     LOCATION_HEAD_LEFT_RIGHT: str = "head_left_right"
     LOCATION_BODY_UP_DOWN: str = "body_up_down"
