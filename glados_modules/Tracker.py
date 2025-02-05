@@ -573,13 +573,15 @@ class MotionTrack(MQTTClient):
                 bbox_edge_1 = bbox['x1']
                 bbox_edge_2 = bbox['x2']
                 axis_size = self.cam_x
+                # Calculate the center of the bounding box on the axis
+                center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
             else:
                 bbox_edge_1 = bbox['y1']
                 bbox_edge_2 = bbox['y2']
                 axis_size = self.cam_y
-
-            # Calculate the center of the bounding box on the axis
-            center_of_bbox = (bbox_edge_1 + bbox_edge_2) / 2
+                quarter_y = axis_size / 4
+                upper_bbox_center = (bbox_edge_1 + bbox_edge_2) / 2
+                center_of_bbox = (quarter_y + upper_bbox_center) / 2
 
         elif point is True:
             if servo.axis == ServoEnum.X_AXIS.value:
