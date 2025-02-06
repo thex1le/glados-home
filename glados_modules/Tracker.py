@@ -44,7 +44,7 @@ class MotionTrack(MQTTClient):
         """
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
-        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
 
         # MQTT topics and triggers
         self.cmd_topic: str = TrackingEnums.MQTT_COMMAND_TOPIC.value
