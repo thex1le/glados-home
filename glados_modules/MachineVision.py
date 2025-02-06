@@ -56,7 +56,6 @@ class MLDetect(Thread, MQTTClient):
         mh = SystemEnums.CONFIG_HEAD_MQTT.value
         broker = self.configfile[mh][SystemEnums.MQTT_SERVER_IP.value]
         port = self.configfile[mh][SystemEnums.MQTT_PORT.value]
-        mqtt_broker = MotionTrack.broker_tuple(broker, port)
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
