@@ -247,13 +247,14 @@ class Gservo(MQTTClient):
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
-        degree_per_second = 60 / servo_speed
+        # 1 degree movement speed
+        degree_per_second = servo_speed / 60
         self.speed_settings = {
-            1: degree_per_second * 0.2,  # Calm movement
-            2: degree_per_second * 0.4,  # Neutral
-            3: degree_per_second * 0.6,  # Slightly agitated
-            4: degree_per_second * 0.8,  # Angry
-            5: degree_per_second * 1.0   # Frustrated/fastest
+            1: degree_per_second * 5,  # Calm movement
+            2: degree_per_second * 4,  # Neutral
+            3: degree_per_second * 3,  # Slightly agitated
+            4: degree_per_second * 2,  # Angry
+            5: degree_per_second * 1   # Frustrated/fastest
         }
         self.location: str = location
         self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC.value
