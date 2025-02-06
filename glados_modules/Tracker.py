@@ -668,21 +668,63 @@ class MotionTrack(MQTTClient):
 
         current = self.servos[servo1.name].current
 
-        # Mirror calc for servo1's angle to servo2
+        # If servo1 is one of the head servos, then only adjust the body angle
+        # if the head's angle is between 64° and 126°.
         if servo1.name in (
-            ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value,
-            ServoEnum.LOCATION_HEAD_UP_DOWN.value
+                ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value,
+                ServoEnum.LOCATION_HEAD_UP_DOWN.value
         ):
-            angle = MotionTrack.mirror_calc(current)
+            head_angle = current  # Use the current head servo angle.
+            if 64 <= head_angle <= 126:
+                # Define a helper function for piecewise linear interpolation.
+                def calc_body_angle_from_head(h_angle):
+                    # Data points in the form (head_angle, body_angle)
+                    data = [
+                        (64, 30),
+                        (66, 40),
+                        (68, 50),
+                        (70, 60),
+                        (72, 70),
+                        (79, 80),
+                        (83, 90),
+                        (92, 100),
+                        (97, 110),
+                        (104, 120),
+                        (114, 130),
+                        (121, 140),
+                        (126, 150)
+                    ]
+                    # If the head angle is below or above the data range, clamp it.
+                    if h_angle <= data[0][0]:
+                        return data[0][1]
+                    if h_angle >= data[-1][0]:
+                        return data[-1][1]
+                    # Otherwise, find the correct interval and interpolate.
+                    for i in range(len(data) - 1):
+                        H1, B1 = data[i]
+                        H2, B2 = data[i + 1]
+                        if H1 <= h_angle <= H2:
+                            ratio = (h_angle - H1) / (H2 - H1)
+                            return B1 + ratio * (B2 - B1)
+                    # Fallback (should not happen)
+                    return self.servos[servo2.name].current
+
+                # Calculate the new body angle using the head angle.
+                angle = calc_body_angle_from_head(head_angle)
+            else:
+                self.logger.debug("Head angle is out of interpolation range (64-126). No angle changes made.")
+                # If head angle is out of range, return the current positions (no changes).
+                return self.servos[servo1.name].current, self.servos[servo2.name].current
         else:
+            # For non-head servos, just use the current value.
             angle = current
 
         self.logger.debug(f"Servo {servo2.name} is at {self.servos[servo2.name].current} before leveling")
 
-        # Clamp angle
+        # Clamp the computed angle for servo2 to its allowed range.
         angle = max(min(angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
 
-        # Decide final angles based on dead zone
+        # Decide on final movement based on a dead-zone check.
         if abs(self.servos[servo1.name].middle - angle) > self.dead_zone_factor:
             servo1_move = self.servos[servo1.name].middle
             servo2_move = angle
@@ -690,13 +732,13 @@ class MotionTrack(MQTTClient):
             servo1_move = self.servos[servo1.name].current
             servo2_move = self.servos[servo2.name].current
 
-        # Build the movement commands
+        # Build the movement commands.
         mv_list = [
             servo2.move(angle),
             servo1.move(self.servos[servo1.name].middle)
         ]
 
-        # Send the command
+        # Send the commands.
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
         return servo1_move, servo2_move
