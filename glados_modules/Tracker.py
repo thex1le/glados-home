@@ -345,7 +345,7 @@ class MotionTrack(MQTTClient):
         self.logger.debug("Moving servos getting angle map")
         self.servos = self.servo_status.get_angle_map()
         mv_list = list()
-        self.logger.debug("Calculating movement for servos")
+        self.logger.debug(f"Calculating movement for servos, moving based on pose detection is {pose}")
 
         if target != {}:
             # Enforce rate limit checks
