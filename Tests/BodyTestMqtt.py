@@ -12,12 +12,13 @@ if __name__ == "__main__":
 
     mqtt_client = MQTTClient(broker, port)
     # low neck 52
-    msglist = [ServoMessageBuilder.head_up_down(angle=120, speed=1)]
-    msglist.extend([ServoMessageBuilder.body_left_right(angle=128, speed=1)])
-    #msglist = [ServoMessageBuilder.head_up_down(angle=20, speed=1)]
-    msglist.append(ServoMessageBuilder.body_up_down(angle=100
-                                                    , speed=1))
+    #msglist = [ServoMessageBuilder.head_up_down(angle=100, speed=1)]
+    msglist = [ServoMessageBuilder.head_up_down(angle=114, speed=1)]
+    msglist.extend([ServoMessageBuilder.head_left_right(angle=94, speed=1)])
+    #msglist.append(ServoMessageBuilder.body_up_down(angle=90
+    #                                                , speed=1))
     #                                                                    "speed": 1}, {"servo": "head_up_down", "angle": 180, "speed": 1}, {"servo": "head_left_right", "angle":180, "speed": 1}]
+    #msglist = [{"cmd": "status", "servo": "head_up_down"}]
     mqtt_client.send_command(msglist, topic)
     #time.sleep(10)
     #msglist = [{"servo": "body_left_right", "angle": 0, "speed": 1}, {"servo": "body_up_down", "angle": 0,
