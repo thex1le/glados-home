@@ -359,7 +359,9 @@ class MotionTrack(MQTTClient):
             # Calculate angles for head left-right (X-axis) and up-down (Y-axis)
             head_lr = self.__calc_servo(self.servos[self.head_LR.name], target, camera=camera, point=pose)
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera, point=pose)
-
+            print(f"head lr down angle {head_lr}")
+            print(f"head up down angle {head_ud}")
+            input()
             # Check if the LR movement is outside the dead zone
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
