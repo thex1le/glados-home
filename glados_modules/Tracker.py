@@ -361,7 +361,6 @@ class MotionTrack(MQTTClient):
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera, point=pose)
             print(f"head lr down angle {head_lr}")
             print(f"head up down angle {head_ud}")
-            input()
             # Check if the LR movement is outside the dead zone
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
@@ -430,11 +429,21 @@ class MotionTrack(MQTTClient):
         :param target_positions: Dictionary of servo names to the angles we expect them to reach.
         """
         count = 0
+        m_count = 0
+        no_move_servo = False
         self.logger.debug(f"Waiting for updates on {len(target_positions.keys())}")
         while True:
             self.servos = self.servo_status.get_angle_map()
             all_reached = True
             for name, target in target_positions.items():
+                if self.servos[name].moving is False:
+                    m_count += 1
+                    if m_count >= 2:
+                        # checked servo twice and its movement is complete, angle not met for some reason
+                        no_move_servo = True
+                        break
+                else:
+                    m_count = 0
                 if self.servos[name].current != target:
                     all_reached = False
                     self.logger.debug(f"{name} servo is currently blocking attempting to get to {target}")
@@ -442,7 +451,7 @@ class MotionTrack(MQTTClient):
                 else:
                     self.logger.debug(f"{name} servo has updated and reached {target}")
 
-            if all_reached:
+            if all_reached or no_move_servo is True:
                 break
 
             time.sleep(0.2)
