@@ -56,8 +56,8 @@ class ServoLocation(MQTTClient):
         while True:
             with self._lock:
                 current_servo_count = len(self.body_map.keys())
-            # fail count 1200 is 2min
-            if current_servo_count >= len(self.servo_list) or fail_count >= 1200:
+            # fail count 600 is 2min
+            if current_servo_count >= len(self.servo_list) or fail_count >= 600:
                 break  # All servos have reported their status
             else:
                 # Possible block here...
