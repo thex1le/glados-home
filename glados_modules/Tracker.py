@@ -682,6 +682,14 @@ class MotionTrack(MQTTClient):
         # Clamp angle
         angle = max(min(angle, self.servos[servo2.name].max), self.servos[servo2.name].min)
 
+        # Decide final angles based on dead zone
+        if abs(self.servos[servo1.name].middle - angle) > self.dead_zone_factor:
+            servo1_move = self.servos[servo1.name].middle
+            servo2_move = angle
+        else:
+            servo1_move = self.servos[servo1.name].current
+            servo2_move = self.servos[servo2.name].current
+
         # Build the movement commands
         mv_list = [
             servo2.move(angle),
@@ -690,14 +698,6 @@ class MotionTrack(MQTTClient):
 
         # Send the command
         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-
-        # Decide final angles based on dead zone
-        if abs(self.servos[servo1.name].middle - angle) > self.dead_zone_factor:
-            servo1_move = self.servos[servo1.name].middle
-            servo2_move = angle
-        else:
-            servo1_move = self.servos[servo1.name].current
-            servo2_move = self.servos[servo2.name].current
 
         return servo1_move, servo2_move
 
