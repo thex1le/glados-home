@@ -246,7 +246,7 @@ class Gservo(MQTTClient):
     def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
         degree_per_second = 60 / servo_speed
         self.speed_settings = {
             1: degree_per_second * 0.2,  # Calm movement
@@ -435,9 +435,8 @@ class Gservo(MQTTClient):
                         self.moving = False
                         break
                     else:
-                        t = full_time / steps
-                        self.logger.debug(f"{self.location}, sleeping for {t} seconds while we move")
-                        sleep(t)
+                        sleep(full_time / steps)
+            self.logger.debug(f"{self.location}, sleeping for {full_time} seconds while we move")
             self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
             return
 
