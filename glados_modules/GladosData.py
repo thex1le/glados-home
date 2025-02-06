@@ -52,10 +52,12 @@ class ServoLocation(MQTTClient):
         # Send the status request commands
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # Block and don't return until all the servos populate
+        fail_count = 0
         while True:
             with self._lock:
                 current_servo_count = len(self.body_map.keys())
-            if current_servo_count >= len(self.servo_list):
+            # fail count 1200 is 2min
+            if current_servo_count >= len(self.servo_list) or fail_count >= 1200:
                 break  # All servos have reported their status
             else:
                 # Possible block here...
@@ -67,6 +69,7 @@ class ServoLocation(MQTTClient):
                                 ServoMessageBuilder.get_status(servo),
                                 ServoEnum.MQTT_COMMAND_TOPIC.value)
                 sleep(0.1)
+                fail_count += 1
                 self.logger.debug("Waiting for servo statuses to update...")
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
