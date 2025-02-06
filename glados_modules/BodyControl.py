@@ -437,6 +437,8 @@ class Gservo(MQTTClient):
                         break
                     else:
                         sleep(full_time / steps)
+            # sleep for 0.2 seconds to let the servo settle
+            sleep(0.2)
             self.logger.debug(f"{self.location}, sleeping for {full_time} seconds while we move")
             self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
             return
