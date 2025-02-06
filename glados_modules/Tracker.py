@@ -705,7 +705,7 @@ class MotionTrack(MQTTClient):
                         H2, B2 = data[i + 1]
                         if H1 <= h_angle <= H2:
                             ratio = (h_angle - H1) / (H2 - H1)
-                            return B1 + ratio * (B2 - B1)
+                            return round(B1 + ratio * (B2 - B1))
                     # Fallback (should not happen)
                     return self.servos[servo2.name].current
 
