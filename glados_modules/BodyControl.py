@@ -415,7 +415,7 @@ class Gservo(MQTTClient):
 
         if total_distance != 0:
             # Time for full move
-            full_time = total_distance / speed_setting
+            full_time = total_distance * speed_setting
             # Divide the movement into small steps
             steps = 100
             for i in range(steps + 1):
