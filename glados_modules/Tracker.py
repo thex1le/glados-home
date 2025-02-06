@@ -312,8 +312,8 @@ class MotionTrack(MQTTClient):
                     body_movement = {self.body_LR.name: body_lr}
                     if return_message is False:
                         # Send the MQTT command immediately
-                        #self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                        #self.__block_for_update(body_movement)
+                        self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+                        self.__block_for_update(body_movement)
 
         if return_message is True:
             return body_movement, mv_list
@@ -333,7 +333,7 @@ class MotionTrack(MQTTClient):
         msg_list.append(ServoMessageBuilder.body_up_down(angle=180, speed=1))
 
         # Send the hang-around servo commands
-        #self.servo_status.send_command(msg_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        self.servo_status.send_command(msg_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
     def move_all_servos(self, target: dict, camera: str, pose: bool=False) -> None:
         """
@@ -407,16 +407,16 @@ class MotionTrack(MQTTClient):
                 mv_list.append(self.head_LR.move(middle))
 
             # Send any new servo commands collected
-            #self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
+            self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
 
             # Level the body up-down with the head
-            #servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
+            servo_3, servo_4 = self.__level_servos(self.head_UD, self.body_UD)
             self.logger.debug("Leveling out body")
 
-            b#ody_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
-            #body_level.update(body_movement)
+            body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
+            body_level.update(body_movement)
 
-            #self.__block_for_update(body_level)
+            self.__block_for_update(body_level)
             self.logger.debug("Leveling out body complete")
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
@@ -476,13 +476,11 @@ class MotionTrack(MQTTClient):
             self.servos[self.body_LR.name].min
         )
 
-        """
         # Send movement command
         self.servo_status.send_command(
             [self.body_LR.move(new_body_angle)],
             ServoEnum.MQTT_COMMAND_TOPIC.value
         )
-        """
         # Block until movement completes
         self.__block_for_update({self.body_LR.name: new_body_angle})
 
@@ -501,12 +499,10 @@ class MotionTrack(MQTTClient):
         )
 
         # Send movement command
-        """
         self.servo_status.send_command(
             [self.body_UD.move(new_body_angle)],
             ServoEnum.MQTT_COMMAND_TOPIC.value
         )
-        """
         # Block until movement completes
         self.__block_for_update({self.body_UD.name: new_body_angle})
 
