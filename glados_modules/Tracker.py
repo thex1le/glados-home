@@ -1,8 +1,8 @@
 import time
-from typing import Dict, Callable, Tuple, NamedTuple
+from typing import Dict, Callable, Tuple, NamedTuple, Any
 from json import loads
 from collections import namedtuple
-from math import sqrt
+from math import sqrt, radians, tan, atan, degrees
 
 # 3rd party imports
 from paho.mqtt.client import MQTTMessage
@@ -568,7 +568,105 @@ class MotionTrack(MQTTClient):
             return False
         return True
 
-    def __calc_servo(self, servo: object, bbox: dict, camera: str, point: bool = False) -> int:
+    def __calc_servo(
+            self,
+            servo: Any,
+            bbox: Dict[str, float],
+            camera: str,
+            point: bool = False
+    ) -> int:
+        """
+        Calculate the new servo angle using an arctan-based mapping from the
+        target's offset from the image center to an angular correction.
+
+        This method computes the effective focal length based on the camera's FOV,
+        then calculates the angle as:
+
+            angle_offset = arctan(offset_from_center / focal_length)
+
+        The new servo angle is then given by:
+
+            new_servo_angle = current + (direction_factor * angle_offset_degrees)
+                              + mounting_angle
+
+        where the mounting angle and direction factor adjust for different camera
+        and servo configurations.
+
+        :param servo: The servo object (with attributes such as current, min, max,
+                      axis, and location).
+        :param bbox: Dictionary containing bounding box coordinates or a single point.
+                     For a bounding box, keys 'x1', 'x2' or 'y1', 'y2' are expected;
+                     if point is True, then keys 'x' or 'y' are used.
+        :param camera: Identifier for the camera (e.g. "HEAD", "LEFT", "RIGHT").
+        :param point: If True, the bbox contains a single point rather than a full box.
+        :return: The new servo angle as an integer, clamped within [servo.min, servo.max].
+        """
+        # Determine the size of the axis (in pixels)
+        if servo.axis == ServoEnum.X_AXIS.value:
+            axis_size: float = float(self.cam_x)
+        else:
+            axis_size: float = float(self.cam_y)
+
+        # Calculate the target's center on this axis.
+        if not point:
+            if servo.axis == ServoEnum.X_AXIS.value:
+                center_of_bbox: float = (bbox['x1'] + bbox['x2']) / 2
+            else:
+                center_of_bbox: float = (bbox['y1'] + bbox['y2']) / 2
+        else:
+            center_of_bbox = bbox['x'] if servo.axis == ServoEnum.X_AXIS.value else bbox['y']
+
+        # Compute the offset in pixels from the center of the image.
+        # A positive offset means the target is left of center (assuming a reversed convention).
+        offset_from_center: float = (axis_size / 2) - center_of_bbox
+
+        # Default field of view (in degrees) and mounting angle.
+        fov: float = 54.0
+        mounting_angle: float = 0.0
+        current: float = servo.current
+
+        # Adjust the field of view and mounting angle based on the camera.
+        if camera == CameraEnum.CAMERA_HEAD.value:
+            if servo.axis == ServoEnum.X_AXIS.value:
+                fov = CameraEnum.CAMERA_HEAD_FOV_X.value
+            else:
+                fov = CameraEnum.CAMERA_HEAD_FOV_Y.value
+        elif camera == CameraEnum.CAMERA_RIGHT.value:
+            fov = CameraEnum.CAMERA_RIGHT_FOV.value
+            if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
+                mounting_angle = 55.0
+                current = 90.0
+        elif camera == CameraEnum.CAMERA_LEFT.value:
+            fov = CameraEnum.CAMERA_LEFT_FOV.value
+            if servo.axis == ServoEnum.X_AXIS.value and servo.location == ServoEnum.LOCATION_BODY_LEFT_RIGHT.value:
+                mounting_angle = -55.0
+                current = 90.0
+
+        # Compute the focal length in pixels from the FOV.
+        # f = (axis_size/2) / tan(FOV/2), with FOV converted to radians.
+        fov_rad: float = radians(fov)
+        focal_length: float = (axis_size / 2) / tan(fov_rad / 2)
+
+        # Compute the angular offset in radians using arctan.
+        angle_offset_rad: float = atan(offset_from_center / focal_length)
+        angle_offset_deg: float = degrees(angle_offset_rad)
+
+        # Determine the direction factor based on servo location.
+        # For head servos, we use 1; for others (e.g. body servos) we invert the response.
+        direction_factor: int = 1 if servo.location in (
+            ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value,
+            ServoEnum.LOCATION_HEAD_UP_DOWN.value
+        ) else -1
+
+        # Compute the new servo angle.
+        new_servo_angle: float = current + direction_factor * angle_offset_deg + mounting_angle
+
+        # Clamp the new angle within the servo's allowed range.
+        new_servo_angle = max(min(new_servo_angle, servo.max), servo.min)
+
+        return round(new_servo_angle)
+
+    def __calc_servo_old(self, servo: object, bbox: dict, camera: str, point: bool = False) -> int:
         """
         Calculate the new servo angle based on the bounding box center offset from
         the frame center. Applies FOV-based scaling and optional fisheye correction.
