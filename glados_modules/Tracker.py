@@ -191,7 +191,7 @@ class MotionTrack(MQTTClient):
             self.logger.debug("Getting Vision Map")
             vision_map = self.vision_tracker.get_vision_map()
             self.logger.debug("Looping though vision map")
-
+            self.servo_status.update_servo_status()
             if camera in vision_map.keys():
                 if vision_map[camera][self.target].get(self.count, 0) != 0:
                     # If we have detections for the target, find the bounding box with the highest confidence
