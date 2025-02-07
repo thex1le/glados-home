@@ -239,13 +239,16 @@ class GladosLCD(Thread, MQTTClient):
         self.stop_loop = True
 
 
-class Gservo(MQTTClient):
+class Gservo(MQTTClient, Thread):
     """
     Generic Servo Class to take movement commands from MQTT for a servo and send status to MQTT
     """
     def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
+        Thread.__init__(self)
+        Thread.daemon = True
+        self.stop = False
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
         # 1 degree movement speed
         degree_per_second = servo_speed / 60
@@ -328,10 +331,13 @@ class Gservo(MQTTClient):
                 angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
                 speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
                 self.set_speed_angle((speed, angle))
-                self.move()
-                self.send_status()
             elif cmd == ServoEnum.MSG_COMMAND_STATUS.value:
                 self.send_status()
+
+    def run(self):
+        while self.stop is False:
+            # note there is a sleep in the move
+            self.move()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO: Implement intensity handling
@@ -434,11 +440,10 @@ class Gservo(MQTTClient):
                         # we have a new angle break the loop
                         self.logger.debug(f"New angle Request breaking movement for {self.location}")
                         self.moving = False
+                        self.send_status()
                         break
                     else:
                         sleep(full_time / steps)
-            # sleep for 0.2 seconds to let the servo settle
-            sleep(0.2)
             self.logger.debug(f"{self.location}, sleeping for {full_time} seconds while we move")
             self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
             return
@@ -480,6 +485,9 @@ class Gservo(MQTTClient):
                 self.logger.debug(f"Moved to {angle}")
                 with self._lock:
                     self.moving = False
+        # settle after the move
+        self.send_status()
+        sleep(0.2)
 
 
 class LedShoulders(MQTTClient):
