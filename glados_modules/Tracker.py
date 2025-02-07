@@ -28,6 +28,7 @@ class MotionTrack(MQTTClient):
         broker: NamedTuple,
         camera_resolution: NamedTuple,
         target: str = "person",
+        target: str = "bottle",
         # set pose_target to nose
         pose_target: str = VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[0],
         confidence: float = 0.65,
