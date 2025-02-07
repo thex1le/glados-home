@@ -313,7 +313,7 @@ class MotionTrack(MQTTClient):
                     if return_message is False:
                         # Send the MQTT command immediately
                         self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
-                        self.__block_for_update(body_movement)
+                        #self.__block_for_update(body_movement)
 
         if return_message is True:
             return body_movement, mv_list
@@ -383,7 +383,7 @@ class MotionTrack(MQTTClient):
                 self.logger.debug("Sending Move commands for Head and Neck")
                 self.servo_status.send_command(mv_list, ServoEnum.MQTT_COMMAND_TOPIC.value)
                 head_movement = {self.head_LR.name: head_lr, self.head_UD.name: head_ud}
-                self.__block_for_update(head_movement)
+                #self.__block_for_update(head_movement)
 
             # Check if head movement has reached physical limits
             if self.__reached_limit(self.servos[self.head_LR.name]):
@@ -417,7 +417,7 @@ class MotionTrack(MQTTClient):
             body_level = {self.head_UD.name: servo_3, self.body_UD.name: servo_4}
             body_level.update(body_movement)
 
-            self.__block_for_update(body_level)
+            #self.__block_for_update(body_level)
             self.logger.debug("Leveling out body complete")
 
     def __block_for_update(self, target_positions: Dict[str, int]) -> None:
@@ -493,7 +493,7 @@ class MotionTrack(MQTTClient):
             ServoEnum.MQTT_COMMAND_TOPIC.value
         )
         # Block until movement completes
-        self.__block_for_update({self.body_LR.name: new_body_angle})
+        #self.__block_for_update({self.body_LR.name: new_body_angle})
 
     def __bend_body_to_extend_range(self) -> None:
         """
@@ -515,7 +515,7 @@ class MotionTrack(MQTTClient):
             ServoEnum.MQTT_COMMAND_TOPIC.value
         )
         # Block until movement completes
-        self.__block_for_update({self.body_UD.name: new_body_angle})
+        #self.__block_for_update({self.body_UD.name: new_body_angle})
 
     def __find_target(self, seen_data: dict) -> dict:
         """
