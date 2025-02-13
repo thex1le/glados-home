@@ -30,8 +30,9 @@ class ServoLocation(MQTTClient):
         self.middle = ServoEnum.MSG_MIDDLE.value
         self.moving = ServoEnum.MSG_MOVING.value
         self.axis = ServoEnum.MSG_AXIS.value
-        self.ServoTuple = namedtuple('servo', [self.current_angle, self.max,
-                                     self.min, self.middle, self.axis, self.moving, "location"])
+        self.ServoTuple = namedtuple(ServoEnum.MSG_LOCATION_KEY.value, [self.current_angle, self.max,
+                                     self.min, self.middle, self.axis,
+                                               self.moving, ServoEnum.MSG_LOCATION.value, ""])
         self.servo_list = (
             ServoEnum.LOCATION_BODY_UP_DOWN.value,
             ServoEnum.LOCATION_HEAD_UP_DOWN.value,
