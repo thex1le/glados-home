@@ -93,6 +93,8 @@ class MotionTrack(MQTTClient):
         self.dms: int = 3  # default movement speed
         self.peripheral_hunt = True  # if movement on side cameras is allowed
         self.head_tracking = False  # if the head is currently tracking something
+        self.head_UD_last_angle = None  # last angle we tried to set the head to
+        self.hysteresis_threshold: int = 5  # hysteresis threshold
 
         super().__init__(ip=broker.ip, port=broker.port)
         self.side_camera_count: int = 0
