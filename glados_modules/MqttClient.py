@@ -1,5 +1,5 @@
 # native imports
-from typing import Dict, Callable
+from typing import Dict, Callable, NamedTuple
 from json import dumps, loads
 from uuid import uuid4
 from time import time
@@ -12,12 +12,13 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums, LoggingEnums
 
 
 class MQTTClient:
     broker_tuple = namedtuple('broker', ["ip", "port"])
 
+    #TODO convert this to named tuple
     def __init__(self, ip: str = 'localhost', port: int = 1883) -> None:
         self.ip = ip
         self.port = int(port)
@@ -25,9 +26,10 @@ class MQTTClient:
             self.topic_handler: Dict[str, Callable] = {}
         self.uuid_cache = TTLCache(maxsize=100, ttl=60)
         try:
-            self.logger = setup_logger(name=f"{self.__name__}")
+            self.logger = setup_logger(name=f"{self.__name__}", console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         except AttributeError:
-            self.logger = setup_logger(name=f"{self.__class__.__name__}")
+            self.logger = setup_logger(name=f"{self.__class__.__name__}",
+                                       console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
             self.__name__ = self.__class__.__name__
         self._lock = Lock()
         self.client: mqtt.Client = mqtt.Client()

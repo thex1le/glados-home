@@ -1,26 +1,60 @@
 import logging
 from os import path, makedirs
+from glados_modules.GLaDosEnums import LoggingEnums
 
 
-# TODO make this take levels from config file
-def setup_logger(name=__name__, level=logging.DEBUG, log_dir="logs",
-                 file_logging=logging.DEBUG, console_logging=logging.DEBUG):
+def setup_logger(
+        name: str = __name__,
+        level: int = logging.DEBUG,
+        log_dir: str = LoggingEnums.LOG_FOLDER_DEFAULT_NAME.value,
+        file_logging: int = LoggingEnums.LOG_LEVEL_DEBUG.value,
+        console_logging: int = LoggingEnums.LOG_LEVEL_DEBUG.value
+) -> logging.Logger:
+    """
+    Sets up a logger with both file and console handlers.
+
+    This function ensures that log messages are saved to a file while also being
+    displayed in the console. The log file is stored in the specified log directory,
+    and the log level can be adjusted for both file and console handlers.
+
+    Args:
+        name (str): The name of the logger. Defaults to `__name__`.
+        level (int): The overall logging level for the logger. Defaults to `logging.DEBUG`.
+        log_dir (str): The directory where log files are stored. Defaults to `LoggingEnums.LOG_FOLDER_DEFAULT_NAME.value`.
+        file_logging (int): The logging level for file output. Defaults to `LoggingEnums.LOG_LEVEL_DEBUG.value`.
+        console_logging (int): The logging level for console output. Defaults to `LoggingEnums.LOG_LEVEL_DEBUG.value`.
+
+    Returns:
+        logging.Logger: A configured logger instance.
+    """
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    # Check if the logger already has handlers to avoid adding them multiple times
+
+    # Prevent duplicate handlers from being added
     if not logger.hasHandlers():
+        # Ensure log directory exists
         if not path.exists(log_dir):
             makedirs(log_dir)
-        # Ensure log file has a .log extension
-        log_file = path.join(log_dir, f"{name}.log")
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(file_logging)
-        ch = logging.StreamHandler()
-        ch.setLevel(console_logging)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-        logger.addHandler(fh)
-        logger.addHandler(ch)
+
+        # Define log file path with the correct extension
+        log_file = path.join(log_dir, f"{name}{LoggingEnums.LOG_FILE_TYPE.value}")
+
+        # File handler setup
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(file_logging)
+
+        # Console handler setup
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(console_logging)
+
+        # Define log format
+        formatter = logging.Formatter(LoggingEnums.LOG_FORMAT.value)
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+
+        # Add handlers to logger
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
     return logger

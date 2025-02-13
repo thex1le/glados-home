@@ -8,7 +8,7 @@ from picamera2 import Picamera2, MappedArray, Preview
 
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum
+from glados_modules.GLaDosEnums import CameraEnum, SystemEnums
 from glados_modules.RtspServer import RTSPServer
 
 
@@ -24,9 +24,9 @@ class Camera(Process, MQTTClient):
     def __init__(self, configfile, location, rtspport: int = 8554) -> None:
         Process.__init__(self)
         # Initialize MQTTClient
-        broker = configfile['MQTT']['mqtt_server_ip']
-        port = configfile['MQTT']['mqtt_port']
-        cam_conf = configfile['CAMERAS']
+        broker = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
+        port = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value]
+        cam_conf = configfile[CameraEnum.CONFIG_HEAD.value]
         MQTTClient.__init__(self, broker, port)
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"

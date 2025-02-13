@@ -5,6 +5,7 @@ import requests
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
+from glados_modules.GLaDosEnums import LoggingEnums
 
 
 class GladosGPT(Thread):
@@ -12,7 +13,7 @@ class GladosGPT(Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.real_response = None
         self.prompt = prompt
         self.configp = configp["OPENAI"]

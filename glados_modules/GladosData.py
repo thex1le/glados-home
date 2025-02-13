@@ -10,7 +10,7 @@ from cachetools import TTLCache
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums, LoggingEnums
 
 
 class ServoLocation(MQTTClient):
@@ -19,7 +19,7 @@ class ServoLocation(MQTTClient):
     """
     def __init__(self, broker: NamedTuple) -> None:
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         # Initialize shared resources before calling the superclass constructor
         self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
@@ -52,10 +52,12 @@ class ServoLocation(MQTTClient):
         # Send the status request commands
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
         # Block and don't return until all the servos populate
+        fail_count = 0
         while True:
             with self._lock:
                 current_servo_count = len(self.body_map.keys())
-            if current_servo_count >= len(self.servo_list):
+            # fail count 600 is 2min
+            if current_servo_count >= len(self.servo_list) or fail_count >= 600:
                 break  # All servos have reported their status
             else:
                 # Possible block here...
@@ -67,6 +69,7 @@ class ServoLocation(MQTTClient):
                                 ServoMessageBuilder.get_status(servo),
                                 ServoEnum.MQTT_COMMAND_TOPIC.value)
                 sleep(0.1)
+                fail_count += 1
                 self.logger.debug("Waiting for servo statuses to update...")
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
@@ -129,7 +132,7 @@ class VisionTracker(MQTTClient):
     """
     def __init__(self, broker: NamedTuple, target: str, confidence: float, tracker_callback) -> None:
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.target = target
         self.tracker_callback = tracker_callback
         self.confidence_score = confidence

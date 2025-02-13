@@ -150,6 +150,10 @@ class GBody(Thread):
         self.body_UD = Gservo(location='body_up_down', skit=kit.servo[1], axis='y', max_angle=60)
         self.head_UD = Gservo(location='head_up_down', skit=kit.servo[2], axis='y', max_angle=60)
         self.head_LR = Gservo(location='head_lef_right', servo_range=(15, 45), skit=kit.servo[3], axis='x', max_angle=60)
+        self.body_LR.start()
+        self.body_UD.start()
+        self.head_UD.start()
+        self.head_LR.start()
         self.seen_data = Manager().dict()
         self.cam_x_width = cam_x_width
         self.cam_y_width = cam_y_width
@@ -438,6 +442,7 @@ class BodyTCPHandler(socketserver.BaseRequestHandler):
         for i in commands:
             #TODO Figure out how commands will work
             pass
+
 
 class BodyTCPServer(socketserver.TCPServer):
     def __init__(self, server_address, request_handler_class, callbacks: dict):
