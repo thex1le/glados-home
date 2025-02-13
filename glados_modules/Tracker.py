@@ -362,22 +362,33 @@ class MotionTrack(MQTTClient):
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera, point=pose)
             print(f"head lr down angle {head_lr}")
             print(f"head up down angle {head_ud}")
+
+            # Initialize last commanded head up/down angle if necessary
+            if self.head_UD_last_angle is None:
+                self.head_UD_last_angle = self.servos[self.head_UD.name].current
+
+            # Apply hysteresis for head up/down:
+            if abs(head_ud - self.head_UD_last_angle) > self.hysteresis_threshold:
+                # Only send a move if the new angle is also outside the dead zone
+                if self.__dead_zone_check(
+                        self.servos[self.head_UD.name],
+                        head_ud,
+                        degree_diff=self.dead_zone_factor,
+                        confidence=target[TrackingEnums.KEY_CONFIDENCE.value]
+                ):
+                    mv_list.append(self.head_UD.move(head_ud))
+                    self.logger.debug(f"Head up/down move commanded: from {self.head_UD_last_angle} to {head_ud}")
+                    self.head_UD_last_angle = head_ud
+                else:
+                    self.logger.debug("Head up/down within dead zone after hysteresis check; no move.")
+            else:
+                self.logger.debug("Head up/down change within hysteresis band; no move commanded.")
+
             # Check if the LR movement is outside the dead zone
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
                 head_lr = self.servos[self.head_LR.name].current
-
-            # Check if the UD movement is outside the dead zone
-            if self.__dead_zone_check(
-                self.servos[self.head_UD.name],
-                head_ud,
-                degree_diff=self.dead_zone_factor,
-                confidence=target[TrackingEnums.KEY_CONFIDENCE.value]
-            ):
-                mv_list.append(self.head_UD.move(head_ud))
-            else:
-                head_ud = self.servos[self.head_UD.name].current
 
             # Send servo commands if we have any movement
             if mv_list:
