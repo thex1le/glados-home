@@ -124,6 +124,9 @@ class ServoLocation(MQTTClient):
             self.update_servo_status()
         ret = False
         for s in self.servo_list:
+            if s not in self.body_map.keys():
+                # no status from servo yet so skip it
+                continue
             if self.body_map[s].moving is True:
                 ret = True
                 break
