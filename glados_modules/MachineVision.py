@@ -1,5 +1,6 @@
 from json import loads as json_loads
 from threading import Thread
+from multiprocessing import Process
 from time import time
 from datetime import datetime
 from typing import List, Dict, Any, Tuple, Optional
@@ -197,8 +198,8 @@ class MLDetect(Thread, MQTTClient):
                 openpose_skeleton = False  # True for openpose-style, False for mmpose-style
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
-            thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
-                                                                      detection_model, pose_model), daemon=True)
+            thread = Process(target=self.run_tracker_for_camera, args=(camera_key,
+                                                                       detection_model, pose_model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
