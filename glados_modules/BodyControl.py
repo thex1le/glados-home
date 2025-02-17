@@ -417,8 +417,6 @@ class Gservo(MQTTClient, Thread):
             target_angle = copy(self.angle)
             current_angle = copy(self.current_angle)
             speed_setting = copy(self.speed_settings[self.speed])
-        # signal were moving
-        self.send_status()
 
         if total_distance != 0:
             # Time for full move
@@ -440,8 +438,6 @@ class Gservo(MQTTClient, Thread):
                     if target_angle != self.angle:
                         # we have a new angle break the loop
                         self.logger.debug(f"New angle Request breaking movement for {self.location}")
-                        self.moving = False
-                        self.send_status()
                         break
                     else:
                         sleep(full_time / steps)
@@ -466,6 +462,7 @@ class Gservo(MQTTClient, Thread):
             angle = self.angle
             current_angle = self.current_angle
             first_boot = self.first_boot
+        self.send_status()
 
         if first_boot:
             with self._lock:
