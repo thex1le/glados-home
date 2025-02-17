@@ -198,10 +198,10 @@ class MLDetect(Thread, MQTTClient):
                 openpose_skeleton = False  # True for openpose-style, False for mmpose-style
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
-            thread = Process(target=self.run_tracker_for_camera, args=(camera_key,
+            multi_proc = Process(target=self.run_tracker_for_camera, args=(camera_key,
                                                                        detection_model, pose_model), daemon=True)
-            thread.start()
-            self.cam_configs[camera_key]["tracker_thread"] = thread
+            multi_proc.start()
+            self.cam_configs[camera_key]["tracker_thread"] = multi_proc
 
     def __process_image(self, image_dict: Dict[str, Any], d_model: YOLO,
                         p_model: Optional[Wholebody]) -> Dict[str, Any]:
