@@ -423,6 +423,7 @@ class Gservo(MQTTClient, Thread):
             full_time = total_distance * speed_setting
             # Divide the movement into small steps
             steps = 100
+            time_per_step = full_time / steps
             for i in range(steps + 1):
                 # Calculate S-curve (using a simple cosine-based ease-in and ease-out)
                 t = i / steps
@@ -440,7 +441,7 @@ class Gservo(MQTTClient, Thread):
                         self.logger.debug(f"New angle Request breaking movement for {self.location}")
                         break
                     else:
-                        sleep(full_time / steps)
+                        sleep(time_per_step)
             self.logger.debug(f"{self.location}, sleeping for {full_time} seconds while we move")
             self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
             return
