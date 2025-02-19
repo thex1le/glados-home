@@ -6,11 +6,13 @@ from math import sqrt, radians, tan, atan, degrees
 
 # 3rd party imports
 from paho.mqtt.client import MQTTMessage
+import numpy as np
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.GladosData import ServoLocation, VisionTracker
+from glados_modules.DDKalman import KalmanFilter2D
 from glados_modules.GLaDosEnums import (CameraEnum, ServoEnum, SystemEnums,
                                         TrackingEnums, VisionResultsEnum, LoggingEnums)
 
@@ -113,9 +115,57 @@ class MotionTrack(MQTTClient):
         # Store the last move time to enforce rate limiting
         self._last_move_time = time.time()
 
+        # create kalman filter
+        self.kf = KalmanFilter2D(dt=0.1)
+        self.kf_initialized = False
         # Lock for thread-safety (inherited from MQTTClient)
         # NOTE: Self._lock is defined in MQTTClient, ensuring concurrency control
         # across method calls, especially servo movements.
+
+    def predict_target_bbox(self, bbox: dict) -> dict:
+        """
+        Use the Kalman filter to predict the new position of the target.
+
+        :param bbox: Detected bounding box with keys 'x1', 'y1', 'x2', 'y2' and confidence.
+        :return: A new bounding box dictionary with the predicted center.
+        """
+        # Compute the detected center
+        center_x = (bbox['x1'] + bbox['x2']) / 2
+        center_y = (bbox['y1'] + bbox['y2']) / 2
+        measurement = np.array([[center_x], [center_y]])
+
+        # If this is the first measurement, initialize the filter’s state.
+        if not self.kf_initialized:
+            self.kf.x[0, 0] = center_x
+            self.kf.x[1, 0] = center_y
+            self.kf_initialized = True
+
+        # Update the filter with the new measurement
+        self.kf.update(measurement)
+
+        # Predict the next state
+        predicted_state = self.kf.predict()
+        predicted_center_x = predicted_state[0, 0]
+        predicted_center_y = predicted_state[1, 0]
+
+        # Optionally, you can use self.kf.x[2] and self.kf.x[3] for velocity info
+        self.logger.debug(f"Predicted position: ({predicted_center_x:.2f}, {predicted_center_y:.2f}), "
+                          f"Velocity: ({self.kf.x[2, 0]:.2f}, {self.kf.x[3, 0]:.2f})")
+
+        # Preserve the detected bounding box size
+        width = bbox['x2'] - bbox['x1']
+        height = bbox['y2'] - bbox['y1']
+
+        # Reconstruct the bounding box using the predicted center
+        new_bbox = {
+            'x1': predicted_center_x - width / 2,
+            'y1': predicted_center_y - height / 2,
+            'x2': predicted_center_x + width / 2,
+            'y2': predicted_center_y + height / 2,
+            TrackingEnums.KEY_CONFIDENCE.value: bbox[TrackingEnums.KEY_CONFIDENCE.value]
+        }
+
+        return new_bbox
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -218,7 +268,8 @@ class MotionTrack(MQTTClient):
                                 current_pose_target = pose_data[self.pose_target]
                         # Attempt to smooth the bounding box for visual noise
                         target_bounding = self.smooth_bounding_box(target_bounding)
-
+                        # Apply predictive Kalman filter
+                        target_bounding = self.predict_target_bbox(target_bounding)
                         # maybe also pass the point for the center point of a pose target or pose targets?
                         # Move head and body servos based on the bounding box
                         if current_pose_target is not None:
