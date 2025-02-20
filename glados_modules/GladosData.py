@@ -144,7 +144,7 @@ class VisionTracker(MQTTClient):
         self.tracker_callback = tracker_callback
         self.confidence_score = confidence
         # TODO get side confidence from config file
-        self.side_confidence_score = .5
+        self.side_confidence_score = .4
         self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.main_camera = CameraEnum.CONFIG_HEAD.value
         self.left_camera = CameraEnum.CAMERA_LEFT.value
