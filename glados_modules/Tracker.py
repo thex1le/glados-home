@@ -88,7 +88,6 @@ class MotionTrack(MQTTClient):
 
         # Tracking-related attributes
         self.target = target
-        self.target = "bottle"
         self.pose_target = pose_target
         self.confidence = confidence
         self.servos: Dict[str, object] = dict()
