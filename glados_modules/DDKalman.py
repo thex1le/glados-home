@@ -27,11 +27,11 @@ class KalmanFilter2D:
 
         # Process noise covariance (Q)
         # Increased slightly to allow the filter to adapt faster when the target reverses direction.
-        self.Q = np.eye(4) * 0.05
+        self.Q = np.eye(4) * 0.07
 
         # Measurement noise covariance (R)
         # Increased to dampen the influence of noisy measurements.
-        self.R = np.eye(2) * 20.0
+        self.R = np.eye(2) * 20.5
 
         # Error covariance matrix (P)
         self.P = np.eye(4) * 500.0
