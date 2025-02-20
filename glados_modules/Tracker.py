@@ -268,7 +268,7 @@ class MotionTrack(MQTTClient):
                         # Attempt to smooth the bounding box for visual noise
                         target_bounding = self.smooth_bounding_box(target_bounding)
                         # Apply predictive Kalman filter
-                        target_bounding = self.predict_target_bbox(target_bounding)
+                        #target_bounding = self.predict_target_bbox(target_bounding)
                         # maybe also pass the point for the center point of a pose target or pose targets?
                         # Move head and body servos based on the bounding box
                         if current_pose_target is not None:
