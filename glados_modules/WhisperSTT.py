@@ -228,6 +228,7 @@ if __name__ == "__main__":
     mqtt_broker = broker("192.168.86.28", 1883)
     lstt = LocalSTT(mqtt_broker)
     rx = AudioServerRX(server_broker, callback=lstt.process_audio)
+    rx.start_server()
     tx = AudioServerTx(server_broker)
     with open(sys.argv[1], "rb") as f:
         tx.send_bytes(f.read())
