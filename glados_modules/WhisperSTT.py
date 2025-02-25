@@ -197,7 +197,9 @@ class LocalSTT(MQTTClient):
         audio: np.ndarray = LocalSTT.load_audio_from_bytes(byte_stream)
         results = self.model.transcribe(audio, batch_size=16)
         self.logger.debug(f"Detected language: {results['language']}")
-        text = " ".join(results['segments'])
+        text = ""
+        for t in results['segments']:
+            text += t["text"]
         self.logger.debug(f"Detected text: {text}")
         rsp = {
             STTEnums.STT_TEXT_KEY.value: text,
