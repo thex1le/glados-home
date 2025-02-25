@@ -176,7 +176,7 @@ class LocalSTT(MQTTClient):
             name=self.__name__,
             console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
-        self.model = whisper.load_model(model="large-v2", device="cuda", compute_type="float16")
+        self.model = whisper.load_model(whisper_arch="large-v2", device="cuda", compute_type="float16")
         super().__init__(ip=broker.ip, port=broker.port)
 
     def process_audio(self, byte_stream: bytes) -> None:
