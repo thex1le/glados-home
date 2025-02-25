@@ -2,6 +2,7 @@ import socket
 import sys
 from typing import NamedTuple, Optional, Callable
 from collections import namedtuple
+from threading import Thread
 
 # Third-party imports
 import whisperx as whisper
@@ -67,7 +68,7 @@ class AudioServerTx:
                 self.logger.error(f"Error sending byte stream: {e}")
 
 
-class AudioServerRX:
+class AudioServerRX(Thread):
     """Receives an audio byte stream from a remote client.
 
     This class sets up a TCP server that listens for incoming connections and
@@ -91,6 +92,8 @@ class AudioServerRX:
             callback (Optional[Callable[[bytes], None]], optional): Callback function to process
                 the received byte stream. Defaults to None, which uses a do-nothing function.
         """
+        Thread.__init__(self)
+        Thread.daemon = True
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
@@ -121,6 +124,12 @@ class AudioServerRX:
                     self.handle_client(conn)
                 except Exception as e:
                     self.logger.error(f"Unexpected server error: {e}")
+
+    def run(self) -> None:
+        """
+        Start the TCP server Thread
+        """
+        self.start_server()
 
     @staticmethod
     def do_nothing(data: bytes) -> None:
@@ -228,7 +237,7 @@ if __name__ == "__main__":
     mqtt_broker = broker("192.168.86.28", 1883)
     lstt = LocalSTT(mqtt_broker)
     rx = AudioServerRX(server_broker, callback=lstt.process_audio)
-    rx.start_server()
+    rx.start()
     tx = AudioServerTx(server_broker)
     with open(sys.argv[1], "rb") as f:
         tx.send_bytes(f.read())
