@@ -197,12 +197,13 @@ class LocalSTT(MQTTClient):
         audio: np.ndarray = LocalSTT.load_audio_from_bytes(byte_stream)
         results = self.model.transcribe(audio, batch_size=16)
         self.logger.debug(f"Detected language: {results['language']}")
-        self.logger.debug(f"Detected text: {results['text']}")
+        text = " ".join(results['segments'])
+        self.logger.debug(f"Detected text: {text}")
         rsp = {
-            STTEnums.STT_TEXT_KEY.value: results["text"],
+            STTEnums.STT_TEXT_KEY.value: text,
             STTEnums.STT_LANGUAGE_KEY.value: results["language"],
         }
-        self.logger.debug(f"Detected Language is {rsp}")
+        self.logger.debug(f"Detected Language is {rsp[STTEnums.STT_LANGUAGE_KEY.value]}")
         self.send_command(
             SttMessageBuilder.send_speech_to_text_message(rsp),
             MQTTEnums.STT_RESULTS_MQTT_TOPIC.value,
@@ -233,6 +234,7 @@ class LocalSTT(MQTTClient):
 
 if __name__ == "__main__":
     # Test stub
+    import time
     broker = AudioServerRX.broker_tuple
     server_broker = broker("127.0.0.1", 5000)
     mqtt_broker = broker("192.168.86.28", 1883)
@@ -242,3 +244,4 @@ if __name__ == "__main__":
     tx = AudioServerTx(server_broker)
     with open(sys.argv[1], "rb") as f:
         tx.send_bytes(f.read())
+    time.sleep(5)
