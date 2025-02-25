@@ -1,123 +1,233 @@
-import multiprocessing
 import socket
-import logging
-from pathlib import Path
+import sys
+from typing import NamedTuple, Optional, Callable
+from collections import namedtuple
 
-# 3rd Party imports
-import whisper
+# Third-party imports
+import whisperx as whisper
+import ffmpeg
+import numpy as np
+
+# GLaDos module imports
+from glados_modules.GlogConfig import setup_logger
+from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums, MQTTEnums
+from glados_modules.MqttClient import MQTTClient, SttMessageBuilder
 
 
 class AudioServerTx:
-    def __init__(self):
-        # Configure logging
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    """Sends audio data as a byte stream to a remote server.
 
-        # Client settings
-        self.SERVER_IP: str = "192.168.1.100"  # Change to server's IP
-        self.PORT: int = 5000
-        self.BUFFER_SIZE: int = 4096  # Chunk size
+    This class creates a TCP client that connects to a broker server and sends
+    audio data in byte stream format using a specified chunk size.
+    """
 
-    def send_file(self, file_path: str) -> None:
-        """Sends an audio file to the server."""
-        file = Path(file_path)
-        if not file.exists():
-            logging.error(f"File not found: {file_path}")
-            return
+    # Create a named tuple for broker configuration (IP and port)
+    broker_tuple = namedtuple(
+        SystemEnums.BROKER.value,
+        [SystemEnums.BROKER_IP.value, SystemEnums.BROKER_PORT.value]
+    )
 
+    def __init__(self, broker: NamedTuple, buffer: int = 4096) -> None:
+        """Initialize an instance of AudioServerTx.
+
+        Args:
+            broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
+            buffer (int, optional): Chunk size in bytes for sending data. Defaults to 4096.
+        """
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
+        )
+        self.broker: NamedTuple = broker
+        self.buffer: int = buffer
+
+    def send_bytes(self, byte_stream: bytes) -> None:
+        """Send a byte stream to the remote server in chunks.
+
+        This method creates a TCP socket connection to the broker server and sends
+        the provided byte stream in chunks defined by the buffer size.
+
+        Args:
+            byte_stream (bytes): The audio data as a byte stream.
+        """
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             try:
-                client_socket.connect((self.SERVER_IP, self.PORT))
-                logging.info(f"Connected to {self.SERVER_IP}:{self.PORT}")
-                # Send the file name first
-                client_socket.sendall(file.name.encode() + b"\n")
+                client_socket.connect((self.broker.ip, self.broker.port))
+                self.logger.info(f"Connected to {self.broker.ip}:{self.broker.port}")
 
-                # Send file in chunks
-                with file.open("rb") as f:
-                    while chunk := f.read(self.BUFFER_SIZE):
-                        client_socket.sendall(chunk)
-                logging.info(f"File '{file.name}' sent successfully.")
+                total_sent: int = 0
+                while total_sent < len(byte_stream):
+                    chunk: bytes = byte_stream[total_sent: total_sent + self.buffer]
+                    client_socket.sendall(chunk)
+                    total_sent += len(chunk)
+
+                self.logger.info("Byte stream sent successfully.")
             except Exception as e:
-                logging.error(f"Error sending file: {e}")
+                self.logger.error(f"Error sending byte stream: {e}")
 
 
 class AudioServerRX:
-    def __init__(self):
-        # Configure logging
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-        self.HOST: str = "0.0.0.0"  # Listen on all interfaces
-        self.PORT: int = 5000
-        self.SAVE_DIR: Path = Path("received_files")  # Directory to save received files
-        self.BUFFER_SIZE: int = 4096  # Chunk size
+    """Receives an audio byte stream from a remote client.
+
+    This class sets up a TCP server that listens for incoming connections and
+    collects data from clients into a byte stream for further processing.
+    """
+
+    # Create a named tuple for broker configuration (IP and port)
+    broker_tuple = namedtuple("broker", ["ip", "port"])
+
+    def __init__(
+        self,
+        broker: NamedTuple,
+        buffer: int = 4096,
+        callback: Optional[Callable[[bytes], None]] = None
+    ) -> None:
+        """Initialize an instance of AudioServerRX.
+
+        Args:
+            broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
+            buffer (int, optional): Buffer size in bytes for receiving data. Defaults to 4096.
+            callback (Optional[Callable[[bytes], None]], optional): Callback function to process
+                the received byte stream. Defaults to None, which uses a do-nothing function.
+        """
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
+        )
+        if callback is None:
+            callback = AudioServerRX.do_nothing
+        self.callback: Callable[[bytes], None] = callback
+        self.broker: NamedTuple = broker
+        self.buffer: int = buffer
 
     def start_server(self) -> None:
-        """Starts the TCP server to receive audio files."""
-        self.SAVE_DIR.mkdir(exist_ok=True)  # Ensure save directory exists
+        """Start the TCP server to listen for and receive a byte stream.
 
+        The server runs in an infinite loop, accepting client connections and
+        handling each connection to receive the audio byte stream.
+        """
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow quick restarts
-            server_socket.bind((self.HOST, self.PORT))
-            server_socket.listen(5)  # Allow up to 5 queued connections
-            logging.info(f"Server listening on {self.HOST}:{self.PORT}")
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((self.broker.ip, self.broker.port))
+            server_socket.listen(5)
+            self.logger.info(f"Server listening on {self.broker.ip}:{self.broker.port}")
 
             while True:
                 try:
                     conn, addr = server_socket.accept()
-                    logging.info(f"Connection established with {addr}")
-
-                    # Handle file reception
+                    self.logger.info(f"Connection established with {addr}")
                     self.handle_client(conn)
-
                 except Exception as e:
-                    logging.error(f"Unexpected server error: {e}")
+                    self.logger.error(f"Unexpected server error: {e}")
+
+    @staticmethod
+    def do_nothing(data: bytes) -> None:
+        """A callback function that does nothing.
+
+        Args:
+            data (bytes): The received byte stream.
+        """
+        pass
 
     def handle_client(self, conn: socket.socket) -> None:
-        """Handles receiving the file from a connected client."""
+        """Handle a client connection by receiving the byte stream.
+
+        This method continuously reads data from the client connection until no
+        more data is received. The received data is accumulated into a bytearray
+        and then processed by the callback function.
+
+        Args:
+            conn (socket.socket): The client socket connection.
+        """
         try:
-            # Receive the file name first
-            file_name: bytes = conn.recv(1024).strip()
-            if not file_name:
-                logging.warning("No file name received.")
-                return
+            received_bytes: bytearray = bytearray()
+            while True:
+                data: bytes = conn.recv(self.buffer)
+                if not data:
+                    break
+                received_bytes.extend(data)
 
-            file_path = self.SAVE_DIR / file_name.decode()
-            logging.info(f"Receiving file: {file_path}")
-
-            # Receive the file in chunks
-            with file_path.open("wb") as file:
-                while True:
-                    data = conn.recv(self.BUFFER_SIZE)
-                    if not data:
-                        break  # End of file transfer
-                    file.write(data)
-
-            logging.info(f"File saved successfully: {file_path}")
-
+            self.logger.info(f"Received byte stream of length: {len(received_bytes)}")
+            self.callback(received_bytes)
         except Exception as e:
-            logging.error(f"Error while receiving file: {e}")
-
+            self.logger.error(f"Error while receiving byte stream: {e}")
         finally:
             conn.close()
-            logging.info("Connection closed.")
+            self.logger.info("Connection closed.")
 
 
-class LocalSTT:
-    def __init__(self):
-        self.model = whisper.load_model("turbo")
+class LocalSTT(MQTTClient):
+    """Processes local speech-to-text and sends results via MQTT.
 
-        # load audio and pad/trim it to fit 30 seconds
-        audio = whisper.load_audio("audio.mp3")
-        audio = whisper.pad_or_trim(audio)
+    Inherits from MQTTClient to receive audio byte streams, transcribe them using a Whisper model,
+    and publish the results.
+    """
 
-        # make log-Mel spectrogram and move to the same device as the model
-        mel = whisper.log_mel_spectrogram(audio, n_mels=self.model.dims.n_mels).to(self.model.device)
+    def __init__(self, broker: NamedTuple) -> None:
+        """Initialize an instance of LocalSTT.
 
-        # detect the spoken language
-        _, probs = self.model.detect_language(mel)
-        print(f"Detected language: {max(probs, key=probs.get)}")
+        Args:
+            broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
+        """
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
+        )
+        self.model = whisper.load_model(model="large-v2", device="cuda", compute_type="float16")
+        super().__init__(ip=broker.ip, port=broker.port)
 
-        # decode the audio
-        options = whisper.DecodingOptions()
-        result = whisper.decode(self.model, mel, options)
+    def process_audio(self, byte_stream: bytes) -> None:
+        """Process an audio byte stream, perform speech-to-text transcription, and publish results.
 
-        # print the recognized text
-        print(result.text)
+        Args:
+            byte_stream (bytes): The audio data as a byte stream.
+        """
+        audio: np.ndarray = LocalSTT.load_audio_from_bytes(byte_stream)
+        results = self.model.transcribe(audio, batch_size=16)
+        self.logger.debug(f"Detected language: {results['language']}")
+        self.logger.debug(f"Detected text: {results['text']}")
+        rsp = {
+            STTEnums.STT_TEXT_KEY.value: results["text"],
+            STTEnums.STT_LANGUAGE_KEY.value: results["language"],
+        }
+        self.send_command(
+            SttMessageBuilder.send_speech_to_text_message(rsp),
+            MQTTEnums.STT_RESULTS_MQTT_TOPIC.value,
+        )
+
+    @staticmethod
+    def load_audio_from_bytes(audio_bytes: bytes) -> np.ndarray:
+        """Load audio data from a byte stream using ffmpeg.
+
+        This method pipes the audio bytes into ffmpeg to convert them to WAV format,
+        and then converts the resulting bytes to a normalized NumPy array.
+
+        Args:
+            audio_bytes (bytes): The raw audio data in bytes.
+
+        Returns:
+            np.ndarray: The audio data as a NumPy array of float32 values.
+        """
+        process = (
+            ffmpeg.input("pipe:0")
+            .output("pipe:1", format="wav", ac=1, ar="16000")
+            .run_async(pipe_stdin=True, pipe_stdout=True, pipe_stderr=True)
+        )
+        out, _ = process.communicate(input=audio_bytes)
+        audio_np: np.ndarray = np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
+        return audio_np
+
+
+if __name__ == "__main__":
+    # Test stub
+    broker = AudioServerRX.broker_tuple
+    server_broker = broker("127.0.0.1", 5000)
+    mqtt_broker = broker("192.168.86.28", 1883)
+    lstt = LocalSTT(mqtt_broker)
+    rx = AudioServerRX(server_broker, callback=lstt.process_audio)
+    tx = AudioServerTx(server_broker)
+    with open(sys.argv[1], "rb") as f:
+        tx.send_bytes(f.read())

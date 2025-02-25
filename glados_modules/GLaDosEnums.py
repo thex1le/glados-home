@@ -30,12 +30,28 @@ class SystemEnums(Enum):
     RIGHT_LCD: str = "right_lcd"
     LEFT_LCD: str = "left_lcd"
     LIB_ASOUND: str = "libasound.so"
+    BROKER_IP: str = 'ip'
+    BROKER_PORT: str = 'port'
+    BROKER: str = 'broker'
+
+
+class STTEnums(Enum):
+    """
+    Enums for the Speech to text engine
+    """
+    CONFIG_HEAD_STT: str = "STT"
+    STT_SERVER_IP: str = "stt_server_ip"
+    STT_SERVER_PORT: str = "stt_server_port"
+    STT_RESULTS_KEY: str = "STT_RESULTS"
+    STT_TEXT_KEY: str = "text"
+    STT_LANGUAGE_KEY: str = "language"
 
 
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
     """
+    STT_RESULTS_MQTT_TOPIC: str = "sst/results"
     VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
     BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
