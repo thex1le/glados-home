@@ -202,6 +202,7 @@ class LocalSTT(MQTTClient):
             STTEnums.STT_TEXT_KEY.value: results["text"],
             STTEnums.STT_LANGUAGE_KEY.value: results["language"],
         }
+        self.logger.debug(f"Detected Language is {rsp}")
         self.send_command(
             SttMessageBuilder.send_speech_to_text_message(rsp),
             MQTTEnums.STT_RESULTS_MQTT_TOPIC.value,
