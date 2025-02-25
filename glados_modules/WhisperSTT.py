@@ -1,13 +1,15 @@
 import socket
 import sys
-from typing import NamedTuple, Optional, Callable
+from typing import NamedTuple, Optional, Callable, Dict
 from collections import namedtuple
 from threading import Thread
+from json import loads, JSONDecodeError
 
 # Third-party imports
 import whisperx as whisper
 import ffmpeg
 import numpy as np
+from paho.mqtt.client import MQTTMessage
 
 # GLaDos module imports
 from glados_modules.GlogConfig import setup_logger
@@ -167,7 +169,7 @@ class AudioServerRX(Thread):
             self.logger.info("Connection closed.")
 
 
-class LocalSTT(MQTTClient):
+class LocalSTTtx(MQTTClient):
     """Processes local speech-to-text and sends results via MQTT.
 
     Inherits from MQTTClient to receive audio byte streams, transcribe them using a Whisper model,
@@ -175,7 +177,7 @@ class LocalSTT(MQTTClient):
     """
 
     def __init__(self, broker: NamedTuple) -> None:
-        """Initialize an instance of LocalSTT.
+        """Initialize an instance of LocalSTTtx.
 
         Args:
             broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
@@ -194,7 +196,7 @@ class LocalSTT(MQTTClient):
         Args:
             byte_stream (bytes): The audio data as a byte stream.
         """
-        audio: np.ndarray = LocalSTT.load_audio_from_bytes(byte_stream)
+        audio: np.ndarray = LocalSTTtx.load_audio_from_bytes(byte_stream)
         results = self.model.transcribe(audio, batch_size=16)
         self.logger.debug(f"Detected language: {results['language']}")
         text = ""
@@ -234,16 +236,74 @@ class LocalSTT(MQTTClient):
         return audio_np
 
 
+class LocalSTTrx(MQTTClient):
+    """Processes local speech-to-text received via MQTT.
+
+    Inherits from MQTTClient to receive mqtt message of processed audio and returns the text
+    """
+
+    def __init__(self, broker: NamedTuple) -> None:
+        """Initialize an instance of LocalSTTtx.
+
+        Args:
+            broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
+        """
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
+        )
+        self.model = whisper.load_model(whisper_arch="large-v2", device="cuda", compute_type="float16")
+        super().__init__(ip=broker.ip, port=broker.port)
+        self.cmd_topic = MQTTEnums.STT_RESULTS_MQTT_TOPIC.value
+        self.topic_handler: Dict[str, Callable] = {
+            self.cmd_topic: self.handle_cmd}
+        self.last_text: str = ""
+        self.last_lang: str = ""
+
+    def handle_cmd(self, msg: MQTTMessage) -> None:
+        """
+        Handle incoming MQTT commands for the servo
+        :msg: mqtt message to process
+        :return:
+        """
+        try:
+            j_msg = loads(msg.payload.decode())
+        except JSONDecodeError as e:
+            self.logger.error(f"Failed to decode JSON message: {e}")
+            return
+
+        with self._lock:
+            self.last_text: str = j_msg.get(STTEnums.STT_RESULTS_KEY.value, "")
+            self.last_lang: str = j_msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
+
+    def get_text(self) -> str:
+        """
+        Return the last text off the mqtt message, or an empty "" if no message or error
+        :return:
+        """
+        return self.last_text
+
+    def get_lang(self) -> str:
+        """
+        Return the language of the last text, or an empty "" if no message or error
+        """
+        return self.last_lang
+
+
 if __name__ == "__main__":
     # Test stub
     import time
     broker = AudioServerRX.broker_tuple
     server_broker = broker("127.0.0.1", 5000)
     mqtt_broker = broker("192.168.86.28", 1883)
-    lstt = LocalSTT(mqtt_broker)
-    rx = AudioServerRX(server_broker, callback=lstt.process_audio)
+    lstttx = LocalSTTtx(mqtt_broker)
+    rx = AudioServerRX(server_broker, callback=lstttx.process_audio)
     rx.start()
+    lsttrx = LocalSTTrx(mqtt_broker)
     tx = AudioServerTx(server_broker)
     with open(sys.argv[1], "rb") as f:
         tx.send_bytes(f.read())
     time.sleep(5)
+    print(lsttrx.get_lang())
+    print(lsttrx.get_text())
