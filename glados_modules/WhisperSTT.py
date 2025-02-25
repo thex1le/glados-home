@@ -275,7 +275,7 @@ class LocalSTTrx(MQTTClient):
         msg = j_msg.get(STTEnums.STT_RESULTS_KEY.value, "")
         if msg != "":
             with self._lock:
-                self.last_text: str = msg.get(STTEnums.STT_RESULTS_KEY.value, "")
+                self.last_text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
                 self.last_lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
 
     def get_text(self) -> str:
