@@ -97,7 +97,7 @@ class GladosLocal(Thread, MQTTClient):
         self.cancel = self.llp(self.configp.get('cancel', list()), root_path)
         self.vision_confidence = float(self.configp.get("VisionConfidence", 0.0))
         self.fuck = self.llp(self.configp.get("fuck", list()), root_path)
-        self.mixer = Mixer("Speaker")
+        self.mixer = Mixer("Master")
         self.__change_volume(int(config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value]["VolumeLevel"]))
         self.current_vol = int(self.mixer.getvolume()[0])
         self.sight_results = mp.Manager().dict()
@@ -350,8 +350,9 @@ if __name__ == "__main__":
         raise GladosException("Unable to load file {}".format(args.conf[0]))
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    #gl.speak("Oh Its you! , , Its been a long time...")
-    gstt = GladosSTT(gl)
+    gl.speak("Oh Its you! , , Its been a long time...")
+    # bit of a hack but pull mqtt broker ip from GladosLocal
+    gstt = GladosSTT(configp, gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
     left_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_FACTORY.value]
