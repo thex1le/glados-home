@@ -4,7 +4,6 @@ import multiprocessing as mp
 
 #3rd party
 import regex as re
-import speech_recognition as sr
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
@@ -21,9 +20,9 @@ class GladosSTT(Thread):
         port = int(config[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value])
         # grab one of the broker tuples
         broker = AudioServerTx.broker_tuple
-        mqtt_broker = broker(ip=ip, port=port)
+        self.mqtt_broker = broker(ip=ip, port=port)
         stt_config = config[STTEnums.CONFIG_HEAD_STT.value]
-        audioServer_broker = broker(ip=stt_config[STTEnums.STT_SERVER_IP.value],
+        self.audioServer_broker = broker(ip=stt_config[STTEnums.STT_SERVER_IP.value],
                                     port=stt_config[STTEnums.STT_SERVER_PORT.value])
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
@@ -31,8 +30,8 @@ class GladosSTT(Thread):
         self.glocal = glocal
         self.mplist = list()
         # add the config and the locatSTTrx, then make sure to call blocking on the getters
-        self.localsttrx = LocalSTTrx(broker=mqtt_broker)
-        self.audioTx = AudioServerTx(audioServer_broker)
+        self.localsttrx = None
+        self.audioTx = None
 
     # TODO you left off working the new code into this lib, you need to get it off mqtt and set up audio tx server to send it
 
@@ -58,6 +57,10 @@ class GladosSTT(Thread):
 
     def record(self, mp_list):
         # TODO, how do we keep things local so were not hitting google all the time...
+        # do init of these after mp fork
+        self.localsttrx = LocalSTTrx(broker=self.mqtt_broker)
+        self.audioTx = AudioServerTx(self.audioServer_broker)
+        import speech_recognition as sr
         while True:
             msg = "Say 'Hey GLaDOS' to start recording your question"
             self.logger.info(msg)
