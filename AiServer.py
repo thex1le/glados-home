@@ -33,9 +33,9 @@ if __name__ == "__main__":
     broker = AudioServerRX.broker_tuple
     stt_conf = config_p[STTEnums.CONFIG_HEAD_STT.value]
     mqtt_conf = config_p[SystemEnums.CONFIG_HEAD_MQTT.value]
-    audio_b = broker(stt_conf[STTEnums.STT_SERVER_IP.value], stt_conf[STTEnums.STT_SERVER_PORT.value])
+    audio_b = broker(stt_conf[STTEnums.STT_SERVER_IP.value], int(stt_conf[STTEnums.STT_SERVER_PORT.value]))
     # reuse ip port broker tuple
-    mqtt_b = broker(mqtt_conf[SystemEnums.MQTT_SERVER_IP.value], mqtt_conf[SystemEnums.MQTT_PORT.value])
+    mqtt_b = broker(mqtt_conf[SystemEnums.MQTT_SERVER_IP.value], int(mqtt_conf[SystemEnums.MQTT_PORT.value]))
     lstt_tx = LocalSTTtx(mqtt_b)
     stt_audio_rx = AudioServerRX(audio_b)
     stt_audio_rx.start()
