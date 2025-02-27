@@ -6,12 +6,14 @@ from typing import List, Dict, Any, Tuple, Optional
 
 # 3rd party
 import cv2
+from torch.serialization import add_safe_globals
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 from torch.serialization import safe_globals
 from torch.nn.modules.container import Sequential
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.nn.modules import Conv
+add_safe_globals([Conv])
 
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
