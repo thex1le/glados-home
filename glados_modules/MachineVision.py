@@ -11,6 +11,7 @@ from ultralytics.utils.plotting import Annotator
 from torch.serialization import safe_globals
 from torch.nn.modules.container import Sequential
 from ultralytics.nn.tasks import DetectionModel
+from ultralytics.nn.modules import Conv
 
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
@@ -194,7 +195,7 @@ class MLDetect(Thread, MQTTClient):
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
         pose_model: Optional[Wholebody] = None
         for camera_key in self.cam_configs.keys():
-            with safe_globals([DetectionModel, Sequential]):
+            with safe_globals([DetectionModel, Sequential, Conv]):
                 detection_model = YOLO(self.model_config)
             if camera_key == CameraEnum.CAMERA_HEAD.value:
                 # only build a pose model for the camera head
