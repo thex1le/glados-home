@@ -8,19 +8,33 @@ import speech_recognition as sr
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import LoggingEnums
+from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums
+from glados_modules.WhisperSTT import LocalSTTrx, AudioServerTx
 
 
 class GladosSTT(Thread):
     # glados speach to text
-    def __init__(self, glocal) -> None:
+    def __init__(self, config, glocal) -> None:
         Thread.__init__(self)
         Thread.daemon = True
+        ip = config[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
+        port = int(config[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value])
+        # grab one of the broker tuples
+        broker = AudioServerTx.broker_tuple
+        mqtt_broker = broker(ip=ip, port=port)
+        stt_config = config[STTEnums.CONFIG_HEAD_STT.value]
+        audioServer_broker = broker(ip=stt_config[STTEnums.STT_SERVER_IP.value],
+                                    port=stt_config[STTEnums.STT_SERVER_PORT.value])
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.text = None
         self.glocal = glocal
         self.mplist = list()
+        # add the config and the locatSTTrx, then make sure to call blocking on the getters
+        self.localsttrx = LocalSTTrx(broker=mqtt_broker)
+        self.audioTx = AudioServerTx(audioServer_broker)
+
+    # TODO you left off working the new code into this lib, you need to get it off mqtt and set up audio tx server to send it
 
     def get_text(self):
         # return the text and sent it back to none for next question
@@ -72,7 +86,8 @@ class GladosSTT(Thread):
                                 recognizer = sr.Recognizer()
                                 source.pause_threshold = 1
                                 audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
-                                transcription = recognizer.recognize_google(audio)
+                                self.audioTx.send_bytes(audio)
+                                transcription = self.localsttrx.get_text(block=True)
                             self.logger.debug("good user_prompt")
                             # transcript audio to test
                             # check for cancel command
