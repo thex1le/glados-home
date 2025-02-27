@@ -39,7 +39,7 @@ class MQTTClient:
         self.client.loop_start()
 
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
-        self.logger.debug(f"Connecting to {self.ip}:{self.port}")
+        self.logger.debug(f"Connecting to mqtt server at {self.ip}:{self.port}")
         with self._lock:
             for topic in self.topic_handler:
                 self.client.subscribe(topic, qos=1)
