@@ -249,7 +249,7 @@ class Gservo(MQTTClient, Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.stop = False
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         # 1 degree movement speed
         degree_per_second = servo_speed / 60
         self.speed_settings = {
