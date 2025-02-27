@@ -254,7 +254,6 @@ class LocalSTTrx(MQTTClient):
             name=self.__name__,
             console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
-        self.model = whisper.load_model(whisper_arch="large-v2", device="cuda", compute_type="float16")
         super().__init__(ip=broker.ip, port=broker.port)
         self.cmd_topic = MQTTEnums.STT_RESULTS_MQTT_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {
