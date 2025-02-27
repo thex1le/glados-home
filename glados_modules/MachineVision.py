@@ -15,6 +15,20 @@ from ultralytics.nn.tasks import DetectionModel
 from ultralytics.nn.modules import Conv
 add_safe_globals([DetectionModel, Sequential, Conv])
 
+# because safe globals is being fucking stupid, monkey patch back the old way
+import torch
+# Save the original torch.load function.
+_original_torch_load = torch.load
+
+
+def _patched_torch_load(*args, **kwargs):
+    # Force weights_only to be False.
+    kwargs["weights_only"] = False
+    return _original_torch_load(*args, **kwargs)
+
+
+torch.load = _patched_torch_load
+
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
 import numpy as np
