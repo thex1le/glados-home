@@ -220,7 +220,7 @@ class MLDetect(Thread, MQTTClient):
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
             thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
-                                                                      detection_model, pose_model), daemon=True)
+                                                                       detection_model, pose_model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 

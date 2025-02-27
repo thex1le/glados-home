@@ -69,6 +69,10 @@ if __name__ == "__main__":
     head_UD = Gservo(location=ServoEnum.LOCATION_HEAD_UP_DOWN.value, servo=kit.servo[3],
                      axis='y', servo_range=head_angle,
                      broker=mqtt_connect, pulse_max_min=mg90d_pulse, servo_speed=mg90d_speed)
+    body_LR.start()
+    body_UD.start()
+    head_UD.start()
+    head_LR.start()
     led_shoulders = LedShoulders(broker=mqtt_connect)
     glados_right_lcd = GladosLCD(broker=mqtt_connect, location=SystemEnums.RIGHT_LCD.value,
                                  animation_path=animation_path)
