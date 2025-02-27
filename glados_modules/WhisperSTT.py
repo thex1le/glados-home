@@ -4,6 +4,7 @@ from typing import NamedTuple, Optional, Callable, Dict
 from collections import namedtuple
 from threading import Thread
 from json import loads, JSONDecodeError
+from time import sleep
 
 # Third-party imports
 import whisperx as whisper
@@ -258,6 +259,8 @@ class LocalSTTrx(MQTTClient):
         self.cmd_topic = MQTTEnums.STT_RESULTS_MQTT_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {
             self.cmd_topic: self.handle_cmd}
+        self.text: str = ""
+        self.lang: str = ""
         self.last_text: str = ""
         self.last_lang: str = ""
 
@@ -275,21 +278,31 @@ class LocalSTTrx(MQTTClient):
         msg = j_msg.get(STTEnums.STT_RESULTS_KEY.value, "")
         if msg != "":
             with self._lock:
-                self.last_text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
-                self.last_lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
+                self.text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
+                self.lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
 
-    def get_text(self) -> str:
+    def get_text(self, block: bool = False) -> str:
         """
         Return the last text off the mqtt message, or an empty "" if no message or error
         :return:
         """
-        return self.last_text
+        if block is True:
+            while self.text in ("", self.last_text):
+                # sleep block while we wait for an update
+                sleep(0.1)
+        self.last_text = self.text
+        return self.text
 
-    def get_lang(self) -> str:
+    def get_lang(self, block: bool = False) -> str:
         """
         Return the language of the last text, or an empty "" if no message or error
         """
-        return self.last_lang
+        if block is True:
+            while self.lang in ("", self.last_lang):
+                # sleep block while we wait for an update
+                sleep(0.1)
+        self.last_lang = self.lang
+        return self.lang
 
 
 if __name__ == "__main__":
