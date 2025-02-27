@@ -8,6 +8,9 @@ from typing import List, Dict, Any, Tuple, Optional
 import cv2
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
+from torch.serialization import safe_globals
+from ultralytics.nn.tasks import DetectionModel
+
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
 import numpy as np
@@ -190,7 +193,8 @@ class MLDetect(Thread, MQTTClient):
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
         pose_model: Optional[Wholebody] = None
         for camera_key in self.cam_configs.keys():
-            detection_model = YOLO(self.model_config)
+            with safe_globals([DetectionModel]):
+                detection_model = YOLO(self.model_config)
             if camera_key == CameraEnum.CAMERA_HEAD.value:
                 # only build a pose model for the camera head
                 self.logger.debug("Creating Pose model")
