@@ -7,8 +7,6 @@ from json import loads, JSONDecodeError
 from time import sleep
 
 # Third-party imports
-import whisperx as whisper
-import ffmpeg
 import numpy as np
 from paho.mqtt.client import MQTTMessage
 
@@ -183,6 +181,8 @@ class LocalSTTtx(MQTTClient):
         Args:
             broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
         """
+        import ffmpeg
+        import whisperx as whisper
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
