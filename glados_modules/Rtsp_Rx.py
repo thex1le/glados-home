@@ -57,6 +57,7 @@ class RtspConsumer:
                 else:
                     self.logger.error(
                         f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay} seconds...")
+                    self.logger.warning("Does opencv have gstreamer support?")
                     self.cap.release()
                     self.cap = None
             except Exception as e:
