@@ -13,7 +13,7 @@ from torch.serialization import safe_globals
 from torch.nn.modules.container import Sequential
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.nn.modules import Conv
-add_safe_globals([Conv])
+add_safe_globals([DetectionModel, Sequential, Conv])
 
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
