@@ -70,9 +70,10 @@ class GladosSTT(Thread):
                 recognizer.adjust_for_ambient_noise(source, .5)
                 self.logger.debug("getting audio")
                 audio = recognizer.listen(source)
+                self.audioTx.send_bytes(audio)
                 self.logger.debug("audio done")
                 try:
-                    transcription = recognizer.recognize_google(audio)
+                    transcription = self.localsttrx.get_text(block=True)
                     self.logger.debug(f"transcribe done, {transcription.lower()}")
                     pcommand = self.parse_command(transcription)
                     self.logger.debug(f'parse command is {pcommand}')
