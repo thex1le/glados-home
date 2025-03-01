@@ -2,6 +2,7 @@ from threading import Thread
 from time import sleep
 import multiprocessing as mp
 from typing import Any, Dict, List, Optional, Union
+from string import punctuation
 
 # 3rd party
 import regex as re
@@ -47,6 +48,8 @@ class GladosSTT(Thread):
         self.localsttrx: Optional[LocalSTTrx] = None
         self.audioTx: Optional[AudioServerTx] = None
         self.proc: Optional[mp.Process] = None
+        self.recognizer = None
+        self.mic = None
 
     def get_text(self) -> Optional[str]:
         """Retrieve the last transcribed text from the shared list.
@@ -76,16 +79,22 @@ class GladosSTT(Thread):
                 - "has_extra_command": True if additional command text exists, else False.
                 - "command": The command text if present, else None.
         """
+        punct_pattern = re.compile(r'^[{}]+$'.format(re.escape(punctuation)))
         glados_pattern: str = r'(hey glados){e<=3}'
         glados_match = re.search(glados_pattern, user_prompt, re.IGNORECASE | re.BESTMATCH)
         if glados_match:
             split_index: int = glados_match.end()
             greeting: str = user_prompt[:split_index].strip()
             command: str = user_prompt[split_index:].strip()
-            has_extra_command: bool = bool(command)
-            return {"greeting": greeting, "has_extra_command": has_extra_command, "command": command}
+            # check for just punctuation
+            if punct_pattern.fullmatch(command):
+                has_extra_command: bool = False
+            else:
+                has_extra_command: bool = True
+            rtn: dict = {"greeting": greeting, "has_extra_command": has_extra_command, "command": command}
         else:
-            return {"greeting": None, "has_extra_command": False, "command": None}
+            rtn: dict = {"greeting": None, "has_extra_command": False, "command": None}
+        return rtn
 
     def __get_audio(self, sr: Any, duration: float = 0.5, no_limit: bool = False, noise: bool = False) -> str:
         """Record audio from a microphone, send it for transcription, and return the resulting text.
@@ -100,25 +109,23 @@ class GladosSTT(Thread):
             str: The transcribed audio as text.
         """
         self.logger.debug("Getting Mic Audio")
-        with sr.Microphone(device_index=1) as source:
-            recognizer = sr.Recognizer()
-            self.logger.debug("Speech recognizer open")
-            if noise:
-                self.logger.debug("Adjusting for noise")
-                recognizer.adjust_for_ambient_noise(source, duration)
-            self.logger.debug("Recording audio")
-            if no_limit is False:
-                self.logger.debug("Recording Short Audio")
-                audio = recognizer.listen(source)
-            else:
-                self.logger.debug("Time limit removed on audio recording, Recording long audio")
-                source.pause_threshold = 1
-                audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
-            self.logger.debug("Recording audio complete & sending audio for transcription")
-            self.audioTx.send_bytes(audio.get_wav_data())
-            audio_text = self.localsttrx.get_text(block=True)
-            self.logger.debug(f"Transcription complete, Audio: {audio_text.lower()}")
-            return audio_text
+        self.logger.debug("Speech recognizer open")
+        if noise:
+            self.logger.debug("Adjusting for noise")
+            self.recognizer.adjust_for_ambient_noise(self.mic, duration)
+        self.logger.debug("Recording audio")
+        if no_limit is False:
+            self.logger.debug("Recording Short Audio")
+            audio = self.recognizer.listen(self.mic)
+        else:
+            self.logger.debug("Time limit removed on audio recording, Recording long audio")
+            self.mic.pause_threshold = 1
+            audio = self.recognizer.listen(self.mic, phrase_time_limit=None, timeout=None)
+        self.logger.debug("Recording audio complete & sending audio for transcription")
+        self.audioTx.send_bytes(audio.get_wav_data())
+        audio_text = self.localsttrx.get_text(block=True)
+        self.logger.debug(f"Transcription complete, Audio: {audio_text.lower()}")
+        return audio_text
 
     def record(self, mp_list: List[Optional[str]]) -> None:
         """Continuously record audio, process transcription, and extract commands.
@@ -130,9 +137,16 @@ class GladosSTT(Thread):
         Args:
             mp_list (List[Optional[str]]): A multiprocessing-managed list to store recognized commands.
         """
+        # Import the speech recognition module after process fork.
+        import speech_recognition as sr
         # Initialize local STT and audio transmission after mp fork.
         self.localsttrx = LocalSTTrx(broker=self.mqtt_broker)
         self.audioTx = AudioServerTx(self.audioServer_broker)
+        self.recognizer = sr.Recognizer()
+        # create a manual context
+        self.mic = sr.Microphone(device_index=1)
+        # open the stream
+        self.mic.__enter__()
         # Import the speech recognition module after process fork.
         import speech_recognition as sr
         while True:
