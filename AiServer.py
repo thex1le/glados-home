@@ -37,7 +37,7 @@ if __name__ == "__main__":
     # reuse ip port broker tuple
     mqtt_b = broker(mqtt_conf[SystemEnums.MQTT_SERVER_IP.value], int(mqtt_conf[SystemEnums.MQTT_PORT.value]))
     lstt_tx = LocalSTTtx(mqtt_b)
-    stt_audio_rx = AudioServerRX(audio_b)
+    stt_audio_rx = AudioServerRX(audio_b, callback=lstt_tx.process_audio())
     stt_audio_rx.start()
     # start the text to speech engine
     glados_voice.main()
