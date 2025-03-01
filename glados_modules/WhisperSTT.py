@@ -182,6 +182,7 @@ class LocalSTTtx(MQTTClient):
             broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
         """
         import ffmpeg
+        self.ffmpeg = ffmpeg
         import whisperx as whisper
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
@@ -214,8 +215,7 @@ class LocalSTTtx(MQTTClient):
             MQTTEnums.STT_RESULTS_MQTT_TOPIC.value,
         )
 
-    @staticmethod
-    def load_audio_from_bytes(audio_bytes: bytes) -> np.ndarray:
+    def load_audio_from_bytes(self, audio_bytes: bytes) -> np.ndarray:
         """Load audio data from a byte stream using ffmpeg.
 
         This method pipes the audio bytes into ffmpeg to convert them to WAV format,
@@ -228,7 +228,7 @@ class LocalSTTtx(MQTTClient):
             np.ndarray: The audio data as a NumPy array of float32 values.
         """
         process = (
-            ffmpeg.input("pipe:0")
+            self.ffmpeg.input("pipe:0")
             .output("pipe:1", format="wav", ac=1, ar="16000")
             .run_async(pipe_stdin=True, pipe_stdout=True, pipe_stderr=True)
         )
