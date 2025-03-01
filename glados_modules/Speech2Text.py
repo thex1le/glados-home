@@ -39,7 +39,7 @@ class GladosSTT(Thread):
             port=int(stt_config[STTEnums.STT_SERVER_PORT.value])
         )
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
         self.text: Optional[str] = None
         self.glocal = glocal
         self.mplist: List[Optional[str]] = list()
@@ -99,8 +99,10 @@ class GladosSTT(Thread):
         Returns:
             str: The transcribed audio as text.
         """
+        self.logger.debug("Getting Mic Audio")
         with sr.Microphone(device_index=1) as source:
             recognizer = sr.Recognizer()
+            self.logger.debug("Speech recognizer open")
             if noise:
                 self.logger.debug("Adjusting for noise")
                 recognizer.adjust_for_ambient_noise(source, duration)
