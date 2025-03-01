@@ -12,7 +12,6 @@ from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
 from typing import Dict, Callable
-from collections import namedtuple
 
 # 3rd party imports
 import requests
@@ -352,16 +351,11 @@ if __name__ == "__main__":
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
     gl.speak("Oh Its you! , , Its been a long time...")
-    # bit of a hack but pull mqtt broker ip from GladosLocal
     gstt = GladosSTT(configp, gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
     left_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_FACTORY.value]
     right_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_FACTORY.value]
-    mqtt_broker = namedtuple("mqtt_broker", ["ip", "port"])
-    cam_resolution = namedtuple("cam_resolution", ['x', 'y'])
-    broker = mqtt_broker(configp["MQTT"]["mqtt_server_ip"], configp["MQTT"]["mqtt_port"])
-    confidence = float(configp["REACTIONS"]["VisionConfidence"])
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
     left_camera = Camera(configfile=configp, location=left_camera_location, rtspport=port)
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_PORT.value])
