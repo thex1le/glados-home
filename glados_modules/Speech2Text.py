@@ -162,7 +162,7 @@ class GladosSTT(Thread):
                             self.logger.debug("Cancel command issued")
                             self.glocal.random_cancel_response()
                             continue
-                    self.logger.debug(transcription)
+                    self.logger.debug(f"Returned transcription is {transcription}")
                     mp_list.append(pcommand["command"])
             except Exception as e:
                 self.logger.error(f"An unknown error occurred: {e}")
