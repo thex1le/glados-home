@@ -180,7 +180,7 @@ class GladosSTT(Thread):
 
 if __name__ == "__main__":
     # for module debug
-    from glados_modules.GLaDOSGpt import GLaDOSGpt
+    from glados_modules.GLaDOSGpt import GladosGPT
     from argparse import ArgumentParser
     from configparser import ConfigParser
     from GLaDOS import GladosLocal
@@ -193,6 +193,6 @@ if __name__ == "__main__":
         raise Exception(f"Invalid config file: {args.conf}")
     config_p = ConfigParser()
     config_p.read(args.conf)
-    gl = GladosLocal(config_p, GLaDOSGpt)
+    gl = GladosLocal(config_p, GladosGPT)
     gstt = GladosSTT(config_p, gl)
     gstt.start()
