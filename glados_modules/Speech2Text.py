@@ -115,3 +115,22 @@ class GladosSTT(Thread):
             while True:
                 sleep(10)
 
+
+if __name__ == "__main__":
+    # for module debug
+    from glados_modules.GLaDOSGpt import GLaDOSGpt
+    from argparse import ArgumentParser
+    from configparser import ConfigParser
+    from GLaDOS import GladosLocal
+    from os import path
+
+    parser = ArgumentParser(description='Camera streaming via RTSP')
+    parser.add_argument('-config', type=str, default=None, dest='conf', help='Config File')
+    args = parser.parse_args()
+    if not args.conf or not path.isfile(args.conf):
+        raise Exception(f"Invalid config file: {args.conf}")
+    config_p = ConfigParser()
+    config_p.read(args.conf)
+    gl = GladosLocal(config_p, GLaDOSGpt)
+    gstt = GladosSTT(config_p, gl)
+    gstt.start()
