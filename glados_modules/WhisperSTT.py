@@ -198,7 +198,7 @@ class LocalSTTtx(MQTTClient):
         Args:
             byte_stream (bytes): The audio data as a byte stream.
         """
-        audio: np.ndarray = LocalSTTtx.load_audio_from_bytes(byte_stream)
+        audio: np.ndarray = self.load_audio_from_bytes(byte_stream)
         results = self.model.transcribe(audio, batch_size=16)
         self.logger.debug(f"Detected language: {results['language']}")
         text = ""
