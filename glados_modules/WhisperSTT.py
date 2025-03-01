@@ -4,7 +4,7 @@ from typing import NamedTuple, Optional, Callable, Dict
 from collections import namedtuple
 from threading import Thread
 from json import loads, JSONDecodeError
-from time import sleep
+from time import sleep, time
 
 # Third-party imports
 import numpy as np
@@ -280,26 +280,32 @@ class LocalSTTrx(MQTTClient):
                 self.text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
                 self.lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
 
-    def get_text(self, block: bool = False) -> str:
+    def get_text(self, block: bool = False, timeout: int=10) -> str:
         """
         Return the last text off the mqtt message, or an empty "" if no message or error
         :return:
         """
+        t = time()
         if block is True:
             while self.text in ("", self.last_text):
                 # sleep block while we wait for an update
                 sleep(0.1)
+                if time() - t >= timeout:
+                    break
         self.last_text = self.text
         return self.text
 
-    def get_lang(self, block: bool = False) -> str:
+    def get_lang(self, block: bool = False, timeout: int=10) -> str:
         """
         Return the language of the last text, or an empty "" if no message or error
         """
+        t = time()
         if block is True:
             while self.lang in ("", self.last_lang):
                 # sleep block while we wait for an update
                 sleep(0.1)
+                if time() -t >= timeout:
+                    break
         self.last_lang = self.lang
         return self.lang
 
