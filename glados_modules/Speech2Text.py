@@ -191,7 +191,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not args.conf or not path.isfile(args.conf):
         raise Exception(f"Invalid config file: {args.conf}")
-    config_p = ConfigParser()
+    config_p = ConfigParser(args.conf[0])
     config_p.read(args.conf)
     gl = GladosLocal(config_p, GladosGPT)
     gstt = GladosSTT(config_p, gl)
