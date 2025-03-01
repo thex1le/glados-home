@@ -99,7 +99,7 @@ class GladosSTT(Thread):
         Returns:
             str: The transcribed audio as text.
         """
-        with sr.Microphone() as source:
+        with sr.Microphone(device_index=1) as source:
             recognizer = sr.Recognizer()
             if noise:
                 self.logger.debug("Adjusting for noise")
