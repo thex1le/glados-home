@@ -365,7 +365,7 @@ if __name__ == "__main__":
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
     left_camera = Camera(configfile=configp, location=left_camera_location, rtspport=port)
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_PORT.value])
-    right_camera = Camera(configfile=configp, location=right_camera_location)
+    right_camera = Camera(configfile=configp, location=right_camera_location, rtspport=port)
     left_camera.start()
     # give time for first camera to start before we spin up the second
     time.sleep(5)
