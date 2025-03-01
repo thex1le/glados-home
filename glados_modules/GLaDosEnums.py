@@ -315,6 +315,8 @@ class CameraEnum(Enum):
     CAMERA_HEAD_FOV_Y: int = 41
     CAMERA_RIGHT_FOV: int = 160
     CAMERA_LEFT_FOV: int = 160
+    X_RESOLUTION: str = 'x'
+    Y_RESOLUTION: str = 'y'
 
 
 class TrackingEnums(Enum):
