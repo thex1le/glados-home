@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-
-import sys
 from multiprocessing import Process
 from time import sleep
-import cv2
+
+# 3rd party import
 from picamera2 import Picamera2, MappedArray, Preview
 
+# glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum, SystemEnums
