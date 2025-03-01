@@ -36,7 +36,7 @@ class GladosSTT(Thread):
         stt_config = config[STTEnums.CONFIG_HEAD_STT.value]
         self.audioServer_broker = broker(
             ip=stt_config[STTEnums.STT_SERVER_IP.value],
-            port=stt_config[STTEnums.STT_SERVER_PORT.value]
+            port=int(stt_config[STTEnums.STT_SERVER_PORT.value])
         )
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
@@ -112,7 +112,7 @@ class GladosSTT(Thread):
                 source.pause_threshold = 1
                 audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
             self.logger.debug("Recording audio complete & sending audio for transcription")
-            self.audioTx.send_bytes(audio)
+            self.audioTx.send_bytes(audio.get_wav_data())
             audio_text = self.localsttrx.get_text(block=True)
             self.logger.debug(f"Transcription complete, Audio: {audio_text.lower()}")
             return audio_text
