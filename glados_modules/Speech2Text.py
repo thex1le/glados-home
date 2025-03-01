@@ -105,10 +105,11 @@ class GladosSTT(Thread):
                 self.logger.debug("Adjusting for noise")
                 recognizer.adjust_for_ambient_noise(source, duration)
             self.logger.debug("Recording audio")
-            if no_limit:
+            if no_limit is False:
+                self.logger.debug("Recording Short Audio")
                 audio = recognizer.listen(source)
             else:
-                self.logger.debug("Time limit removed on audio recording")
+                self.logger.debug("Time limit removed on audio recording, Recording long audio")
                 source.pause_threshold = 1
                 audio = recognizer.listen(source, phrase_time_limit=None, timeout=None)
             self.logger.debug("Recording audio complete & sending audio for transcription")
