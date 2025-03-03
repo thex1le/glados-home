@@ -6,8 +6,29 @@ from typing import List, Dict, Any, Tuple, Optional
 
 # 3rd party
 import cv2
+from torch.serialization import add_safe_globals
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
+from torch.serialization import safe_globals
+from torch.nn.modules.container import Sequential
+from ultralytics.nn.tasks import DetectionModel
+from ultralytics.nn.modules import Conv
+add_safe_globals([DetectionModel, Sequential, Conv])
+
+# because safe globals is being fucking stupid, monkey patch back the old way
+import torch
+# Save the original torch.load function.
+_original_torch_load = torch.load
+
+
+def _patched_torch_load(*args, **kwargs):
+    # Force weights_only to be False.
+    kwargs["weights_only"] = False
+    return _original_torch_load(*args, **kwargs)
+
+
+torch.load = _patched_torch_load
+
 # get this here, https://github.com/Tau-J/rtmlib/tree/main
 from rtmlib import Wholebody, draw_skeleton
 import numpy as np
@@ -190,7 +211,8 @@ class MLDetect(Thread, MQTTClient):
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
         pose_model: Optional[Wholebody] = None
         for camera_key in self.cam_configs.keys():
-            detection_model = YOLO(self.model_config)
+            with safe_globals([DetectionModel, Sequential, Conv]):
+                detection_model = YOLO(self.model_config)
             if camera_key == CameraEnum.CAMERA_HEAD.value:
                 # only build a pose model for the camera head
                 self.logger.debug("Creating Pose model")
@@ -198,7 +220,7 @@ class MLDetect(Thread, MQTTClient):
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
             thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
-                                                                      detection_model, pose_model), daemon=True)
+                                                                       detection_model, pose_model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 

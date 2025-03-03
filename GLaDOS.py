@@ -12,7 +12,6 @@ from contextlib import contextmanager
 import multiprocessing as mp
 from queue import Queue
 from typing import Dict, Callable
-from collections import namedtuple
 
 # 3rd party imports
 import requests
@@ -65,8 +64,9 @@ class GladosLocal(Thread, MQTTClient):
     def __init__(self, config_file, remote_llm):
         Thread.__init__(self)
         Thread.daemon = True
-        ip = configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
-        port = int(configp[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value])
+        conf_mqtt = config_file[SystemEnums.CONFIG_HEAD_MQTT.value]
+        ip = conf_mqtt[SystemEnums.MQTT_SERVER_IP.value]
+        port = int(conf_mqtt[SystemEnums.MQTT_PORT.value])
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         MQTTClient.__init__(self, ip=ip, port=port)
@@ -97,7 +97,7 @@ class GladosLocal(Thread, MQTTClient):
         self.cancel = self.llp(self.configp.get('cancel', list()), root_path)
         self.vision_confidence = float(self.configp.get("VisionConfidence", 0.0))
         self.fuck = self.llp(self.configp.get("fuck", list()), root_path)
-        self.mixer = Mixer("Speaker")
+        self.mixer = Mixer("Master")
         self.__change_volume(int(config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value]["VolumeLevel"]))
         self.current_vol = int(self.mixer.getvolume()[0])
         self.sight_results = mp.Manager().dict()
@@ -350,23 +350,16 @@ if __name__ == "__main__":
         raise GladosException("Unable to load file {}".format(args.conf[0]))
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    #gl.speak("Oh Its you! , , Its been a long time...")
-    gstt = GladosSTT(gl)
+    gl.speak("Oh Its you! , , Its been a long time...")
+    gstt = GladosSTT(configp, gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
     left_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_FACTORY.value]
     right_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_FACTORY.value]
-    mqtt_broker = namedtuple("mqtt_broker", ["ip", "port"])
-    cam_resolution = namedtuple("cam_resolution", ['x', 'y'])
-    r_x, r_y = configp[CameraEnum.CONFIG_HEAD.value][
-                       f"{CameraEnum.CAMERA_HEAD.value}_{CameraEnum.MSG_RESOLUTION.value}"].split(',')
-    head_cam_resolution = cam_resolution(int(r_x), int(r_y))
-    broker = mqtt_broker(configp["MQTT"]["mqtt_server_ip"], configp["MQTT"]["mqtt_port"])
-    confidence = float(configp["REACTIONS"]["VisionConfidence"])
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
     left_camera = Camera(configfile=configp, location=left_camera_location, rtspport=port)
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_PORT.value])
-    right_camera = Camera(configfile=configp, location=right_camera_location)
+    right_camera = Camera(configfile=configp, location=right_camera_location, rtspport=port)
     left_camera.start()
     # give time for first camera to start before we spin up the second
     time.sleep(5)

@@ -249,7 +249,7 @@ class Gservo(MQTTClient, Thread):
         Thread.__init__(self)
         Thread.daemon = True
         self.stop = False
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         # 1 degree movement speed
         degree_per_second = servo_speed / 60
         self.speed_settings = {
@@ -355,7 +355,8 @@ class Gservo(MQTTClient, Thread):
                 ServoEnum.MSG_MIDDLE.value: self.middle_angle,
                 ServoEnum.MSG_CURRENT_ANGLE.value: self.current_angle,
                 ServoEnum.MSG_AXIS.value: self.axis,
-                ServoEnum.MSG_MOVING.value: self.moving
+                ServoEnum.MSG_MOVING.value: self.moving,
+                ServoEnum.MSG_LAST_ANGLE.value: self.angle
             }
 
     def set_speed(self, speed: int) -> None:
@@ -416,14 +417,13 @@ class Gservo(MQTTClient, Thread):
             target_angle = copy(self.angle)
             current_angle = copy(self.current_angle)
             speed_setting = copy(self.speed_settings[self.speed])
-        # signal were moving
-        self.send_status()
 
         if total_distance != 0:
             # Time for full move
             full_time = total_distance * speed_setting
             # Divide the movement into small steps
             steps = 100
+            time_per_step = full_time / steps
             for i in range(steps + 1):
                 # Calculate S-curve (using a simple cosine-based ease-in and ease-out)
                 t = i / steps
@@ -439,11 +439,9 @@ class Gservo(MQTTClient, Thread):
                     if target_angle != self.angle:
                         # we have a new angle break the loop
                         self.logger.debug(f"New angle Request breaking movement for {self.location}")
-                        self.moving = False
-                        self.send_status()
                         break
                     else:
-                        sleep(full_time / steps)
+                        sleep(time_per_step)
             self.logger.debug(f"{self.location}, sleeping for {full_time} seconds while we move")
             self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
             return
@@ -465,6 +463,7 @@ class Gservo(MQTTClient, Thread):
             angle = self.angle
             current_angle = self.current_angle
             first_boot = self.first_boot
+        self.send_status()
 
         if first_boot:
             with self._lock:

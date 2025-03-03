@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-
-import sys
 from multiprocessing import Process
 from time import sleep
-import cv2
+
+# 3rd party import
 from picamera2 import Picamera2, MappedArray, Preview
 
+# glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
 from glados_modules.GLaDosEnums import CameraEnum, SystemEnums
@@ -139,13 +139,14 @@ if __name__ == "__main__":
     config_p = ConfigParser()
     config_p.read(args.conf)
     # Example: "Camera_Head_Factory" might be a key in the config
-    location = config_p["CAMERAS"]["camera_right_factory"]
-    port = int(config_p["CAMERAS"]["camera_right_rtsp_port"])
+    cam_conf = config_p[CameraEnum.CONFIG_HEAD.value]
+    location = cam_conf[CameraEnum.CAMERA_RIGHT_FACTORY.value]
+    port = int(cam_conf[CameraEnum.CAMERA_RIGHT_PORT.value])
     # Instantiate and start the camera as a Process
     right_camera = Camera(configfile=config_p, location=location, rtspport=port)
     right_camera.start()
-    location = config_p["CAMERAS"]["camera_left_factory"]
-    port = int(config_p["CAMERAS"]["camera_left_rtsp_port"])
+    location = cam_conf[CameraEnum.CAMERA_LEFT_FACTORY.value]
+    port = int(cam_conf[CameraEnum.CAMERA_LEFT_PORT.value])
     # Instantiate and start the camera as a Process
     left_camera = Camera(configfile=config_p, location=location, rtspport=port)
     left_camera.start()

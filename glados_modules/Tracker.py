@@ -6,11 +6,13 @@ from math import sqrt, radians, tan, atan, degrees
 
 # 3rd party imports
 from paho.mqtt.client import MQTTMessage
+import numpy as np
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
 from glados_modules.GladosData import ServoLocation, VisionTracker
+from glados_modules.DDKalman import KalmanFilter2D
 from glados_modules.GLaDosEnums import (CameraEnum, ServoEnum, SystemEnums,
                                         TrackingEnums, VisionResultsEnum, LoggingEnums)
 
@@ -86,13 +88,14 @@ class MotionTrack(MQTTClient):
 
         # Tracking-related attributes
         self.target = target
-        self.target = "bottle"
         self.pose_target = pose_target
         self.confidence = confidence
         self.servos: Dict[str, object] = dict()
         self.dms: int = 3  # default movement speed
         self.peripheral_hunt = True  # if movement on side cameras is allowed
         self.head_tracking = False  # if the head is currently tracking something
+        self.head_UD_last_angle = None  # last angle we tried to set the head to
+        self.hysteresis_threshold: int = 5  # hysteresis threshold
 
         super().__init__(ip=broker.ip, port=broker.port)
         self.side_camera_count: int = 0
@@ -111,9 +114,57 @@ class MotionTrack(MQTTClient):
         # Store the last move time to enforce rate limiting
         self._last_move_time = time.time()
 
+        # create kalman filter
+        self.kf = KalmanFilter2D(dt=0.1)
+        self.kf_initialized = False
         # Lock for thread-safety (inherited from MQTTClient)
         # NOTE: Self._lock is defined in MQTTClient, ensuring concurrency control
         # across method calls, especially servo movements.
+
+    def predict_target_bbox(self, bbox: dict) -> dict:
+        """
+        Use the Kalman filter to predict the new position of the target.
+
+        :param bbox: Detected bounding box with keys 'x1', 'y1', 'x2', 'y2' and confidence.
+        :return: A new bounding box dictionary with the predicted center.
+        """
+        # Compute the detected center
+        center_x = (bbox['x1'] + bbox['x2']) / 2
+        center_y = (bbox['y1'] + bbox['y2']) / 2
+        measurement = np.array([[center_x], [center_y]])
+
+        # If this is the first measurement, initialize the filter’s state.
+        if not self.kf_initialized:
+            self.kf.x[0, 0] = center_x
+            self.kf.x[1, 0] = center_y
+            self.kf_initialized = True
+
+        # Update the filter with the new measurement
+        self.kf.update(measurement)
+
+        # Predict the next state
+        predicted_state = self.kf.predict()
+        predicted_center_x = predicted_state[0, 0]
+        predicted_center_y = predicted_state[1, 0]
+
+        # Optionally, you can use self.kf.x[2] and self.kf.x[3] for velocity info
+        self.logger.debug(f"Predicted position: ({predicted_center_x:.2f}, {predicted_center_y:.2f}), "
+                          f"Velocity: ({self.kf.x[2, 0]:.2f}, {self.kf.x[3, 0]:.2f})")
+
+        # Preserve the detected bounding box size
+        width = bbox['x2'] - bbox['x1']
+        height = bbox['y2'] - bbox['y1']
+
+        # Reconstruct the bounding box using the predicted center
+        new_bbox = {
+            'x1': predicted_center_x - width / 2,
+            'y1': predicted_center_y - height / 2,
+            'x2': predicted_center_x + width / 2,
+            'y2': predicted_center_y + height / 2,
+            TrackingEnums.KEY_CONFIDENCE.value: bbox[TrackingEnums.KEY_CONFIDENCE.value]
+        }
+
+        return new_bbox
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -216,7 +267,8 @@ class MotionTrack(MQTTClient):
                                 current_pose_target = pose_data[self.pose_target]
                         # Attempt to smooth the bounding box for visual noise
                         target_bounding = self.smooth_bounding_box(target_bounding)
-
+                        # Apply predictive Kalman filter
+                        #target_bounding = self.predict_target_bbox(target_bounding)
                         # maybe also pass the point for the center point of a pose target or pose targets?
                         # Move head and body servos based on the bounding box
                         if current_pose_target is not None:
@@ -362,22 +414,33 @@ class MotionTrack(MQTTClient):
             head_ud = self.__calc_servo(self.servos[self.head_UD.name], target, camera=camera, point=pose)
             print(f"head lr down angle {head_lr}")
             print(f"head up down angle {head_ud}")
+
+            # Initialize last commanded head up/down angle if necessary
+            if self.head_UD_last_angle is None:
+                self.head_UD_last_angle = self.servos[self.head_UD.name].current
+
+            # Apply hysteresis for head up/down:
+            if abs(head_ud - self.head_UD_last_angle) > self.hysteresis_threshold:
+                # Only send a move if the new angle is also outside the dead zone
+                if self.__dead_zone_check(
+                        self.servos[self.head_UD.name],
+                        head_ud,
+                        degree_diff=self.dead_zone_factor,
+                        confidence=target[TrackingEnums.KEY_CONFIDENCE.value]
+                ):
+                    mv_list.append(self.head_UD.move(head_ud))
+                    self.logger.debug(f"Head up/down move commanded: from {self.head_UD_last_angle} to {head_ud}")
+                    self.head_UD_last_angle = head_ud
+                else:
+                    self.logger.debug("Head up/down within dead zone after hysteresis check; no move.")
+            else:
+                self.logger.debug("Head up/down change within hysteresis band; no move commanded.")
+
             # Check if the LR movement is outside the dead zone
             if self.__dead_zone_check(self.servos[self.head_LR.name], head_lr, self.dead_zone_factor):
                 mv_list.append(self.head_LR.move(head_lr))
             else:
                 head_lr = self.servos[self.head_LR.name].current
-
-            # Check if the UD movement is outside the dead zone
-            if self.__dead_zone_check(
-                self.servos[self.head_UD.name],
-                head_ud,
-                degree_diff=self.dead_zone_factor,
-                confidence=target[TrackingEnums.KEY_CONFIDENCE.value]
-            ):
-                mv_list.append(self.head_UD.move(head_ud))
-            else:
-                head_ud = self.servos[self.head_UD.name].current
 
             # Send servo commands if we have any movement
             if mv_list:

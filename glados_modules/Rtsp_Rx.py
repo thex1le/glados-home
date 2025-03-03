@@ -40,10 +40,12 @@ class RtspConsumer:
         gst_pipeline = (
             f"rtspsrc location={self.rtsp_uri} latency=0 ! "
             f"rtpjitterbuffer drop-on-latency=true ! "
-            f"decodebin ! videoconvert ! video/x-raw,format=BGR ! "
+            f"rtph264depay ! "
+            f"h264parse ! "  # Parse the stream to negotiate caps properly
+            f"nvh264dec ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
             f"appsink drop=true max-buffers=1 sync=false emit-signals=false"
-        )
-
+            )
         attempt = 0
         while True:
             try:
@@ -55,6 +57,7 @@ class RtspConsumer:
                 else:
                     self.logger.error(
                         f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay} seconds...")
+                    self.logger.warning("Does opencv have gstreamer support?")
                     self.cap.release()
                     self.cap = None
             except Exception as e:

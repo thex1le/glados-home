@@ -12,7 +12,7 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums, LoggingEnums
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums, LoggingEnums, STTEnums
 
 
 class MQTTClient:
@@ -39,7 +39,7 @@ class MQTTClient:
         self.client.loop_start()
 
     def on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
-        self.logger.debug(f"Connecting to {self.ip}:{self.port}")
+        self.logger.debug(f"Connecting to mqtt server at {self.ip}:{self.port}")
         with self._lock:
             for topic in self.topic_handler:
                 self.client.subscribe(topic, qos=1)
@@ -77,6 +77,12 @@ class TargetMessageBuilder:
     def send_track_command_start(camera):
         return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
                 TrackingEnums.MSG_CAMERA_KEY.value: camera}
+
+
+class SttMessageBuilder:
+    @staticmethod
+    def send_speech_to_text_message(message):
+        return {STTEnums.STT_RESULTS_KEY.value: message}
 
 
 class CameraMessageBuilder:
