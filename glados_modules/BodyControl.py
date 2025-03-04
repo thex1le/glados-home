@@ -1,8 +1,8 @@
 import random
-from time import sleep
+from time import sleep, time
 from threading import Thread
 from json import loads, JSONDecodeError
-from typing import Dict, Callable, Tuple, NamedTuple
+from typing import Dict, Callable, Tuple, NamedTuple, Any
 from os import path
 from glob import glob
 from collections import namedtuple
@@ -18,12 +18,13 @@ import board
 from digitalio import DigitalInOut, Direction
 from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7789
+import adafruit_bno055
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder
+from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder, IMUMessageBuilder
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums
+from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -237,6 +238,99 @@ class GladosLCD(Thread, MQTTClient):
         # end all loops so you can join thread
         self.breathe_loop = False
         self.stop_loop = True
+
+
+class IMU(MQTTClient, Thread):
+    """IMU control class to poll the IMU and push updates to MQTT.
+
+    This class is a multithreaded IMU controller that polls sensor data
+    from an Adafruit BNO055 sensor via I2C and publishes updates using MQTT.
+
+    Attributes:
+        imu_broker (tuple): The broker tuple obtained from MQTTClient.
+        sensor (adafruit_bno055.BNO055_I2C): The sensor object used for readings.
+        last_val (int): The last recorded temperature value for correction.
+    """
+
+    imu_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: Any) -> None:
+        """Initializes the IMU object.
+
+        This method sets up the thread as a daemon, initializes the I2C
+        interface, and creates the sensor object. It also initializes the
+        MQTT client using the provided broker details.
+
+        Args:
+            broker (Any): An object with 'ip' and 'port' attributes required
+                to establish the MQTT connection.
+        """
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        i2c = board.I2C()  # uses board.SCL and board.SDA
+        self.sensor = adafruit_bno055.BNO055_I2C(i2c)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        self.last_val = 0xFFFF
+
+    def temperature(self) -> int:
+        """Get the corrected temperature value from the sensor.
+
+        This method reads the temperature from the sensor and applies a
+        correction specific to running off a Raspberry Pi. If a temperature
+        jump of 128 units is detected twice consecutively, the temperature is
+        corrected by masking the result.
+
+        Returns:
+            int: The corrected temperature reading.
+        """
+        result = self.sensor.temperature
+        if abs(result - self.last_val) == 128:
+            result = self.sensor.temperature
+            if abs(result - self.last_val) == 128:
+                return 0b00111111 & result
+        self.last_val = result
+        return result
+
+    def get_sensor(self) -> Dict[str, Any]:
+        """Retrieve sensor data.
+
+        This method gathers sensor data including temperature, acceleration,
+        magnetic field, gyro, Euler angles, quaternion, linear acceleration, and
+        gravity. It also attaches a timestamp to the reading.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the sensor data, where the keys
+            are defined by the IMUEnums and the values are the corresponding sensor
+            readings.
+        """
+        sdata: Dict[str, Any] = {
+            IMUEnums.TEMP_KEY.value: self.temperature(),
+            IMUEnums.ACCEL_KEY.value: self.sensor.acceleration,
+            IMUEnums.MAGNETO_KEY.value: self.sensor.magnetic,
+            IMUEnums.GYRO_KEY.value: self.sensor.gyro,
+            IMUEnums.EULER_KEY.value: self.sensor.euler,
+            IMUEnums.QUAT_KEY.value: self.sensor.quaternion,
+            IMUEnums.LINEAR_KEY.value: self.sensor.linear_acceleration,
+            IMUEnums.GRAVITY_KEY.value: self.sensor.gravity,
+            IMUEnums.IMU_TIME_STAMP_KEY: time(),
+        }
+        self.logger.debug(f"IMU Data: {sdata}")
+        return sdata
+
+    def run(self) -> None:
+        """Thread loop to send a sensor command 10x a second.
+
+        This method continuously retrieves sensor data, builds a status
+        message using the IMUMessageBuilder, and sends the command to the
+        designated MQTT topic. The loop runs approximately 10 times per second.
+        """
+        self.logger.info("IMU Sensor polling started")
+        while True:
+            status = IMUMessageBuilder.send_imu_status_message(self.get_sensor())
+            self.send_command(topic=MQTTEnums.IMU_STATUS_TOPIC.value, command=status)
+            sleep(0.1)
 
 
 class Gservo(MQTTClient, Thread):
@@ -705,7 +799,7 @@ class LedHead(MQTTClient):
 
 
 if __name__ == "__main__":
-    ip = '192.168.86.23'
+    ip = '192.168.1.29'
     Angle_tuple = namedtuple("angle", ['max', 'min', 'center'])
     Pulse_tuple = namedtuple("pulse", ['max', 'min'])
     Mqtt_tuple = namedtuple("mqtt", ["ip", "port"])
@@ -728,5 +822,7 @@ if __name__ == "__main__":
                      broker=mqtt_connect)
     right_lcd.start()
     led_head.startup()
+    imu = IMU(broker=mqtt_connect)
+    imu.start()
     while True:
         sleep(1)
