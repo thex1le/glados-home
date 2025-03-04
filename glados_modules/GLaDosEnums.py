@@ -62,6 +62,7 @@ class IMUEnums(Enum):
     IMU_STATUS_KEY: str = "imu_status"
     IMU_TIME_STAMP_KEY: str = "time"
 
+
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
@@ -69,7 +70,7 @@ class MQTTEnums(Enum):
     STT_RESULTS_MQTT_TOPIC: str = "sst/results"
     VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
     BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
-    IMU_STATUS_TOPIC: str = "body/imu"
+    IMU_STATUS_TOPIC: str = "body/imu/status"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
 
 
