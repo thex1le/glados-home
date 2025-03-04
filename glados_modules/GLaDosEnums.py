@@ -47,6 +47,22 @@ class STTEnums(Enum):
     STT_LANGUAGE_KEY: str = "language"
 
 
+class IMUEnums(Enum):
+    """
+    Enums for the IMU Sensor Data
+    """
+    TEMP_KEY: str = "temperature"
+    ACCEL_KEY: str = "accelerometer"
+    MAGNETO_KEY: str = "magnetometer"
+    GYRO_KEY: str = "gyroscope"
+    EULER_KEY: str = "euler"
+    QUAT_KEY: str = "quaternion"
+    LINEAR_KEY: str = "linear"
+    GRAVITY_KEY: str = "gravity"
+    IMU_STATUS_KEY: str = "imu_status"
+    IMU_TIME_STAMP_KEY: str = "time"
+
+
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
@@ -54,6 +70,7 @@ class MQTTEnums(Enum):
     STT_RESULTS_MQTT_TOPIC: str = "sst/results"
     VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
     BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
+    IMU_STATUS_TOPIC: str = "body/imu/status"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
 
 

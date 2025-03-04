@@ -1,52 +1,84 @@
-from typing import Dict, Callable, NamedTuple
+from typing import Dict, Callable, NamedTuple, Any
 from json import loads, JSONDecodeError
 from time import time, sleep
 from collections import namedtuple
 
-# 3rd party
+# 3rd party imports
 from paho.mqtt.client import MQTTMessage
 from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums, LoggingEnums
+from glados_modules.GLaDosEnums import (
+    ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
+    LoggingEnums, IMUEnums, MQTTEnums
+)
 
 
 class ServoLocation(MQTTClient):
+    """Keep track of all the angles based on MQTT status updates.
+
+    This class monitors servo status messages received via MQTT and updates
+    an internal mapping of servo locations and their current states.
     """
-    Keep track of all the angles based on MQTT status updates.
-    """
+
     def __init__(self, broker: NamedTuple) -> None:
+        """Initialize a ServoLocation instance.
+
+        This method sets up the logger, topic handlers, servo configurations,
+        and initializes the MQTT client with broker information.
+
+        Args:
+            broker (NamedTuple): A named tuple containing broker details with
+                attributes 'ip' and 'port'.
+        """
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
-        # Initialize shared resources before calling the superclass constructor
-        self.cmd_topic = ServoEnum.MQTT_STATUS_TOPIC.value
-        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
-        self.body_map = dict()
-        self.min = ServoEnum.MSG_MIN.value
-        self.max = ServoEnum.MSG_MAX.value
-        self.current_angle = ServoEnum.MSG_CURRENT_ANGLE.value
-        self.middle = ServoEnum.MSG_MIDDLE.value
-        self.moving = ServoEnum.MSG_MOVING.value
-        self.axis = ServoEnum.MSG_AXIS.value
-        self.last_angle = ServoEnum.MSG_LAST_ANGLE.value
-        self.ServoTuple = namedtuple(ServoEnum.MSG_LOCATION_KEY.value, [
-            self.current_angle, self.max, self.min, self.middle, self.axis,
-            self.moving, ServoEnum.MSG_LOCATION.value, self.last_angle
-        ])
+        self.logger = setup_logger(
+            name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+        )
+        # Initialize topic handlers for servo and IMU messages
+        self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
+            ServoEnum.MQTT_STATUS_TOPIC.value: self.servo_handle_cmd,
+            MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
+        }
+        self.body_map: Dict[Any, Any] = {}
+        self.min: str = ServoEnum.MSG_MIN.value
+        self.max: str = ServoEnum.MSG_MAX.value
+        self.current_angle: str = ServoEnum.MSG_CURRENT_ANGLE.value
+        self.middle: str = ServoEnum.MSG_MIDDLE.value
+        self.moving: str = ServoEnum.MSG_MOVING.value
+        self.axis: str = ServoEnum.MSG_AXIS.value
+        self.last_angle: str = ServoEnum.MSG_LAST_ANGLE.value
+        self.ServoTuple = namedtuple(
+            ServoEnum.MSG_LOCATION_KEY.value,
+            [
+                self.current_angle,
+                self.max,
+                self.min,
+                self.middle,
+                self.axis,
+                self.moving,
+                ServoEnum.MSG_LOCATION.value,
+                self.last_angle,
+            ],
+        )
         self.servo_list = (
             ServoEnum.LOCATION_BODY_UP_DOWN.value,
             ServoEnum.LOCATION_HEAD_UP_DOWN.value,
             ServoEnum.LOCATION_BODY_LEFT_RIGHT.value,
-            ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value
+            ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value,
         )
-        # Call the superclass constructor
+        # Initialize IMU status mapping
+        self.imu_status: Dict[Any, Any] = {}
+        # Call the superclass constructor for MQTT client initialization
         super().__init__(ip=broker.ip, port=broker.port)
 
-    def update_servo_status(self):
-        """
-        Trigger servo message status update.
+    def update_servo_status(self) -> None:
+        """Trigger servo message status update.
+
+        This method sends status request commands to all servos and waits
+        until responses are received or a timeout is reached.
         """
         self.logger.debug("Updating Servo angle status")
         msg = []
@@ -54,39 +86,76 @@ class ServoLocation(MQTTClient):
             msg.append(ServoMessageBuilder.get_status(servo_location))
         # Send the status request commands
         self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
-        # Block and don't return until all the servos populate
         fail_count = 0
         while True:
             with self._lock:
                 current_servo_count = len(self.body_map.keys())
-            # fail count 600 is 2min
+            # Timeout after approximately 2 minutes (600 * 0.1 seconds)
             if current_servo_count >= len(self.servo_list) or fail_count >= 600:
-                break  # All servos have reported their status
+                break
             else:
-                # Possible block here...
-                # Keep sending request until we get them all
+                # Keep sending requests until all servo statuses are received
                 for servo in self.servo_list:
                     with self._lock:
                         if servo not in self.body_map:
                             self.send_command(
                                 ServoMessageBuilder.get_status(servo),
-                                ServoEnum.MQTT_COMMAND_TOPIC.value)
+                                ServoEnum.MQTT_COMMAND_TOPIC.value,
+                            )
                 sleep(0.1)
                 fail_count += 1
                 self.logger.debug("Waiting for servo statuses to update...")
 
-    def handle_cmd(self, msg: MQTTMessage) -> None:
+    def __load_message(self, json_message: MQTTMessage) -> Dict[str, Any]:
+        """Decode a JSON message from MQTT.
+
+        This private method attempts to decode the payload of a JSON MQTT
+        message. If decoding fails, an error is logged.
+
+        Args:
+            json_message (MQTTMessage): The incoming MQTT message containing JSON.
+
+        Returns:
+            Dict[str, Any]: The decoded JSON as a dictionary. Returns an empty
+                dictionary if decoding fails.
         """
-        Command Handler for incoming servo status messages.
-        """
+        rtn: Dict[str, Any] = {}
         try:
-            j_msg = loads(msg.payload.decode())
+            rtn = loads(json_message.payload.decode())
+            self.logger.debug(f"JSON message decoded as: {rtn}")
         except JSONDecodeError as e:
             self.logger.error(f"Failed to decode JSON message: {e}")
-            return
+        return rtn
 
-        if ServoEnum.MSG_LOCATION_KEY.value in j_msg:
-            # Found a servo status, update the dict
+    def imu_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming IMU status messages.
+
+        This method processes an incoming IMU status MQTT message and updates
+        the internal IMU status if the expected key is present.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing IMU status.
+        """
+        j_msg: Dict[str, Any] = self.__load_message(msg)
+        if not j_msg:
+            self.logger.error("Failed to decode imu status message")
+        elif IMUEnums.IMU_STATUS_KEY.value in j_msg:
+            self.logger.debug("Received IMU status message")
+            self.imu_status = j_msg[IMUEnums.IMU_STATUS_KEY.value]
+
+    def servo_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming servo status messages.
+
+        This method processes an incoming servo status MQTT message, extracts
+        the servo location and its results, and updates the internal mapping.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing servo status.
+        """
+        j_msg: Dict[str, Any] = self.__load_message(msg)
+        if not j_msg:
+            self.logger.error("Failed to decode servo status message")
+        elif ServoEnum.MSG_LOCATION_KEY.value in j_msg:
             location = j_msg.get(ServoEnum.MSG_LOCATION_KEY.value)
             results = j_msg.get(ServoEnum.MSG_RESULTS.value, {})
             self.logger.debug(f"Received servo status for {location}: {results}")
@@ -99,96 +168,142 @@ class ServoLocation(MQTTClient):
                     results.get(self.axis),
                     results.get(self.moving),
                     location,
-                    results.get(self.last_angle))
+                    results.get(self.last_angle),
+                )
 
-    def get_angle_map(self) -> dict:
+    def get_imu_status(self) -> Dict[Any, Any]:
+        """Get the current IMU status.
+
+        Returns:
+            Dict[Any, Any]: A dictionary representing the latest IMU status.
         """
-        Return a copy of the angle map.
+        return self.imu_status
+
+    def get_angle_map(self) -> Dict[Any, Any]:
+        """Retrieve a copy of the servo angle map.
+
+        If the internal angle map is empty or incomplete, a status update is
+        triggered before returning the map.
+
+        Returns:
+            Dict[Any, Any]: A copy of the current servo angle mapping.
         """
         if not self.body_map or len(self.body_map) != len(self.servo_list):
-            # Empty or not fully populated map, trigger a status update
             self.logger.debug("Servo map incomplete, updating servo statuses.")
             self.update_servo_status()
-        # Return a copy to prevent external modifications
-        angle_map_copy = self.body_map.copy()
-        return angle_map_copy
+        return self.body_map.copy()
 
     def check_movement(self) -> bool:
-        """
-        Check if any servos are moving and return true or false
-        :return: return bool true if moving, false if not
+        """Check if any servos are currently moving.
+
+        Returns:
+            bool: True if any servo is moving, False otherwise.
         """
         if not self.body_map or len(self.body_map) != len(self.servo_list):
-            # Empty or not fully populated map, trigger a status update
             self.logger.debug("Servo map incomplete, updating servo statuses.")
             self.update_servo_status()
-        ret = False
-        for s in self.servo_list:
-            if s not in self.body_map.keys():
-                # no status from servo yet so skip it
+        for servo in self.servo_list:
+            if servo not in self.body_map:
                 continue
-            if self.body_map[s].moving is True:
-                ret = True
-                break
-        return ret
+            if self.body_map[servo].moving is True:
+                return True
+        return False
 
 
 class VisionTracker(MQTTClient):
+    """Keep track of vision results based on MQTT status updates.
+
+    This class monitors vision-related MQTT messages, caches results,
+    and triggers tracking commands based on confidence thresholds.
     """
-    Keep track of all the vision results based on mqtt status updates
-    """
-    def __init__(self, broker: NamedTuple, target: str, confidence: float, tracker_callback) -> None:
+
+    def __init__(
+        self,
+        broker: NamedTuple,
+        target: str,
+        confidence: float,
+        tracker_callback: Callable[[Dict[str, Any]], None],
+    ) -> None:
+        """Initialize a VisionTracker instance.
+
+        This method sets up the logger, target, confidence thresholds, and
+        initializes the MQTT client. It also prepares caches and tracking
+        variables for vision processing.
+
+        Args:
+            broker (NamedTuple): A named tuple containing broker details with
+                attributes 'ip' and 'port'.
+            target (str): The target object to track.
+            confidence (float): The minimum confidence threshold for tracking.
+            tracker_callback (Callable[[Dict[str, Any]], None]): A callback function
+                to handle tracking updates.
+        """
         self.__name__ = self.__class__.__name__
-        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
-        self.target = target
-        self.tracker_callback = tracker_callback
-        self.confidence_score = confidence
-        # TODO get side confidence from config file
-        self.side_confidence_score = .4
-        self.cmd_topic = CameraEnum.MQTT_RESPONSE_TOPIC.value
-        self.main_camera = CameraEnum.CONFIG_HEAD.value
-        self.left_camera = CameraEnum.CAMERA_LEFT.value
-        self.right_camera = CameraEnum.CAMERA_RIGHT.value
-        self.cam_key = CameraEnum.MSG_LOCATION_KEY.value
-        self.results_key = CameraEnum.MSG_RESULTS.value
-        self.ts_key = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
-        self.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
-        self.objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
-        self.confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-        # Initialize the topic handler before calling the superclass constructor
-        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
-        # Call the superclass constructor
+        self.logger = setup_logger(
+            name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+        )
+        self.target: str = target
+        self.tracker_callback: Callable[[Dict[str, Any]], None] = tracker_callback
+        self.confidence_score: float = confidence
+        # TODO: Get side confidence from config file
+        self.side_confidence_score: float = 0.4
+        self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
+        self.main_camera: str = CameraEnum.CONFIG_HEAD.value
+        self.left_camera: str = CameraEnum.CAMERA_LEFT.value
+        self.right_camera: str = CameraEnum.CAMERA_RIGHT.value
+        self.cam_key: str = CameraEnum.MSG_LOCATION_KEY.value
+        self.results_key: str = CameraEnum.MSG_RESULTS.value
+        self.ts_key: str = VisionResultsEnum.VISION_RESULTS_TS_KEY.value
+        self.count: str = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
+        self.objects_key: str = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+        self.confidence_key: str = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+        # Initialize topic handlers for vision commands
+        self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
+            self.cmd_topic: self.handle_cmd,
+        }
+        # Call the superclass constructor for MQTT client initialization
         super().__init__(ip=broker.ip, port=broker.port)
-        # Use a time cache and expire any vision tracking objects after 10 seconds
-        self.response_cache = TTLCache(maxsize=200, ttl=10)
-        self.response_map = dict()
+        # Initialize a TTL cache for vision responses (expires after 10 seconds)
+        self.response_cache: TTLCache = TTLCache(maxsize=200, ttl=10)
+        self.response_map: Dict[Any, Any] = {}
         # Tracking variables
-        self.head_target = False
-        self.left_target = False
-        self.right_target = False
-        self.last_message = None
+        self.head_target: bool = False
+        self.left_target: bool = False
+        self.right_target: bool = False
+        self.last_message: Any = None
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
-        """
-        Command Handler
+        """Handle incoming vision command messages.
+
+        This method processes an MQTT message for vision commands. It attempts
+        to decode the JSON payload and, if successful, passes the data to the
+        parse_camera method.
+
+        Args:
+            msg (MQTTMessage): The incoming MQTT message.
         """
         try:
-            j_msg = loads(msg.payload.decode())
+            j_msg: Dict[str, Any] = loads(msg.payload.decode())
         except JSONDecodeError as e:
             self.logger.error(f"Failed to decode JSON message: {e}")
             return
 
         if self.cam_key in j_msg:
             self.logger.debug(f"Camera message received, {msg.topic}, {j_msg}")
-            # Protect shared resources in parse_camera
             self.parse_camera(msg=j_msg)
 
-    def parse_camera(self, msg: dict):
+    def parse_camera(self, msg: Dict[str, Any]) -> None:
+        """Parse a camera message and update vision tracking data.
+
+        This method extracts camera information from the message, checks for
+        the target with sufficient confidence, updates the response cache and
+        map, and sends a tracking command if necessary.
+
+        Args:
+            msg (Dict[str, Any]): The dictionary containing the camera message.
         """
-        Parse a camera message and add it to the cache and currently seen objects
-        """
-        camera = msg.get(self.cam_key, "")
-        sight_results = msg.get(self.results_key, {})
+        camera: str = msg.get(self.cam_key, "")
+        sight_results: Dict[str, Any] = msg.get(self.results_key, {})
         if self.target in sight_results:
             with self._lock:
                 for p in sight_results[self.target][self.objects_key]:
@@ -197,68 +312,72 @@ class VisionTracker(MQTTClient):
                         cf_score = self.confidence_score
                     elif camera in (CameraEnum.CAMERA_RIGHT.value, CameraEnum.CAMERA_LEFT.value):
                         cf_score = self.side_confidence_score
+                    else:
+                        cf_score = 0.0
                     if float(c) >= cf_score:
                         self.logger.debug(f"Confidence of {c} found for {self.target}")
-                        # Update response_map
+                        # Update response_map with current sight results
                         self.response_map[camera] = sight_results
-                        # Update counts and timestamps
-                        current_time = time()
-                        last_ts = self.response_map[camera].get(self.ts_key, 0)
+                        current_time: float = time()
+                        last_ts: float = self.response_map[camera].get(self.ts_key, 0)
                         if current_time - last_ts <= 0.5:
-                            self.response_map[camera][self.count] = self.response_map[camera].get(self.count, 0) + 1
+                            self.response_map[camera][self.count] = (
+                                self.response_map[camera].get(self.count, 0) + 1
+                            )
                         else:
                             self.response_map[camera][self.count] = max(
-                                0, self.response_map[camera].get(self.count, 1) - 1)
+                                0, self.response_map[camera].get(self.count, 1) - 1
+                            )
                         self.response_map[camera][self.ts_key] = current_time
-                        # Store sight results in response_cache
+                        # Update response_cache for the camera
                         if camera in self.response_cache:
-                            # Add to an existing cache
                             self.response_cache[camera][current_time] = sight_results
                         else:
-                            # Add a new camera to the cache
                             self.response_cache[camera] = {current_time: sight_results}
-                        self.logger.debug(f"Sending Start command to track object {self.target} with a score of {c}")
-                        # Send the tracking command
+                        self.logger.debug(
+                            f"Sending Start command to track object {self.target} with a score of {c}"
+                        )
                         if self.last_message is None:
                             self.last_message = time()
-                        if time() - self.last_message >= .5:
+                        if time() - self.last_message >= 0.5:
                             if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                                 self.send_command(
                                     TargetMessageBuilder.send_track_command_start(camera),
-                                    TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                                    TrackingEnums.MQTT_COMMAND_TOPIC.value,
+                                )
                             elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
-                                # head has not seen any target in 60 seconds or more, see response_cache creation to verify
-                                # use side cameras to try and find target
-                                if TrackingEnums.BODY_HEAD_CAMERA.value not in self.response_cache.keys():
+                                if TrackingEnums.BODY_HEAD_CAMERA.value not in self.response_cache:
                                     self.send_command(
                                         TargetMessageBuilder.send_track_command_start(camera),
-                                        TrackingEnums.MQTT_COMMAND_TOPIC.value)
+                                        TrackingEnums.MQTT_COMMAND_TOPIC.value,
+                                    )
                         else:
                             self.logger.debug("Skipping update as last message was recently sent")
 
-    def get_vision_map(self) -> dict:
-        """
-        Return just the last vision response messages seen
+    def get_vision_map(self) -> Dict[Any, Any]:
+        """Retrieve the latest vision response messages.
+
+        Returns:
+            Dict[Any, Any]: A copy of the current vision response mapping.
         """
         with self._lock:
-            # Return a copy of the response_map
             return self.response_map.copy()
 
-    def get_vision_cache(self) -> dict:
-        """
-        Return the vision results cache
+    def get_vision_cache(self) -> Dict[Any, Any]:
+        """Retrieve the vision results cache.
+
+        Returns:
+            Dict[Any, Any]: A copy of the current vision results cache.
         """
         with self._lock:
-            # Return a copy of the response_cache
             return dict(self.response_cache)
 
 
 if __name__ == "__main__":
     b = namedtuple("broker", ["ip", "port"])
-    broker = b('192.168.86.23', 1883)
+    broker = b('192.168.1.29', 1883)
     # Assuming broker is a NamedTuple with 'ip' and 'port' attributes
     servo_location_tracker = ServoLocation(broker)
-
     # Retrieve the current servo angles
     angle_map = servo_location_tracker.get_angle_map()
 
@@ -270,3 +389,4 @@ if __name__ == "__main__":
         print(f"  Max Angle: {servo_data.max}")
         print(f"  Middle Angle: {servo_data.middle}")
         print(f"  Axis: {servo_data.axis}")
+        print(servo_location_tracker.get_imu_status())
