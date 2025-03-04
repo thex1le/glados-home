@@ -12,7 +12,7 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums, LoggingEnums, STTEnums
+from glados_modules.GLaDosEnums import ServoEnum, CameraEnum, TrackingEnums, LoggingEnums, STTEnums, IMUEnums
 
 
 class MQTTClient:
@@ -77,6 +77,12 @@ class TargetMessageBuilder:
     def send_track_command_start(camera):
         return {TrackingEnums.MSG_COMMAND_KEY.value: TrackingEnums.MSG_COMMAND_START.value,
                 TrackingEnums.MSG_CAMERA_KEY.value: camera}
+
+
+class IMUMessageBuilder:
+    @staticmethod
+    def send_imu_status_message(message):
+        return {IMUEnums.IMU_STATUS_KEY.value: message}
 
 
 class SttMessageBuilder:
