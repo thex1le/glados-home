@@ -63,6 +63,15 @@ class IMUEnums(Enum):
     IMU_TIME_STAMP_KEY: str = "time"
 
 
+class TOFEnums(Enum):
+    """
+    Enums for the TOF Sensor Data
+    """
+    TOF_TIME_STAMP_KEY: str = "time"
+    TOF_STATUS_KEY: str = "tof_status"
+    SENSOR_NAME: str = "TOF"
+
+
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
@@ -71,6 +80,7 @@ class MQTTEnums(Enum):
     VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
     BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
     IMU_STATUS_TOPIC: str = "body/imu/status"
+    TOF_STATUS_TOPIC: str = "body/tof/status"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
 
 
