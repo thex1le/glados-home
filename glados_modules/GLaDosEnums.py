@@ -61,6 +61,7 @@ class IMUEnums(Enum):
     GRAVITY_KEY: str = "gravity"
     IMU_STATUS_KEY: str = "imu_status"
     IMU_TIME_STAMP_KEY: str = "time"
+    SENSOR_NAME: str = "IMU"
 
 
 class TOFEnums(Enum):
