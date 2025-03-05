@@ -1,88 +1,93 @@
 <?xml version="1.0"?>
 <robot name="glados_robot">
-
-  <!-- =============== LINKS =============== -->
-
-  <!-- 1) The ceiling or mount link (root) -->
+  <!-- LINKS -->
   <link name="ceiling_link">
-
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- Placeholder geometry -->
+        <box size="0.01 0.01 0.01"/>
+      </geometry>
+    </visual>
   </link>
 
-  <!-- 2) The top housing/link of the robot -->
   <link name="robot_top_link">
     <visual>
-        <geometry>
-            <cylinder length="0.4" radius="0.1"/>
-        </geometry>
-        <material name="white"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder length="0.4" radius="0.1"/>
+      </geometry>
+      <material name="white"/>
     </visual>
     <collision>
-        <geometry>
-            <cylinder length="0.4" radius="0.1"/>
-        </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder length="0.4" radius="0.1"/>
+      </geometry>
     </collision>
   </link>
 
-  <!-- 3) The main body link -->
   <link name="body_link">
-    <!-- Minimal placeholder -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- Minimal placeholder geometry -->
+        <box size="0.05 0.05 0.05"/>
+      </geometry>
+    </visual>
   </link>
 
-  <!-- 4) The neck link -->
   <link name="neck_link">
-    <!-- Minimal placeholder -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- Minimal placeholder geometry -->
+        <box size="0.05 0.05 0.05"/>
+      </geometry>
+    </visual>
   </link>
 
-  <!-- 5) The head link -->
   <link name="head_link">
-    <!-- Minimal placeholder -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- Minimal placeholder geometry -->
+        <box size="0.05 0.05 0.05"/>
+      </geometry>
+    </visual>
   </link>
 
-
-  <!-- =============== JOINTS =============== -->
-
-  <!-- Joint A: The whole robot pivot left-right (0–180°)
-       Rotates about Y-axis, from 0.0 to π -->
+  <!-- JOINTS -->
   <joint name="ceiling_to_top" type="revolute">
     <parent link="ceiling_link"/>
     <child link="robot_top_link"/>
-    <!-- Position/orientation of the pivot on the ceiling -->
     <origin xyz="0 0 0" rpy="0 0 0"/>
-    <!-- Y-axis rotation for left-right -->
-    <axis xyz="0 1 0"/>
-    <!-- 0–π radians = 0–180° -->
+    <axis xyz="0 0 1"/>
     <limit lower="0.0" upper="3.14159" effort="10" velocity="1.0"/>
   </joint>
 
-  <!-- Joint B: The body pivot up-down (0–180°)
-       Rotates about X-axis, from 0.0 to π -->
   <joint name="top_to_body" type="revolute">
     <parent link="robot_top_link"/>
     <child link="body_link"/>
     <origin xyz="0 0 0.250796" rpy="0 0 0"/>
-    <!-- X-axis rotation for up-down -->
-    <axis xyz="1 0 0"/>
+    <axis xyz="0 1 0"/>
     <limit lower="0.0" upper="3.14159" effort="10" velocity="1.0"/>
   </joint>
 
-  <!-- Joint C: Neck left-right on X-axis, 52–120° -->
   <joint name="neck_left_right" type="revolute">
     <parent link="body_link"/>
     <child link="neck_link"/>
     <origin xyz="0 0 0.0641735" rpy="0 0 0"/>
-    <!-- X-axis rotation; 52°→0.907 rad, 120°→2.094 rad -->
     <axis xyz="1 0 0"/>
     <limit lower="0.907" upper="2.094" effort="10" velocity="1.0"/>
   </joint>
 
-  <!-- Joint D: Head up-down, 6–125° -->
   <joint name="head_up_down" type="revolute">
     <parent link="neck_link"/>
     <child link="head_link"/>
     <origin xyz="0 0 0.083705" rpy="0 0 0"/>
-    <!-- X-axis rotation; 6°→0.105 rad, 125°→2.182 rad -->
     <axis xyz="1 0 0"/>
     <limit lower="0.105" upper="2.182" effort="10" velocity="1.0"/>
   </joint>
-
 </robot>
+
