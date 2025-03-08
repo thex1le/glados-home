@@ -492,3 +492,7 @@ if __name__ == "__main__":
         print(f"  Middle Angle: {servo_data.middle}")
         print(f"  Axis: {servo_data.axis}")
         print(servo_location_tracker.get_imu_status())
+    sleep(2)
+    st = SensorTracker(broker=broker)
+    st.get_sensor_status(TOFEnums.TOF_STATUS_KEY.value)
+    st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
