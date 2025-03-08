@@ -296,7 +296,7 @@ class TOF(MQTTClient, Thread):
             pass
         self.vl53.clear_interrupt()
         sdata: Dict[str, Any] = {
-            TOFEnums.TOF_STATUS_KEY: self.vl53.distance,
+            TOFEnums.TOF_STATUS_KEY.value: self.vl53.distance,
             TOFEnums.TOF_TIME_STAMP_KEY.value: time(),
         }
         self.logger.debug(f"TOF Data: {sdata}")

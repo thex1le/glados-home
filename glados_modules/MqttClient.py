@@ -88,7 +88,7 @@ class IMUMessageBuilder:
 class TOFMessageBuilder:
     @staticmethod
     def send_tof_status_message(message):
-        return {TOFEnums.TOF_STATUS_KEY: message}
+        return {TOFEnums.TOF_STATUS_KEY.value: message}
 
 
 class SttMessageBuilder:
