@@ -12,7 +12,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
 from glados_modules.GLaDosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
-    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums
+    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums
 )
 
 
@@ -395,7 +395,8 @@ class SensorTracker(MQTTClient):
         )
         self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
             MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
-            MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd
+            MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd,
+            MQTTEnums.TH_STATUS_TOPIC.value: self.th_handle_cmd
         }
         super().__init__(ip=broker.ip, port=broker.port)
         self.imu_status: dict = {}
@@ -443,6 +444,18 @@ class SensorTracker(MQTTClient):
             msg,
             sensor_key=IMUEnums.IMU_STATUS_KEY.value,
             sensor_name=IMUEnums.SENSOR_NAME.value
+        )
+
+    def th_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming Temp * Humidity status messages.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing Temp & Humidity status.
+        """
+        self._handle_status(
+            msg,
+            sensor_key=THEnums.TH_STATUS_KEY.value,
+            sensor_name=THEnums.SENSOR_NAME.value
         )
 
     def __load_message(self, json_message: MQTTMessage) -> Dict[str, Any]:
@@ -496,3 +509,4 @@ if __name__ == "__main__":
     sleep(2)
     st.get_sensor_status(TOFEnums.TOF_STATUS_KEY.value)
     st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
+    st.get_sensor_status(THEnums.TH_STATUS_KEY.value)

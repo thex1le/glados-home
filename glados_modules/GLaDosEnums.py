@@ -73,6 +73,18 @@ class TOFEnums(Enum):
     SENSOR_NAME: str = "TOF"
 
 
+class THEnums(Enum):
+    """
+    Enums for the Temp and Humidity sensor
+    """
+    TH_TIME_STAMP_KEY: str = "time"
+    TH_STATUS_KEY: str = "th_status"
+    TH_HUMIDITY_KEY: str = "humidity"
+    TH_CELSIUS_KEY: str = "celsius"
+    TH_FAHRENHEIT_KEY: str = "fahrenheit"
+    SENSOR_NAME: str = "TH"
+
+
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
@@ -83,6 +95,7 @@ class MQTTEnums(Enum):
     IMU_STATUS_TOPIC: str = "body/imu/status"
     TOF_STATUS_TOPIC: str = "body/tof/status"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
+    TH_STATUS_TOPIC: str = "body/th/status"
 
 
 class VisionResultsEnum(Enum):

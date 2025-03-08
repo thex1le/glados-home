@@ -20,13 +20,15 @@ from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7789
 import adafruit_bno055
 import adafruit_vl53l4cd
+import adafruit_sht4x
 
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder, IMUMessageBuilder, TOFMessageBuilder
+from glados_modules.MqttClient import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
+                                       TOFMessageBuilder, THMessageBuilder)
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums, TOFEnums
+from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums, TOFEnums, THEnums
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -314,6 +316,90 @@ class TOF(MQTTClient, Thread):
         while True:
             status = TOFMessageBuilder.send_tof_status_message(self.get_sensor())
             self.send_command(topic=MQTTEnums.TOF_STATUS_TOPIC.value, command=status)
+            sleep(0.1)
+
+
+class TempHumSensor(MQTTClient, Thread):
+    """SHT40 Temp and Humidity control class to poll and push updates to MQTT.
+
+    This class is a multithreaded SHT40 controller that polls sensor data
+    from an Adafruit SHT40 sensor via I2C and publishes updates using MQTT.
+
+    Attributes:
+        SHT40_broker (tuple): The broker tuple obtained from MQTTClient.
+        SHT40 (adafruit_sht4x): The sensor object used for readings.
+    """
+
+    SHT40_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: Any) -> None:
+        """Initializes the TOF object.
+
+        This method sets up the thread as a daemon, initializes the I2C
+        interface, and creates the sensor object. It also initializes the
+        MQTT client using the provided broker details.
+
+        Args:
+            broker (Any): An object with 'ip' and 'port' attributes required
+                to establish the MQTT connection.
+        """
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        i2c = board.I2C()  # uses board.SCL and board.SDA
+        self.sht40 = adafruit_sht4x.SH54x(i2c)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        self.logger.debug(adafruit_sht4x.Mode.string[self.sht40.mode])
+
+    def convert_c2f(self, temp: float) -> float:
+        """Convert Celsius to Fahrenheit
+
+        This method converts Celsius Temperature data to Fahrenheit
+
+        Args:
+            temp (float): Celsius temperature to convert
+
+        Returns:
+            float: Returns a float of the temperature in Fahrenheit from Celsius
+        """
+        f_temp = (temp * 9 / 5) + 32
+        self.logger.debug(f"Converted {temp}C to {f_temp}F")
+        return f_temp
+
+    def get_sensor(self) -> Dict[str, Any]:
+        """Retrieve sensor data.
+
+        This method gathers sensor Temp Humidity data, It also attaches a timestamp to the reading.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the sensor data, where the keys
+            are defined by the Enums and the values are the corresponding sensor
+            readings.
+        """
+        temp, relative_humid = self.sht40.measurements
+        sdata: Dict[str, Any] = {
+            THEnums.TH_STATUS_KEY.value: {
+                THEnums.TH_HUMIDITY_KEY.value: relative_humid,
+                THEnums.TH_CELSIUS_KEY.value: temp,
+                THEnums.TH_FAHRENHEIT_KEY.value: self.convert_c2f(temp)
+            },
+            THEnums.TH_TIME_STAMP_KEY.value: time(),
+        }
+        self.logger.debug(f"Time and Humidity Data: {sdata}")
+        return sdata
+
+    def run(self) -> None:
+        """Thread loop to send a sensor command 10x a second.
+
+        This method continuously retrieves sensor data, builds a status
+        message using the THMessageBuilder, and sends the command to the
+        designated MQTT topic. The loop runs approximately 10 times per second.
+        """
+        self.logger.info("Temp & Humidity Sensor polling started")
+        while True:
+            status = THMessageBuilder.send_th_status_message(self.get_sensor())
+            self.send_command(topic=MQTTEnums.TH_STATUS_TOPIC.value, command=status)
             sleep(0.1)
 
 
