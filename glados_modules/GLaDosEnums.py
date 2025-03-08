@@ -33,6 +33,9 @@ class SystemEnums(Enum):
     BROKER_IP: str = 'ip'
     BROKER_PORT: str = 'port'
     BROKER: str = 'broker'
+    PI5: str = 'Raspberry Pi 5'
+    PI4: str = 'Raspberry Pi 4'
+    X86_SERVER: str = 'x86_server'
 
 
 class STTEnums(Enum):

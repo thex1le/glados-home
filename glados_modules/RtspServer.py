@@ -8,7 +8,7 @@ import cv2
 
 # glados modules
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import CameraEnum, LoggingEnums
+from glados_modules.GLaDosEnums import CameraEnum, LoggingEnums, SystemEnums
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
@@ -19,12 +19,29 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
-        # TODO figur out how to do hardware encoding
-        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+        system = self.check_system()
+        if system == SystemEnums.PI5.value:
+            self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
                              '! rtph264pay config-interval=0 name=pay0 pt=96'.format(self.cam_x, self.cam_y, fps)
+
+        elif system == SystemEnums.PI4.value:
+            self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+                            'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
+                            '! videoconvert ! video/x-raw,format=I420 ' \
+                            '! v4l2h264enc extra-controls="controls,video_bitrate=1000000" ' \
+                            '! h264parse ' \
+                            '! rtph264pay config-interval=1 name=pay0 pt=96'.format(self.cam_x, self.cam_y, fps)
+
+        elif system == SystemEnums.X86_SERVER.value:
+            self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+                            'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
+                            '! videoconvert ! video/x-raw,format=I420 ' \
+                            '! nvh264enc preset=llhp bitrate=1000000 ' \
+                            '! h264parse ' \
+                            '! rtph264pay config-interval=1 name=pay0 pt=96'.format(self.cam_x, self.cam_y, fps)
 
     def send_data(self, data):
         with self.data_lock:
@@ -34,7 +51,8 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         t = Thread(target=self._thread_rtsp)
         t.start()
 
-    def _thread_rtsp(self):
+    @staticmethod
+    def _thread_rtsp():
         loop = GLib.MainLoop()
         loop.run()
 
@@ -53,6 +71,19 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         appsrc = rtsp_media.get_element().get_child_by_name('source')
         appsrc.set_property("emit-signals", True)
         appsrc.connect('need-data', self.on_need_data)
+
+    @staticmethod
+    def check_system():
+        """
+        Check what type of system the code is running on and return it
+        """
+        model = SystemEnums.X86_SERVER.value
+        try:
+            with open("/proc/device-tree/model", "r") as f:
+                model = f.read().strip()
+        except FileNotFoundError:
+            pass
+        return model
 
 
 class RTSPServer(GstRtspServer.RTSPServer):
