@@ -12,7 +12,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
 from glados_modules.GLaDosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
-    LoggingEnums, IMUEnums, MQTTEnums
+    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums
 )
 
 
@@ -373,6 +373,108 @@ class VisionTracker(MQTTClient):
             return dict(self.response_cache)
 
 
+class SensorTracker(MQTTClient):
+    """Keep track of all the various sensors based on MQTT status updates.
+
+    This class monitors sensor status messages received via MQTT and updates
+    internal state for different sensors.
+    """
+    sensor_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: NamedTuple) -> None:
+        """Initialize the SensorTracker instance.
+
+        Args:
+            broker (NamedTuple): A named tuple containing broker details with
+                attributes 'ip' and 'port'.
+        """
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+        )
+        self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
+            MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
+            MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd
+        }
+        super().__init__(ip=broker.ip, port=broker.port)
+        self.imu_status: dict = {}
+        self.tof_status: dict = {}
+
+    def _handle_status(
+        self,
+        msg: MQTTMessage,
+        sensor_key: str,
+        sensor_name: str
+    ) -> None:
+        """Generic handler for processing sensor status messages.
+
+        Args:
+            msg (MQTTMessage): The incoming MQTT message.
+            sensor_key (str): The expected key in the decoded JSON message.
+            sensor_name (str): The name of the sensor (for logging purposes).
+        """
+        data: Dict[str, Any] = self.__load_message(msg)
+        if not data:
+            self.logger.error(f"Failed to decode {sensor_name} status message")
+        elif sensor_key in data:
+            self.logger.debug(f"Received {sensor_name} status message")
+            setattr(self, sensor_key, data[sensor_key])
+
+    def tof_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming TOF status messages.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing TOF status.
+        """
+        self._handle_status(
+            msg,
+            sensor_key=TOFEnums.TOF_STATUS_KEY.value,
+            sensor_name=TOFEnums.SENSOR_NAME.value
+        )
+
+    def imu_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming IMU status messages.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing IMU status.
+        """
+        self._handle_status(
+            msg,
+            sensor_key=IMUEnums.IMU_STATUS_KEY.value,
+            sensor_name=IMUEnums.SENSOR_NAME.value
+        )
+
+    def __load_message(self, json_message: MQTTMessage) -> Dict[str, Any]:
+        """Decode a JSON message from MQTT.
+
+        Args:
+            json_message (MQTTMessage): The incoming MQTT message with a JSON payload.
+
+        Returns:
+            Dict[str, Any]: The decoded JSON as a dictionary. Returns an empty
+            dictionary if decoding fails.
+        """
+        try:
+            data = loads(json_message.payload.decode())
+            self.logger.debug(f"JSON message decoded as: {data}")
+            return data
+        except JSONDecodeError as e:
+            self.logger.error(f"Failed to decode JSON message: {e}")
+            return {}
+
+    def get_sensor_status(self, sensor_attr: str) -> dict:
+        """Retrieve the status of a sensor using its attribute name.
+
+        Args:
+            sensor_attr (str): The attribute name for the sensor (e.g., 'imu_status' or 'tof_status').
+
+        Returns:
+            Optional[Any]: The current status of the sensor, or None if it is not set.
+        """
+        return getattr(self, sensor_attr, None)
+
+
 if __name__ == "__main__":
     b = namedtuple("broker", ["ip", "port"])
     broker = b('192.168.1.29', 1883)
@@ -390,3 +492,7 @@ if __name__ == "__main__":
         print(f"  Middle Angle: {servo_data.middle}")
         print(f"  Axis: {servo_data.axis}")
         print(servo_location_tracker.get_imu_status())
+    st = SensorTracker(broker=broker)
+    sleep(2)
+    st.get_sensor_status(TOFEnums.TOF_STATUS_KEY.value)
+    st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)

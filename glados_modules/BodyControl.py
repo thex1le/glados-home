@@ -19,12 +19,14 @@ from digitalio import DigitalInOut, Direction
 from PIL import Image, ImageDraw
 from adafruit_rgb_display import st7789
 import adafruit_bno055
+import adafruit_vl53l4cd
+
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder, IMUMessageBuilder
+from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder, IMUMessageBuilder, TOFMessageBuilder
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums
+from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums, TOFEnums
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -238,6 +240,81 @@ class GladosLCD(Thread, MQTTClient):
         # end all loops so you can join thread
         self.breathe_loop = False
         self.stop_loop = True
+
+
+class TOF(MQTTClient, Thread):
+    """TOF control class to poll the TOF and push updates to MQTT.
+
+    This class is a multithreaded TOF controller that polls sensor data
+    from an Adafruit VL53L4CD sensor via I2C and publishes updates using MQTT.
+
+    Attributes:
+        TOF_broker (tuple): The broker tuple obtained from MQTTClient.
+        vl53 (adafruit_vl53l4cd): The sensor object used for readings.
+    """
+
+    TOF_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: Any) -> None:
+        """Initializes the TOF object.
+
+        This method sets up the thread as a daemon, initializes the I2C
+        interface, and creates the sensor object. It also initializes the
+        MQTT client using the provided broker details.
+
+        Args:
+            broker (Any): An object with 'ip' and 'port' attributes required
+                to establish the MQTT connection.
+        """
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        i2c = board.I2C()  # uses board.SCL and board.SDA
+        self.vl53 = adafruit_vl53l4cd.VL53L4CD(i2c)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        # adjust values as needed
+        self.vl53.inter_measurement = 0
+        self.vl53.timing_budget = 200
+        model_id, module_type = self.vl53.model_info
+        self.logger.debug("Model ID: 0x{:0x}".format(model_id))
+        self.logger.debug("Module Type: 0x{:0x}".format(module_type))
+        self.logger.debug(f"Timing Budget: {self.vl53.timing_budget}")
+        self.logger.debug(f"Inter-Measurement: {self.vl53.inter_measurement}")
+
+    def get_sensor(self) -> Dict[str, Any]:
+        """Retrieve sensor data.
+
+        This method gathers sensor TOF data, It also attaches a timestamp to the reading.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the sensor data, where the keys
+            are defined by the TOFEnums and the values are the corresponding sensor
+            readings.
+        """
+        while not self.vl53.data_ready:
+            pass
+        self.vl53.clear_interrupt()
+        sdata: Dict[str, Any] = {
+            TOFEnums.TOF_STATUS_KEY.value: self.vl53.distance,
+            TOFEnums.TOF_TIME_STAMP_KEY.value: time(),
+        }
+        self.logger.debug(f"TOF Data: {sdata}")
+        return sdata
+
+    def run(self) -> None:
+        """Thread loop to send a sensor command 10x a second.
+
+        This method continuously retrieves sensor data, builds a status
+        message using the TOFMessageBuilder, and sends the command to the
+        designated MQTT topic. The loop runs approximately 10 times per second.
+        """
+        self.vl53.start_ranging()
+        self.logger.info("TOF Sensor polling started")
+        while True:
+            status = TOFMessageBuilder.send_tof_status_message(self.get_sensor())
+            self.send_command(topic=MQTTEnums.TOF_STATUS_TOPIC.value, command=status)
+            sleep(0.1)
 
 
 class IMU(MQTTClient, Thread):
@@ -824,5 +901,7 @@ if __name__ == "__main__":
     led_head.startup()
     imu = IMU(broker=mqtt_connect)
     imu.start()
+    tof = TOF(broker=mqtt_connect)
+    tof.start()
     while True:
         sleep(1)
