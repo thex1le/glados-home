@@ -309,6 +309,7 @@ class TOF(MQTTClient, Thread):
         message using the TOFMessageBuilder, and sends the command to the
         designated MQTT topic. The loop runs approximately 10 times per second.
         """
+        self.vl53.start_ranging()
         self.logger.info("TOF Sensor polling started")
         while True:
             status = TOFMessageBuilder.send_tof_status_message(self.get_sensor())
