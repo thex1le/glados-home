@@ -35,6 +35,7 @@ class SystemEnums(Enum):
     BROKER: str = 'broker'
     PI5: str = 'Raspberry Pi 5'
     PI4: str = 'Raspberry Pi 4'
+    PI4_B_PLUS: str = "Raspberry Pi 4 Model B Rev 1.4"
     X86_SERVER: str = 'x86_server'
 
 

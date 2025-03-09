@@ -27,7 +27,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
                              '! rtph264pay config-interval=0 name=pay0 pt=96'.format(self.cam_x, self.cam_y, fps)
 
-        elif system == SystemEnums.PI4.value:
+        elif system in (SystemEnums.PI4.value, SystemEnums.PI4_B_PLUS.value):
             self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                             'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                             '! videoconvert ! video/x-raw,format=I420 ' \
