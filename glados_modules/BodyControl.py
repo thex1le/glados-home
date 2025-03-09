@@ -1077,5 +1077,7 @@ if __name__ == "__main__":
     tof.start()
     th = TempHumSensor(broker=mqtt_connect)
     th.start()
+    mg = MoxGas(broker=mqtt_connect)
+    mg.start()
     while True:
         sleep(1)
