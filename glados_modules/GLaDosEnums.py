@@ -96,6 +96,7 @@ class MOXEnums(Enum):
     MOX_TVOC: str = "TVOC (ppb):"
     MOX_ECO2: str = "eCO2 (ppm):"
 
+
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
