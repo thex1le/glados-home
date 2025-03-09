@@ -309,7 +309,7 @@ class MoxGas(MQTTClient, Thread):
             MOXEnums.MOX_AQI.value: self.mox.AQI,
             MOXEnums.MOX_TVOC.value: self.mox.TVOC,
             MOXEnums.MOX_ECO2.value: self.mox.eCO2,
-            MOXEnums.MOX_TIME_STAMP_KEY.value: time.time(),
+            MOXEnums.MOX_TIME_STAMP_KEY.value: time(),
         }
         self.logger.debug(f"MOX Data: {sensor_data}")
         return sensor_data
