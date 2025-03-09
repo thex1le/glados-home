@@ -396,7 +396,8 @@ class SensorTracker(MQTTClient):
         self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
             MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
             MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd,
-            MQTTEnums.TH_STATUS_TOPIC.value: self.th_handle_cmd
+            MQTTEnums.TH_STATUS_TOPIC.value: self.th_handle_cmd,
+            MQTTEnums.MOX_STATUS_TOPIC.value: self.mox_handle_cmd
         }
         super().__init__(ip=broker.ip, port=broker.port)
         self.imu_status: dict = {}
