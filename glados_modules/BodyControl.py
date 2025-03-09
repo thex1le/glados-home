@@ -347,7 +347,7 @@ class TempHumSensor(MQTTClient, Thread):
         Thread.__init__(self)
         self.daemon = True
         i2c = board.I2C()  # uses board.SCL and board.SDA
-        self.sht40 = adafruit_sht4x.SH54x(i2c)
+        self.sht40 = adafruit_sht4x.SHT4x(i2c)
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
         self.logger.debug(adafruit_sht4x.Mode.string[self.sht40.mode])
