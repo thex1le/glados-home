@@ -402,6 +402,8 @@ class SensorTracker(MQTTClient):
         super().__init__(ip=broker.ip, port=broker.port)
         self.imu_status: dict = {}
         self.tof_status: dict = {}
+        self.mox_status: dict = {}
+        self.th_status: dict = {}
 
     def _handle_status(
         self,
