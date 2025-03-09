@@ -962,7 +962,7 @@ class LedHead(MQTTClient):
 
 
 if __name__ == "__main__":
-    ip = '192.168.1.29'
+    ip = '192.168.1.39'
     Angle_tuple = namedtuple("angle", ['max', 'min', 'center'])
     Pulse_tuple = namedtuple("pulse", ['max', 'min'])
     Mqtt_tuple = namedtuple("mqtt", ["ip", "port"])
