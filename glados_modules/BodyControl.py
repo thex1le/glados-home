@@ -989,5 +989,7 @@ if __name__ == "__main__":
     imu.start()
     tof = TOF(broker=mqtt_connect)
     tof.start()
+    th = TempHumSensor(broker=mqtt_connect)
+    th.start()
     while True:
         sleep(1)
