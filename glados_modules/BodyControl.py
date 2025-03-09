@@ -381,12 +381,10 @@ class TempHumSensor(MQTTClient, Thread):
         temp = round(temp, 2)
         relative_humid = round(relative_humid, 2)
         sdata: Dict[str, Any] = {
-            THEnums.TH_STATUS_KEY.value: {
                 THEnums.TH_HUMIDITY_KEY.value: relative_humid,
                 THEnums.TH_CELSIUS_KEY.value: temp,
-                THEnums.TH_FAHRENHEIT_KEY.value: self.convert_c2f(temp)
-            },
-            THEnums.TH_TIME_STAMP_KEY.value: time(),
+                THEnums.TH_FAHRENHEIT_KEY.value: self.convert_c2f(temp),
+                THEnums.TH_TIME_STAMP_KEY.value: time()
         }
         self.logger.debug(f"Time and Humidity Data: {sdata}")
         return sdata
