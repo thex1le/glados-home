@@ -20,7 +20,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data_lock = Lock()
         self.number_frames = 0
         system = self.check_system()
-        if system == SystemEnums.PI5.value:
+        if system in (SystemEnums.PI5.value, SystemEnums.PI5_B_PLUS.value):
             self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \

@@ -36,6 +36,7 @@ class SystemEnums(Enum):
     PI5: str = 'Raspberry Pi 5'
     PI4: str = 'Raspberry Pi 4'
     PI4_B_PLUS: str = "Raspberry Pi 4 Model B Rev 1.4"
+    PI5_B_PLUS: str = "Raspberry Pi 5 Model B Rev 1.0"
     X86_SERVER: str = 'x86_server'
 
 
