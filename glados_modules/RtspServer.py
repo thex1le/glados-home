@@ -80,7 +80,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         model = SystemEnums.X86_SERVER.value
         try:
             with open("/proc/device-tree/model", "r") as f:
-                model = f.read().strip()
+                model = f.read().strip().rstrip('\x00')
         except FileNotFoundError:
             pass
         return model
