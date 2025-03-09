@@ -365,7 +365,7 @@ class TempHumSensor(MQTTClient, Thread):
         """
         f_temp = (temp * 9 / 5) + 32
         self.logger.debug(f"Converted {temp}C to {f_temp}F")
-        return f_temp
+        return round(f_temp, 1)
 
     def get_sensor(self) -> Dict[str, Any]:
         """Retrieve sensor data.
@@ -378,8 +378,8 @@ class TempHumSensor(MQTTClient, Thread):
             readings.
         """
         temp, relative_humid = self.sht40.measurements
-        temp = round(temp, 2)
-        relative_humid = round(relative_humid, 2)
+        temp = round(temp, 1)
+        relative_humid = round(relative_humid, 1)
         sdata: Dict[str, Any] = {
                 THEnums.TH_HUMIDITY_KEY.value: relative_humid,
                 THEnums.TH_CELSIUS_KEY.value: temp,
