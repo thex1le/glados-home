@@ -12,7 +12,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
 from glados_modules.GLaDosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
-    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums
+    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums
 )
 
 
@@ -446,6 +446,18 @@ class SensorTracker(MQTTClient):
             sensor_name=IMUEnums.SENSOR_NAME.value
         )
 
+    def mox_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming MOX GAS status messages.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing IMU status.
+        """
+        self._handle_status(
+            msg,
+            sensor_key=MOXEnums.MOX_STATUS_KEY.value,
+            sensor_name=MOXEnums.SENSOR_NAME.value
+        )
+
     def th_handle_cmd(self, msg: MQTTMessage) -> None:
         """Handle incoming Temp * Humidity status messages.
 
@@ -490,7 +502,7 @@ class SensorTracker(MQTTClient):
 
 if __name__ == "__main__":
     b = namedtuple("broker", ["ip", "port"])
-    broker = b('192.168.1.29', 1883)
+    broker = b('192.168.1.39', 1883)
     # Assuming broker is a NamedTuple with 'ip' and 'port' attributes
     servo_location_tracker = ServoLocation(broker)
     # Retrieve the current servo angles
@@ -510,3 +522,4 @@ if __name__ == "__main__":
     print(st.get_sensor_status(TOFEnums.TOF_STATUS_KEY.value))
     print(st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value))
     print(st.get_sensor_status(THEnums.TH_STATUS_KEY.value))
+    print(st.get_sensor_status(MOXEnums.SENSOR_NAME.value))

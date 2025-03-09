@@ -21,14 +21,16 @@ from adafruit_rgb_display import st7789
 import adafruit_bno055
 import adafruit_vl53l4cd
 import adafruit_sht4x
-
+import adafruit_ens160
 
 # glados imports
+from glados_modules.GladosData import SensorTracker
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttClient import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
-                                       TOFMessageBuilder, THMessageBuilder)
+                                       TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums, TOFEnums, THEnums
+from glados_modules.GLaDosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
+                                        IMUEnums, TOFEnums, THEnums, MOXEnums)
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -242,6 +244,90 @@ class GladosLCD(Thread, MQTTClient):
         # end all loops so you can join thread
         self.breathe_loop = False
         self.stop_loop = True
+
+
+class MoxGas(MQTTClient, Thread):
+    """Manage MOX gas sensor polling and MQTT communication.
+
+    This class inherits from both MQTTClient and Thread to allow continuous sensor
+    data polling in a separate thread and to facilitate MQTT messaging.
+
+    Attributes:
+        MOX_GAS_broker: Broker tuple provided by MQTTClient.
+        logger: Logger instance for recording events.
+        st: SensorTracker instance for temperature and humidity data.
+        mox: MOX sensor instance from adafruit_ens160.ENS160.
+    """
+
+    MOX_GAS_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: Any) -> None:
+        """Initialize the MOX gas sensor, MQTT client, and sensor tracking.
+
+        Args:
+            broker: An object containing broker information with attributes 'ip' and 'port'.
+        """
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+        )
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        i2c = board.I2C()  # Uses board.SCL and board.SDA for I2C communication
+        # Attach sensor tracker to enable access to temperature and humidity readings.
+        self.st = SensorTracker(broker=broker)
+        self.mox = adafruit_ens160.ENS160(i2c)
+        self.logger.debug(f"Firmware Version: {self.mox.firmware_version}")
+
+    def get_sensor(self) -> Dict[str, Any]:
+        """Retrieve and process sensor data from the MOX gas sensor.
+
+        This method retrieves temperature and humidity data via a SensorTracker,
+        applies compensation to the sensor readings, and gathers the sensor's AQI,
+        TVOC, and eCO2 measurements along with a timestamp.
+
+        Returns:
+            A dictionary containing:
+                - MOX AQI value.
+                - MOX TVOC value.
+                - MOX eCO2 value.
+                - A timestamp indicating when the data was retrieved.
+        """
+        # Get temperature and humidity data
+        th_data = self.st.get_sensor_status(THEnums.TH_STATUS_KEY.value)
+        # Retrieve temperature and humidity compensation values, using defaults if necessary.
+        tc = th_data.get(THEnums.TH_CELSIUS_KEY.value, 25)
+        hc = th_data.get(THEnums.TH_HUMIDITY_KEY.value, 50)
+        self.logger.debug(f"Setting Temperature Compensation to: {tc}")
+        self.mox.temperature_compensation = tc
+        self.logger.debug(f"Setting Humidity Compensation to: {hc}")
+        self.mox.humidity_compensation = hc
+
+        sensor_data: Dict[str, Any] = {
+            MOXEnums.MOX_AQI.value: self.mox.AQI,
+            MOXEnums.MOX_TVOC.value: self.mox.TVOC,
+            MOXEnums.MOX_ECO2.value: self.mox.eCO2,
+            MOXEnums.MOX_TIME_STAMP_KEY.value: time.time(),
+        }
+        self.logger.debug(f"MOX Data: {sensor_data}")
+        return sensor_data
+
+    def run(self) -> None:
+        """Continuously poll the sensor and publish its status via MQTT.
+
+        This method runs in a separate thread, continuously retrieving sensor data,
+        building a status message, and sending it through the MQTT client.
+        """
+        self.logger.info("MOX Gas Sensor polling started")
+        while True:
+            status = MoxGasMessageBuilder.send_mox_status_message(self.get_sensor())
+            self.send_command(
+                topic=MQTTEnums.MOX_STATUS_TOPIC.value,
+                command=status
+            )
+            sleep(0.1)
 
 
 class TOF(MQTTClient, Thread):

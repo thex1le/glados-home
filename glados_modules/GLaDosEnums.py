@@ -85,6 +85,17 @@ class THEnums(Enum):
     SENSOR_NAME: str = "TH"
 
 
+class MOXEnums(Enum):
+    """
+    Enums for the MOX Gas Sensor Data
+    """
+    MOX_TIME_STAMP_KEY: str = "time"
+    MOX_STATUS_KEY: str = "mox_status"
+    SENSOR_NAME: str = "MOX"
+    MOX_AQI: str = "AQI (1-5):"
+    MOX_TVOC: str = "TVOC (ppb):"
+    MOX_ECO2: str = "eCO2 (ppm):"
+
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
@@ -94,6 +105,7 @@ class MQTTEnums(Enum):
     BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
     IMU_STATUS_TOPIC: str = "body/imu/status"
     TOF_STATUS_TOPIC: str = "body/tof/status"
+    MOX_STATUS_TOPIC: str = "body/mox/status"
     SYSTEM_INTENSITY_TOPIC: str = "intensity"
     TH_STATUS_TOPIC: str = "body/th/status"
 
