@@ -378,6 +378,8 @@ class TempHumSensor(MQTTClient, Thread):
             readings.
         """
         temp, relative_humid = self.sht40.measurements
+        temp = round(temp, 2)
+        relative_humid = round(relative_humid, 2)
         sdata: Dict[str, Any] = {
             THEnums.TH_STATUS_KEY.value: {
                 THEnums.TH_HUMIDITY_KEY.value: relative_humid,
