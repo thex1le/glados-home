@@ -431,6 +431,7 @@ class SensorTracker(MQTTClient):
         Args:
             msg (MQTTMessage): The MQTT message containing TOF status.
         """
+        self.logger.debug(f"TOF MQTT Handler Triggered")
         self._handle_status(
             msg,
             sensor_key=TOFEnums.TOF_STATUS_KEY.value,
@@ -443,6 +444,7 @@ class SensorTracker(MQTTClient):
         Args:
             msg (MQTTMessage): The MQTT message containing IMU status.
         """
+        self.logger.debug(f"IMU MQTT Handler Triggered")
         self._handle_status(
             msg,
             sensor_key=IMUEnums.IMU_STATUS_KEY.value,
@@ -455,6 +457,7 @@ class SensorTracker(MQTTClient):
         Args:
             msg (MQTTMessage): The MQTT message containing IMU status.
         """
+        self.logger.debug(f"MOX MQTT Handler Triggered")
         self._handle_status(
             msg,
             sensor_key=MOXEnums.MOX_STATUS_KEY.value,
@@ -467,6 +470,7 @@ class SensorTracker(MQTTClient):
         Args:
             msg (MQTTMessage): The MQTT message containing Temp & Humidity status.
         """
+        self.logger.debug(f"Temp & Humidity MQTT Handler Triggered")
         self._handle_status(
             msg,
             sensor_key=THEnums.TH_STATUS_KEY.value,
