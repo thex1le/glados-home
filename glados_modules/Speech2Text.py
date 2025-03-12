@@ -116,6 +116,7 @@ class GladosSTT(Thread):
         if no_limit is False:
             self.logger.debug("Recording Short Audio")
             audio = self.recognizer.listen(self.mic)
+            self.logger.debug("Record Short Audio Complete")
         else:
             self.logger.debug("Time limit removed on audio recording, Recording long audio")
             self.mic.pause_threshold = 1
