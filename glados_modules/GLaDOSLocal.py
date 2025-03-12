@@ -294,7 +294,7 @@ class GladosLocal(Thread, MQTTClient):
         self.__play_local_wav("./wav/ding_on.wav")
 
     def play_ding_down(self):
-        self.__play_local_wav("./wav/ding_down.wav")
+        self.__play_local_wav("./wav/ding_off.wav")
 
     def __play_audio(self, data):
         play(AudioSegment.from_file(io.BytesIO(data)))
