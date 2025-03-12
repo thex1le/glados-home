@@ -6,6 +6,8 @@ import time
 from os import path, getcwd
 import multiprocessing as mp
 from queue import Queue
+from ctypes import *
+from contextlib import contextmanager
 from typing import Dict, Callable
 
 # 3rd party imports
@@ -21,6 +23,23 @@ from glados_modules.GladosHomeAssistant import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
 from glados_modules.MqttClient import MQTTClient
 from glados_modules.GLaDosEnums import CameraEnum, SystemEnums, MQTTEnums, LoggingEnums
+
+# silence some errors on the terminal
+def py_error_handler(filename, line, function, err, fmt):
+    pass
+
+
+# silence some errors on the terminal
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
+
+@contextmanager
+def noalsaerr():
+    asound = cdll.LoadLibrary(SystemEnums.LIB_ASOUND.value)
+    asound.snd_lib_error_set_handler(c_error_handler)
+    yield
+    asound.snd_lib_error_set_handler(None)
 
 
 class GladosException(Exception):
