@@ -265,7 +265,7 @@ class LocalSTTrx(MQTTClient):
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
-        Handle incoming MQTT commands for the servo
+        Handle incoming MQTT commands for the local speech to text receiver
         :msg: mqtt message to process
         :return:
         """
