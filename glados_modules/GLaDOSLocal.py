@@ -58,8 +58,6 @@ class GladosLocal(Thread, MQTTClient):
         MQTTClient.__init__(self, ip=ip, port=port)
         self.cmd_topic: str = MQTTEnums.VISION_RESULTS_MQTT_TOPIC.value
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
-        # TODO consider how we want to handle all 3 cameras...
-        self.main_camera = CameraEnum.CAMERA_HEAD.value
         self.topic_handler: Dict[str, Callable] = {self.intensity_topic: self.handle_intensity}
         self.llm = remote_llm
         self.last_greeting = None
@@ -90,8 +88,6 @@ class GladosLocal(Thread, MQTTClient):
         self.stop = False
         self.homeass = HomeAssistantLink(config_file)
         # self.homeass.get_temp()
-        # TODO figure out how to implement the songs
-        # self.portal1song()
         self.mp_lock = mp.Lock()
         self.seen = None
         self.last_seen_human = time.time()
@@ -317,7 +313,6 @@ class GladosLocal(Thread, MQTTClient):
         scheck = self.__check_local_command(user_prompt, re.compile(r'%'))
         if scheck is True:
             level = re.findall(r'\b\d+\b', user_prompt)
-            # TODO figure out why vol level doesn't set correctly
             self.__change_volume(int(level[0]))
             self.current_vol = level[0]
             msg = f"I have set the volume to {level[0]} percent"
