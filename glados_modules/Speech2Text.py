@@ -96,11 +96,10 @@ class GladosSTT(Thread):
             rtn: dict = {"greeting": None, "has_extra_command": False, "command": None}
         return rtn
 
-    def __get_audio(self, sr: Any, duration: float = 0.5, no_limit: bool = False, noise: bool = False) -> str:
+    def __get_audio(self, duration: float = 0.5, no_limit: bool = False, noise: bool = False) -> str:
         """Record audio from a microphone, send it for transcription, and return the resulting text.
 
         Args:
-            sr (Any): The speech recognition module (typically the 'speech_recognition' module).
             duration (float, optional): Time in seconds to adjust for ambient noise. Defaults to 0.5.
             no_limit (bool, optional): If True, record without a phrase time limit. Defaults to False.
             noise (bool, optional): If True, adjust for ambient noise. Defaults to False.
@@ -148,13 +147,12 @@ class GladosSTT(Thread):
         # open the stream
         self.mic.__enter__()
         # Import the speech recognition module after process fork.
-        import speech_recognition as sr
         while True:
             msg: str = "Say 'Hey GLaDOS' to start recording your question"
             self.logger.info(msg)
             # TODO: Investigate why the mic doesn't always open and audio may not be transmitted via send_bytes.
             try:
-                transcription = self.__get_audio(sr, noise=True)
+                transcription = self.__get_audio(noise=True)
                 pcommand: Dict[str, Union[Optional[str], bool]] = GladosSTT.parse_command(transcription)
                 self.logger.debug(f"Parse command is {pcommand}")
                 if pcommand["greeting"] is not None:
@@ -165,7 +163,7 @@ class GladosSTT(Thread):
                         greet: str = self.glocal.random_greeting(True)
                         rq: str = self.glocal.random_question(True)
                         self.glocal.speak(f"{greet}. {rq}")
-                        transcription = self.__get_audio(sr, no_limit=True)
+                        transcription = self.__get_audio(no_limit=True)
                         self.logger.debug("Good user_prompt")
                         # Check for a cancel command in the transcription.
                         # TODO: Work out how the cancel command works.
