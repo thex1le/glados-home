@@ -1,4 +1,5 @@
 # native
+# native
 from threading import Thread
 from json import loads
 from time import sleep
@@ -31,9 +32,12 @@ class IKTracker(MQTTClient, Thread):
         cmd_topic = TrackingEnums.MQTT_COMMAND_TOPIC.value
         self.confidence = 0.65
         self.debug_tracker = man_tracker.MotionTrackSimulator(cam_x=640, cam_y=480)
-        self.SMB = {1: ServoMessageBuilder.body_left_right, 2: ServoMessageBuilder.body_up_down,
-                    3: ServoMessageBuilder.head_left_right, 4: ServoMessageBuilder.head_up_down}
-        self.last_guess = [1.5708, 1.5708, 1.5708, 1.6057, 1.44862]
+        self.SMB = {1: ServoMessageBuilder.body_left_right,
+                    2: ServoMessageBuilder.body_up_down,
+                    3: ServoMessageBuilder.head_left_right,
+                    4: ServoMessageBuilder.head_up_down}
+        # Default initial guess: note that index 0 is the fixed base, so we set it to 0.0.
+        self.last_guess = [0.0, 1.5708, 1.5708, 1.6057, 1.44862]
         self.cmd_trigger: str = TrackingEnums.MSG_COMMAND_KEY.value
         self.topic_handler = {cmd_topic: self.handle_cmd}
         self.vision_tracker = VisionTracker(broker=mqtt_broker, target=self.target,
@@ -43,8 +47,6 @@ class IKTracker(MQTTClient, Thread):
         """
         Handle incoming command messages from MQTT. If a START command is received,
         trigger the tracking loop for the specified camera.
-
-        :param msg: MQTTMessage containing the payload with the command.
         """
         j_msg = loads(msg.payload.decode())
         print(f"*** TRACKING FIRED", {self.cmd_trigger}, {TrackingEnums.MSG_COMMAND_START.value})
@@ -61,9 +63,6 @@ class IKTracker(MQTTClient, Thread):
         """
         Mirror the given servo angle around the midpoint (usually 90 or 180).
         Useful for servos that need to align in opposite directions.
-
-        :param servo_angle: The current or target angle of one servo.
-        :return: The mirrored angle.
         """
         return 180 - servo_angle
 
@@ -78,6 +77,16 @@ class IKTracker(MQTTClient, Thread):
 
     @staticmethod
     def map_to_world(x_center: float, y_center: float, fixed_depth: float = 0.5) -> np.ndarray:
+        """
+        Convert the 2D bounding box center (in pixel coordinates) into a 3D target point
+        using a pinhole camera model.
+
+        Assumptions:
+          - Resolution: 640 x 480
+          - Horizontal FOV: 54°
+          - Optical center: (320, 240)
+          - fixed_depth: provided depth (in meters)
+        """
         width, height = 640, 480
         horizontal_fov_deg = 54.0
 
@@ -92,43 +101,37 @@ class IKTracker(MQTTClient, Thread):
         x_world = (x_center - cx) * (fixed_depth / fx)
         y_world = (y_center - cy) * (fixed_depth / fy)
         z_world = fixed_depth
-        return (np.array([x_world, y_world, z_world]))
+        return np.array([x_world, y_world, z_world])
 
     @staticmethod
     def compute_joint_angles(chain: Chain, target_point: np.ndarray, initial_position: List[float] = None) -> np.ndarray:
         """
         Compute the joint angles needed to position the robot's end-effector at the target point.
         Provide an initial guess that is within the joint limits to avoid errors.
-
-        The active joints in your chain are:
-          - Joint 1 ("ceiling_to_top"): limits [0.0, 3.14159]
-          - Joint 2 ("top_to_body"): limits [0.0, 3.14159]
-          - Joint 3 ("neck_left_right"): limits [~0.907, 2.094]
-          - Joint 4 ("head_up_down"): limits [~0.105, 2.182]
-
-        Since the chain includes the fixed base as the first element, the initial_position
-        should be a list of 5 values. We'll use a default that respects the bounds.
         """
         if initial_position is None:
             # For the fixed base, use 0.0. For the active joints, choose values within their bounds.
             initial_position = [0.0, 0.0, 0.0, 1.5, 1.14]
+        # You can also experiment with passing a full homogeneous transformation instead:
+        # target_transform = np.eye(4)
+        # target_transform[:3, 3] = target_point
+        # joint_angles = chain.inverse_kinematics(target_transform, initial_position=initial_position)
         joint_angles = chain.inverse_kinematics(target_point, initial_position=initial_position)
         return joint_angles
 
     def send_servo_commands(self, joint_angles: np.ndarray) -> None:
         """
-        Simulate sending commands to servos by converting joint angles from radians to degrees.
-        Replace the print statements with your actual servo command code.
+        Convert joint angles (in radians) to degrees and send servo commands.
         """
-        next_guess = [0]
+        next_guess = []
         mqttlist = []
         for i, angle in enumerate(joint_angles):
             next_guess.append(angle)
             angle_degrees = np.degrees(angle)
-            if i == 1:
-                pass
-                #angle_degrees = self.mirror_calc(angle_degrees)
+            if i == 5:
+                angle_degrees = self.mirror_calc(angle_degrees)
             elif i == 0:
+                # Skip the fixed base
                 continue
             mqttlist.append(self.SMB[i](angle=angle_degrees, speed=1))
             print(f"Servo {i}: {angle_degrees:.2f} degrees, Radian {angle}")
@@ -137,12 +140,7 @@ class IKTracker(MQTTClient, Thread):
 
     def __find_target(self, seen_data: dict) -> dict:
         """
-        From the list/dict of detection data, return the bounding box of the target
-        with the highest confidence.
-
-        :param seen_data: List or iterable containing detection data. Each element
-                          includes a confidence value and bounding box info.
-        :return: A dictionary with the bounding box coordinates of the highest confidence target.
+        From the detection data, return the bounding box of the target with the highest confidence.
         """
         confidence = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
         rtn = {}
@@ -154,8 +152,10 @@ class IKTracker(MQTTClient, Thread):
         self.logger.debug(f"Confidence box found {rtn} with confidence score of {highest_confidence}")
         return rtn
 
-    def find_target(self, vision_map:dict, camera: str):
-        # todo support side cameras & pose detection
+    def find_target(self, vision_map: dict, camera: str):
+        """
+        For now, only supports head camera detection.
+        """
         target_bounding = {}
         count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
         objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
@@ -169,25 +169,43 @@ class IKTracker(MQTTClient, Thread):
                     target_bounding[TrackingEnums.KEY_CONFIDENCE.value] = best_target[confidence]
                     self.logger.debug(
                         f"Ready to move all servos for target {self.target} "
-                        f"message times stamp {target_ts} for {camera}"
+                        f"message time stamp {target_ts} for {camera}"
                     )
         return target_bounding
 
     def track_loop(self, camera) -> None:
+        """
+        Main tracking loop:
+          1. Load the robot's chain from the URDF.
+          2. Find the target bounding box from vision data.
+          3. Compute the 2D center of the bounding box.
+          4. Map the 2D center to a 3D target point.
+          5. Apply an extrinsic transformation to account for the camera offset (38.36mm ahead of the head_up_down joint).
+          6. Compute joint angles with IK and send servo commands.
+        """
         print("track loop fired")
         urdf_path = "GLaDOS.urdf"  # Replace with your URDF file path
         robot_chain: Chain = Chain.from_urdf_file(urdf_path, base_elements=["ceiling_link"])
+        # Get the target bounding box from vision data.
         person_bbox = self.find_target(vision_map=self.vision_tracker.get_vision_map(), camera=camera)
-        print(person_bbox)
+        print("Detected bounding box:", person_bbox)
+        # Use a simulator to test servo movements (if needed)
         self.debug_tracker.move_all_servos(person_bbox)
+        # Compute the center of the bounding box
         x_center, y_center = self.get_bbox_center(person_bbox)
+        # Map the 2D center from the camera image to a 3D target point (in camera coordinates)
         target_point = self.map_to_world(x_center, y_center, fixed_depth=0.5)
-        print("Target point in world coordinates:", target_point)
-        # Provide an initial guess that is within the bounds:
-        #robot_chain.active_links_mask = [False, False, False, True, True]
+        print("Target point in camera coordinates:", target_point)
+        # Apply extrinsic transformation: the camera is 38.36mm (0.03836 m) in front of the head_up_down joint.
+        offset = np.array([0, 0, 0.03836])
+        target_point_head = target_point + offset
+        print("Target point in head joint coordinates:", target_point_head)
+        # Set the active links mask; ensure the fixed base is inactive.
         robot_chain.active_links_mask = [False, True, True, True, True]
-        joint_angles = self.compute_joint_angles(robot_chain, target_point, initial_position=self.last_guess)
+        # Compute joint angles using the updated target point and the last guess.
+        joint_angles = self.compute_joint_angles(robot_chain, target_point_head, initial_position=self.last_guess)
         print("Calculated joint angles:", joint_angles)
+        # Send servo commands based on the computed joint angles.
         self.send_servo_commands(joint_angles)
 
     def run(self):
@@ -196,7 +214,6 @@ class IKTracker(MQTTClient, Thread):
             print("in loop")
             sleep(10)
             print("loop done")
-
 
 if __name__ == "__main__":
     ik = IKTracker()
