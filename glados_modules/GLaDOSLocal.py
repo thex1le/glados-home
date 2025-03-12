@@ -335,7 +335,7 @@ class GladosLocal(Thread, MQTTClient):
             self.logger.error(msg)
             raise GladosException(msg)
 
-    def __check_local_command(self, user_prompt: str,
+    def check_local_command(self, user_prompt: str,
                               command: Union[str, Pattern]) -> bool:
         """Check if a user prompt matches a given command pattern.
 
@@ -349,6 +349,7 @@ class GladosLocal(Thread, MQTTClient):
         if not isinstance(command, re.Pattern):
             command = re.escape(command)
         match = re.search(command, user_prompt)
+        self.logger.debug(f"Found match of {match} for prompt {user_prompt}")
         return bool(match)
 
     def get_seen_prompt(self) -> Optional[str]:

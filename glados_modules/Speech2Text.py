@@ -172,7 +172,7 @@ class GladosSTT(Thread):
                         # Check for a cancel command in the transcription.
                         # TODO: Work out how the cancel command works.
                         self.logger.debug("Checking for local command")
-                        if self.glocal._gladosLocal__check_local_command(
+                        if self.glocal.check_local_command(
                             transcription.lower(),
                             re.compile(r'cancel?')
                         ):
