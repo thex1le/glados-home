@@ -1,6 +1,6 @@
 import random
 import time
-from os import path, getcwd
+from os import path
 import argparse
 import sys
 import configparser
@@ -9,7 +9,7 @@ import configparser
 from glados_modules.GLaDOSGpt import GladosGPT
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.CameraRTSP import Camera
-from glados_modules.GLaDosEnums import CameraEnum, SystemEnums
+from glados_modules.GLaDosEnums import CameraEnum
 from glados_modules.GLaDOSLocal import GladosLocal
 
 
