@@ -3,7 +3,7 @@ import base64
 import random
 from threading import Thread, Lock
 import time
-from os import path
+from os import path, getcwd
 import argparse
 import sys
 import configparser
@@ -301,6 +301,19 @@ class GladosLocal(Thread, MQTTClient):
             msg = "Failed to translate text"
             self.logger.debug(msg)
             return -1
+
+    def __play_ding(self, wav_file):
+        wav_path = path.abspath(path.join(getcwd(), f"wav/{wav_file}"))
+        self.logger.debug(f"Playing {wav_path}")
+        play(AudioSegment.from_file(wav_path))
+
+    @staticmethod
+    def play_ding_up():
+        GladosLocal.__play_ding("ding_on.wav")
+
+    @staticmethod
+    def play_ding_down():
+        GladosLocal.__play_ding("ding_down.wav")
 
     def __play_audio(self, data):
         play(AudioSegment.from_file(io.BytesIO(data)))
