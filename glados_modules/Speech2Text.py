@@ -121,6 +121,7 @@ class GladosSTT(Thread):
             self.logger.debug("Time limit removed on audio recording, Recording long audio")
             self.mic.pause_threshold = 1
             audio = self.recognizer.listen(self.mic, phrase_time_limit=None, timeout=None)
+            self.logger.debug("Long audio recording complete")
         self.logger.debug("Recording audio complete & sending audio for transcription")
         self.audioTx.send_bytes(audio.get_wav_data())
         audio_text = self.localsttrx.get_text(block=True)
