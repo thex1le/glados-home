@@ -178,6 +178,7 @@ class GladosSTT(Thread):
                     mp_list.append(pcommand["command"])
             except Exception as e:
                 self.logger.error(f"An unknown error occurred: {e}")
+                self.logger.error("Is is the audio card kernel module installed?")
 
     def run(self) -> None:
         """Run the speech-to-text processing loop in a separate process.
