@@ -45,6 +45,8 @@ class STTEnums(Enum):
     STT_RESULTS_KEY: str = "STT_RESULTS"
     STT_TEXT_KEY: str = "text"
     STT_LANGUAGE_KEY: str = "language"
+    STT_SEGMENTS_KEY: str = "segments"
+    STT_RAW_RESULTS_KEY: str = "raw"
 
 
 class IMUEnums(Enum):

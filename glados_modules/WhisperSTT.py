@@ -9,6 +9,7 @@ from time import sleep, time
 # Third-party imports
 import numpy as np
 from paho.mqtt.client import MQTTMessage
+from sqlalchemy.testing.suite.test_reflection import metadata
 
 # GLaDos module imports
 from glados_modules.GlogConfig import setup_logger
@@ -184,12 +185,14 @@ class LocalSTTtx(MQTTClient):
         import ffmpeg
         self.ffmpeg = ffmpeg
         import whisperx as whisper
+        self.whisper = whisper
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
             console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
-        self.model = whisper.load_model(whisper_arch="large-v2", device="cuda", compute_type="float16")
+        self.device = 'cuda'
+        self.model = self.whisper.load_model(whisper_arch="large-v2", device=self.device, compute_type="float16")
         super().__init__(ip=broker.ip, port=broker.port)
 
     def process_audio(self, byte_stream: bytes) -> None:
@@ -200,14 +203,20 @@ class LocalSTTtx(MQTTClient):
         """
         audio: np.ndarray = self.load_audio_from_bytes(byte_stream)
         results = self.model.transcribe(audio, batch_size=16)
-        self.logger.debug(f"Detected language: {results['language']}")
+        # align the output
+        r_lang = results[STTEnums.STT_LANGUAGE_KEY.value]
+        align_model, a_metadata = self.whisper.load_align_model(language_code=r_lang, device=self.device)
+        results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], align_model, a_metadata,
+                                     audio, self.device, return_char_alignments=False)
+        self.logger.debug(f"Detected language: {r_lang}")
         text = ""
-        for t in results['segments']:
+        for t in results[STTEnums.STT_SEGMENTS_KEY.value]:
             text += t["text"]
         self.logger.debug(f"Detected text: {text}")
         rsp = {
             STTEnums.STT_TEXT_KEY.value: text,
-            STTEnums.STT_LANGUAGE_KEY.value: results["language"],
+            STTEnums.STT_RAW_RESULTS_KEY.value: results,
+            STTEnums.STT_LANGUAGE_KEY.value: r_lang
         }
         self.logger.debug(f"Detected Language is {rsp[STTEnums.STT_LANGUAGE_KEY.value]}")
         self.send_command(
