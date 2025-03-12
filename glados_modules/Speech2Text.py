@@ -194,7 +194,7 @@ class GladosSTT(Thread):
         """
         with mp.Manager() as manager:
             self.mplist = manager.list()
-            self.proc = mp.Process(target=self.record, args=(self.mplist,))
+            self.proc = Thread(target=self.record, args=(self.mplist,))
             self.proc.start()
             while True:
                 sleep(10)
