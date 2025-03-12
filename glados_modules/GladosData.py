@@ -240,7 +240,7 @@ class VisionTracker(MQTTClient):
         """
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
-            name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+            name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
         self.target: str = target
         self.tracker_callback: Callable[[Dict[str, Any]], None] = tracker_callback
