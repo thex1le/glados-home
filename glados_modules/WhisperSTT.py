@@ -292,7 +292,7 @@ class LocalSTTrx(MQTTClient):
                 self.text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
                 self.lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
 
-    def get_text(self, block: bool = False, timeout: int=10) -> str:
+    def get_text(self, block: bool = False, timeout: int = 10) -> str:
         """
         Return the last text off the mqtt message, or an empty "" if no message or error
         :return:
