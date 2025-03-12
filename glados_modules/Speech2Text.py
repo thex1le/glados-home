@@ -158,6 +158,7 @@ class GladosSTT(Thread):
                 if pcommand["greeting"] is not None:
                     # Pause and take a longer recording for the command if necessary.
                     # TODO: Reconsider how this works with multithreading.
+                    self.glocal.play_ding_up()
                     self.logger.debug(pcommand)
                     if not pcommand["has_extra_command"]:
                         greet: str = self.glocal.random_greeting(True)
