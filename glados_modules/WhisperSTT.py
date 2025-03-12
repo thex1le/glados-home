@@ -9,7 +9,6 @@ from time import sleep, time
 # Third-party imports
 import numpy as np
 from paho.mqtt.client import MQTTMessage
-from sqlalchemy.testing.suite.test_reflection import metadata
 
 # GLaDos module imports
 from glados_modules.GlogConfig import setup_logger
@@ -194,8 +193,8 @@ class LocalSTTtx(MQTTClient):
         self.device = 'cuda'
         self.model = self.whisper.load_model(whisper_arch="large-v2", device=self.device, compute_type="float16")
         # preload an english algiment model
-        self.en_align_model, self.en_a_metadata = self.whisper.load_align_model(language_code=STTEnums.STT_EN_LANG_KEY.value,
-                                                                                device=self.device)
+        self.en_align_model, self.en_a_metadata = self.whisper.load_align_model(
+            language_code=STTEnums.STT_EN_LANG_KEY.value, device=self.device)
         super().__init__(ip=broker.ip, port=broker.port)
 
     def process_audio(self, byte_stream: bytes) -> None:
@@ -307,7 +306,7 @@ class LocalSTTrx(MQTTClient):
         self.last_text = self.text
         return self.text
 
-    def get_lang(self, block: bool = False, timeout: int=10) -> str:
+    def get_lang(self, block: bool = False, timeout: int = 10) -> str:
         """
         Return the language of the last text, or an empty "" if no message or error
         """
@@ -316,7 +315,7 @@ class LocalSTTrx(MQTTClient):
             while self.lang in ("", self.last_lang):
                 # sleep block while we wait for an update
                 sleep(0.1)
-                if time() -t >= timeout:
+                if time() - t >= timeout:
                     break
         self.last_lang = self.lang
         return self.lang
