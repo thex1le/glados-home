@@ -84,7 +84,7 @@ class MLDetect(Thread, MQTTClient):
         # track servo movement, only process images from head camera when we're not moving
         bt = MQTTClient.broker_tuple(broker, port)
         self.servos = ServoLocation(bt)
-        self.motion_tracking = MotionTrack(broker=bt, camera_resolution=head_cam_resolution)
+        #self.motion_tracking = MotionTrack(broker=bt, camera_resolution=head_cam_resolution)
         # Camera configurations for each camera
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
