@@ -327,7 +327,7 @@ if __name__ == "__main__":
     import time
     broker = AudioServerRX.broker_tuple
     server_broker = broker("127.0.0.1", 5000)
-    mqtt_broker = broker("192.168.86.28", 1883)
+    mqtt_broker = broker("192.168.1.39", 1883)
     lstttx = LocalSTTtx(mqtt_broker)
     rx = AudioServerRX(server_broker, callback=lstttx.process_audio)
     rx.start()
