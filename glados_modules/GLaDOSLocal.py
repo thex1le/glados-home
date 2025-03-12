@@ -325,6 +325,7 @@ class GladosLocal(Thread, MQTTClient):
             self.speak(msg)
         return check
 
+
 if __name__ == "__main__":
     import sys
     import configparser
