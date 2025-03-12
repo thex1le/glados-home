@@ -194,8 +194,8 @@ class LocalSTTtx(MQTTClient):
         self.device = 'cuda'
         self.model = self.whisper.load_model(whisper_arch="large-v2", device=self.device, compute_type="float16")
         # preload an english algiment model
-        self.align_model, self.a_metadata = self.whisper.load_align_model(language_code=STTEnums.STT_EN_LANG_KEY.value,
-                                                                          device=self.device)
+        self.en_align_model, self.en_a_metadata = self.whisper.load_align_model(language_code=STTEnums.STT_EN_LANG_KEY.value,
+                                                                                device=self.device)
         super().__init__(ip=broker.ip, port=broker.port)
 
     def process_audio(self, byte_stream: bytes) -> None:
@@ -209,8 +209,8 @@ class LocalSTTtx(MQTTClient):
         r_lang = results[STTEnums.STT_LANGUAGE_KEY.value]
         # align the output if its english
         if r_lang == STTEnums.STT_EN_LANG_KEY.value:
-            results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.align_model, self.a_metadata,
-                                         audio, self.device, return_char_alignments=False)
+            results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.en_align_model,
+                                         self.en_a_metadata, audio, self.device, return_char_alignments=False)
         self.logger.debug(f"Detected language: {r_lang}")
         text = ""
         for t in results[STTEnums.STT_SEGMENTS_KEY.value]:
