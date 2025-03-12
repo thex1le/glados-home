@@ -188,11 +188,11 @@ class GladosLocal(Thread, MQTTClient):
     def get_seen_prompt(self):
         return self.seen
     
-    def portal1song(self):
-        self.__play_wav('./wav/portal_still_alive.wav')
+    def play_portal1song(self):
+        self.__play_local_wav('./wav/portal_still_alive.wav')
 
-    def portal2song(self):
-        self.__play_wav('./wav/portal2_want_you_gone.wav')
+    def play_portal2song(self):
+        self.__play_local_wav('./wav/portal2_want_you_gone.wav')
 
     def get_temp(self, user_prompt):
         c_str = r"what(?:'?s| is) the (current )?(outside )?(temp(erature)?)( outside)?\??"
@@ -298,17 +298,17 @@ class GladosLocal(Thread, MQTTClient):
             self.logger.debug(msg)
             return -1
 
-    def __play_wav(self, wav_file):
+    def __play_local_wav(self, wav_file):
         wav_path = path.abspath(path.join(getcwd(), f"{wav_file}"))
         self.logger.debug(f"Playing {wav_path}")
         with open(wav_path, 'rb') as wav:
-            play(wav.read())
+            self.__play_audio(wav.read())
 
     def play_ding_up(self):
-        self.__play_wav("./wav/ding_on.wav")
+        self.__play_local_wav("./wav/ding_on.wav")
 
     def play_ding_down(self):
-        self.__play_wav("./wav/ding_down.wav")
+        self.__play_local_wav("./wav/ding_down.wav")
 
     def __play_audio(self, data):
         play(AudioSegment.from_file(io.BytesIO(data)))
