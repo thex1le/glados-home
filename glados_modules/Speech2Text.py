@@ -146,7 +146,6 @@ class GladosSTT(Thread):
         self.mic = sr.Microphone(device_index=1)
         # open the stream
         self.mic.__enter__()
-        # Import the speech recognition module after process fork.
         while True:
             msg: str = "Say 'Hey GLaDOS' to start recording your question"
             self.logger.info(msg)
@@ -158,7 +157,9 @@ class GladosSTT(Thread):
                 if pcommand["greeting"] is not None:
                     # Pause and take a longer recording for the command if necessary.
                     # TODO: Reconsider how this works with multithreading.
+                    self.logger.debug("We got a greeting, play a noise to note this")
                     self.glocal.play_ding_up()
+                    self.logger.debug("Noise Complete")
                     self.logger.debug(pcommand)
                     if not pcommand["has_extra_command"]:
                         greet: str = self.glocal.random_greeting(True)
@@ -168,6 +169,7 @@ class GladosSTT(Thread):
                         self.logger.debug("Good user_prompt")
                         # Check for a cancel command in the transcription.
                         # TODO: Work out how the cancel command works.
+                        self.logger.debug("Checking for local command")
                         if self.glocal._gladosLocal__check_local_command(
                             transcription.lower(),
                             re.compile(r'cancel?')
@@ -175,6 +177,7 @@ class GladosSTT(Thread):
                             self.logger.debug("Cancel command issued")
                             self.glocal.random_cancel_response()
                             continue
+                        self.logger.debug("Local command check finished")
                     self.logger.debug(f"Returned transcription is {transcription}")
                     mp_list.append(pcommand["command"])
             except Exception as e:
