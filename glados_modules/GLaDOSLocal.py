@@ -16,7 +16,6 @@ from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
-from sqlalchemy.sql.operators import truediv
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
