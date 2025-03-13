@@ -22,7 +22,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosHomeAssistant import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
 from glados_modules.MqttClient import MQTTClient, LEDMessageBuilder
-from glados_modules.GLaDosEnums import SystemEnums, MQTTEnums, LoggingEnums, LEDHead
+from glados_modules.GLaDosEnums import SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums
 from glados_modules.WhisperSTT import AudioServerTx, LocalSTTrx
 
 
@@ -100,9 +100,12 @@ class GladosLocal(Thread, MQTTClient):
         Thread.__init__(self)
         self.daemon = True  # Set this thread as a daemon
         conf_mqtt = config_file[SystemEnums.CONFIG_HEAD_MQTT.value]
+        conf_STT = config_file[STTEnums.CONFIG_HEAD_STT.value]
         ip = conf_mqtt[SystemEnums.MQTT_SERVER_IP.value]
         port = int(conf_mqtt[SystemEnums.MQTT_PORT.value])
         mqtt_broker = MQTTClient.broker_tuple(ip, port)
+        audio_broker = MQTTClient.broker_tuple(conf_STT[STTEnums.STT_SERVER_IP.value],
+                                               conf_STT[STTEnums.STT_SERVER_PORT.value])
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
@@ -161,7 +164,7 @@ class GladosLocal(Thread, MQTTClient):
         self.seen: Optional[str] = None
         self.last_seen_human: float = time.time()
         # add in support to get timing maps for played audio
-        self.audioTx = AudioServerTx(broker=mqtt_broker)
+        self.audioTx = AudioServerTx(broker=audio_broker)
         self.localsttrx = LocalSTTrx(broker=mqtt_broker)
         # TODO setup LEFT LCD
 
