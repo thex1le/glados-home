@@ -16,13 +16,15 @@ from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
 import regex as re
+from sqlalchemy.sql.operators import truediv
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosHomeAssistant import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
-from glados_modules.MqttClient import MQTTClient
-from glados_modules.GLaDosEnums import SystemEnums, MQTTEnums, LoggingEnums
+from glados_modules.MqttClient import MQTTClient, LEDMessageBuilder
+from glados_modules.GLaDosEnums import SystemEnums, MQTTEnums, LoggingEnums, LEDHead
+from glados_modules.WhisperSTT import AudioServerTx, LocalSTTrx
 
 
 # silence some errors on the terminal
@@ -101,6 +103,7 @@ class GladosLocal(Thread, MQTTClient):
         conf_mqtt = config_file[SystemEnums.CONFIG_HEAD_MQTT.value]
         ip = conf_mqtt[SystemEnums.MQTT_SERVER_IP.value]
         port = int(conf_mqtt[SystemEnums.MQTT_PORT.value])
+        mqtt_broker = MQTTClient.broker_tuple(ip, port)
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
@@ -158,6 +161,9 @@ class GladosLocal(Thread, MQTTClient):
         self.mp_lock = mp.Lock()
         self.seen: Optional[str] = None
         self.last_seen_human: float = time.time()
+        # add in support to get timing maps for played audio
+        self.audioTx = AudioServerTx(broker=mqtt_broker)
+        self.localsttrx = LocalSTTrx(broker=mqtt_broker)
         # TODO setup LEFT LCD
 
     def handle_intensity(self) -> None:
@@ -576,6 +582,16 @@ class GladosLocal(Thread, MQTTClient):
         Args:
             data: Audio data in bytes.
         """
+        # send auto out to get converted and time mapped
+        self.audioTx.send_bytes(data)
+        time_map = self.localsttrx.get_segment_map(block=True)
+        # send timing map to led
+        led_msg = {LEDHead.MSG_COMMAND_KEY.value: LEDHead.LED_LOCATION.value,
+                   LEDHead.LED_LOCATION.value: {
+                       LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
+                       LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
+                   }
+        LEDMessageBuilder.send_led_animation(led_msg)
         play(AudioSegment.from_file(io.BytesIO(data)))
 
     def speak(self, text: str) -> None:
