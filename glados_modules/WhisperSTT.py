@@ -70,11 +70,7 @@ class AudioServerTx:
 
 
 class AudioServerRX(Thread):
-    """Receives an audio byte stream from a remote client.
-
-    This class sets up a TCP server that listens for incoming connections and
-    collects data from clients into a byte stream for further processing.
-    """
+    """Receives an audio byte stream from a remote client concurrently."""
 
     # Create a named tuple for broker configuration (IP and port)
     broker_tuple = namedtuple("broker", ["ip", "port"])
@@ -85,16 +81,8 @@ class AudioServerRX(Thread):
         buffer: int = 4096,
         callback: Optional[Callable[[bytes], None]] = None
     ) -> None:
-        """Initialize an instance of AudioServerRX.
-
-        Args:
-            broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
-            buffer (int, optional): Buffer size in bytes for receiving data. Defaults to 4096.
-            callback (Optional[Callable[[bytes], None]], optional): Callback function to process
-                the received byte stream. Defaults to None, which uses a do-nothing function.
-        """
         Thread.__init__(self)
-        Thread.daemon = True
+        self.daemon = True
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
@@ -107,11 +95,7 @@ class AudioServerRX(Thread):
         self.buffer: int = buffer
 
     def start_server(self) -> None:
-        """Start the TCP server to listen for and receive a byte stream.
-
-        The server runs in an infinite loop, accepting client connections and
-        handling each connection to receive the audio byte stream.
-        """
+        """Start the TCP server to listen for and receive byte streams concurrently."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
             server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server_socket.bind((self.broker.ip, self.broker.port))
@@ -122,35 +106,26 @@ class AudioServerRX(Thread):
                 try:
                     conn, addr = server_socket.accept()
                     self.logger.info(f"Connection established with {addr}")
-                    self.handle_client(conn)
+                    # Spawn a new thread for each client connection
+                    client_thread = Thread(
+                        target=self.handle_client, args=(conn,)
+                    )
+                    client_thread.daemon = True
+                    client_thread.start()
                 except Exception as e:
                     self.logger.error(f"Unexpected server error: {e}")
 
     def run(self) -> None:
-        """
-        Start the TCP server Thread
-        """
+        """Start the TCP server Thread."""
         self.start_server()
 
     @staticmethod
     def do_nothing(data: bytes) -> None:
-        """A callback function that does nothing.
-
-        Args:
-            data (bytes): The received byte stream.
-        """
+        """A callback function that does nothing."""
         pass
 
     def handle_client(self, conn: socket.socket) -> None:
-        """Handle a client connection by receiving the byte stream.
-
-        This method continuously reads data from the client connection until no
-        more data is received. The received data is accumulated into a bytearray
-        and then processed by the callback function.
-
-        Args:
-            conn (socket.socket): The client socket connection.
-        """
+        """Handle a client connection by receiving the byte stream."""
         try:
             received_bytes: bytearray = bytearray()
             while True:
