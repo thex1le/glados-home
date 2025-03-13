@@ -556,7 +556,7 @@ class GladosLocal(Thread, MQTTClient):
             self.logger.debug(msg)
             return -1
 
-    def __play_local_wav(self, wav_file: str) -> None:
+    def __play_local_wav(self, wav_file: str, led: bool = True) -> None:
         """Play a local WAV file.
 
         Args:
@@ -565,35 +565,36 @@ class GladosLocal(Thread, MQTTClient):
         wav_path: str = path.abspath(path.join(getcwd(), wav_file))
         self.logger.debug(f"Playing {wav_path}")
         with open(wav_path, 'rb') as wav:
-            self.__play_audio(wav.read())
+            self.__play_audio(wav.read(), led=led)
 
     def play_ding_up(self) -> None:
         """Play the 'ding on' sound."""
-        self.__play_local_wav("./wav/ding_on.wav")
+        self.__play_local_wav("./wav/ding_on.wav", led=False)
 
     def play_ding_down(self) -> None:
         """Play the 'ding off' sound."""
-        self.__play_local_wav("./wav/ding_off.wav")
+        self.__play_local_wav("./wav/ding_off.wav", led=False)
 
-    def __play_audio(self, data: bytes) -> None:
+    def __play_audio(self, data: bytes, led: bool = True) -> None:
         """Play audio from byte data.
 
         Args:
             data: Audio data in bytes.
         """
-        # send auto out to get converted and time mapped
-        self.logger.debug("Sending audio bytes off to be processed")
-        self.audioTx.send_bytes(data)
-        time_map = self.localsttrx.get_segment_map(block=True)
-        self.logger.debug(f"Timing map is {time_map}")
-        # send timing map to led
-        led_msg = {LEDHead.MSG_COMMAND_KEY.value: LEDHead.LED_LOCATION.value,
-                   LEDHead.LED_LOCATION.value: {
-                       LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
-                       LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
-                   }
-        self.logger.debug(f"LED Message is {led_msg}")
-        LEDMessageBuilder.send_led_animation(led_msg)
+        if led is True:
+            # send auto out to get converted and time mapped
+            self.logger.debug("Sending audio bytes off to be processed")
+            self.audioTx.send_bytes(data)
+            time_map = self.localsttrx.get_segment_map(block=True)
+            self.logger.debug(f"Timing map is {time_map}")
+            # send timing map to led
+            led_msg = {LEDHead.MSG_COMMAND_KEY.value: LEDHead.LED_LOCATION.value,
+                       LEDHead.LED_LOCATION.value: {
+                           LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
+                           LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
+                       }
+            self.logger.debug(f"LED Message is {led_msg}")
+            LEDMessageBuilder.send_led_animation(led_msg)
         self.logger.debug("Playing audio file")
         play(AudioSegment.from_file(io.BytesIO(data)))
 
