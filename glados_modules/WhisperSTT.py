@@ -211,7 +211,7 @@ class LocalSTTtx(MQTTClient):
             results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.en_align_model,
                                          self.en_a_metadata, audio, self.device, return_char_alignments=False)
         # add extra timing info to results
-        results = self.add_time_metrics_word_segments(results)
+        results, timing_map = self.add_time_metrics_word_segments(results)
         self.logger.debug(f"Detected language: {r_lang}")
         text = ""
         for t in results[STTEnums.STT_SEGMENTS_KEY.value]:
@@ -220,7 +220,8 @@ class LocalSTTtx(MQTTClient):
         rsp = {
             STTEnums.STT_TEXT_KEY.value: text,
             STTEnums.STT_RAW_RESULTS_KEY.value: results,
-            STTEnums.STT_LANGUAGE_KEY.value: r_lang
+            STTEnums.STT_LANGUAGE_KEY.value: r_lang,
+            STTEnums.STT_TIME_MAP_KEY.value: timing_map
         }
         self.logger.debug(f"Detected Language is {rsp[STTEnums.STT_LANGUAGE_KEY.value]}")
         self.send_command(
@@ -250,7 +251,7 @@ class LocalSTTtx(MQTTClient):
         return audio_np
 
     @staticmethod
-    def add_time_metrics_word_segments(stt_object: Dict[str, Any]) -> Dict[str, Any]:
+    def add_time_metrics_word_segments(stt_object: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[float, float]]:
         """Add timing metrics to each word in the word_segments list.
 
         This function updates the input STT object by adding two keys to each word in the
@@ -266,23 +267,25 @@ class LocalSTTtx(MQTTClient):
         Returns:
             Dict[str, Any]: The modified STT object with added timing information for each word.
         """
+        time_map = {}
         word_segments = (
-            stt_object.get("STT_RESULTS", {})
-            .get("raw", {})
-            .get("word_segments", [])
+            stt_object.get("word_segments", [])
         )
         for i, word in enumerate(word_segments):
             start = word.get("start", 0)
             end = word.get("end", 0)
-            word["total_time"] = end - start
+            tt = end - start
+            word["total_time"] = tt
 
             if i < len(word_segments) - 1:
                 next_start = word_segments[i + 1].get("start", 0)
-                word["time_to_next"] = next_start - end
+                ttn = next_start - end
+                word["time_to_next"] = ttn
             else:
-                word["time_to_next"] = 0
-
-        return stt_object
+                ttn = 0
+                word["time_to_next"] = ttn
+            time_map[tt] = ttn
+        return stt_object, time_map
 
 
 class LocalSTTrx(MQTTClient):
@@ -308,8 +311,12 @@ class LocalSTTrx(MQTTClient):
             self.cmd_topic: self.handle_cmd}
         self.text: str = ""
         self.lang: str = ""
+        self.timing_map: dict = {}
+        self.segment_map: dir = {}
         self.last_text: str = ""
         self.last_lang: str = ""
+        self.last_segment_map: dict = {}
+        self.last_timing_map: dict = {}
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
@@ -327,6 +334,7 @@ class LocalSTTrx(MQTTClient):
             with self._lock:
                 self.text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
                 self.lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
+                self.segment_map: dict = msg.get(STTEnums.STT_SEGMENTS_KEY.value, {})
 
     def get_text(self, block: bool = False, timeout: int = 10) -> str:
         """
@@ -356,6 +364,34 @@ class LocalSTTrx(MQTTClient):
                     break
         self.last_lang = self.lang
         return self.lang
+
+    def get_timing_map(self, block: bool = False, timeout: int = 10) -> dict:
+        """
+        Return map of just the timing of and between words or an empty "" if no message or error
+        """
+        t = time()
+        if block is True:
+            while self.timing_map in ({}, self.last_timing_map):
+                # sleep block while we wait for an update
+                sleep(0.1)
+                if time() - t >= timeout:
+                    break
+        self.last_timing_map = self.timing_map
+        return self.timing_map
+
+    def get_segment_map(self, block: bool = False, timeout: int = 10) -> dict:
+        """
+        Return the language of the last text, or an empty "" if no message or error
+        """
+        t = time()
+        if block is True:
+            while self.segment_map in ({}, self.last_segment_map):
+                # sleep block while we wait for an update
+                sleep(0.1)
+                if time() - t >= timeout:
+                    break
+        self.last_segment_map = self.segment_map
+        return self.segment_map
 
 
 if __name__ == "__main__":

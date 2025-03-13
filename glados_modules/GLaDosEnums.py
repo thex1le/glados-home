@@ -59,6 +59,7 @@ class STTEnums(Enum):
     STT_TEXT_KEY: str = "text"
     STT_LANGUAGE_KEY: str = "language"
     STT_SEGMENTS_KEY: str = "segments"
+    STT_TIME_MAP_KEY: str = "time_map"
     STT_RAW_RESULTS_KEY: str = "raw"
     STT_EN_LANG_KEY: str = "en"
 
