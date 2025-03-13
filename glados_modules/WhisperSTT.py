@@ -1,6 +1,6 @@
 import socket
 import sys
-from typing import NamedTuple, Optional, Callable, Dict
+from typing import NamedTuple, Optional, Callable, Dict, Any
 from collections import namedtuple
 from threading import Thread
 from json import loads, JSONDecodeError
@@ -210,6 +210,8 @@ class LocalSTTtx(MQTTClient):
         if r_lang == STTEnums.STT_EN_LANG_KEY.value:
             results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.en_align_model,
                                          self.en_a_metadata, audio, self.device, return_char_alignments=False)
+        # add extra timing info to results
+        results = self.add_time_metrics_word_segments(results)
         self.logger.debug(f"Detected language: {r_lang}")
         text = ""
         for t in results[STTEnums.STT_SEGMENTS_KEY.value]:
@@ -246,6 +248,41 @@ class LocalSTTtx(MQTTClient):
         out, _ = process.communicate(input=audio_bytes)
         audio_np: np.ndarray = np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
         return audio_np
+
+    @staticmethod
+    def add_time_metrics_word_segments(stt_object: Dict[str, Any]) -> Dict[str, Any]:
+        """Add timing metrics to each word in the word_segments list.
+
+        This function updates the input STT object by adding two keys to each word in the
+        'word_segments' list:
+            - 'total_time': The duration of the word (end - start).
+            - 'time_to_next': The time gap between the current word's end and the next word's start.
+              For the last word, the value is set to 0.
+
+        Args:
+            stt_object (Dict[str, Any]): The input STT object containing 'word_segments' in
+                STT_RESULTS -> raw.
+
+        Returns:
+            Dict[str, Any]: The modified STT object with added timing information for each word.
+        """
+        word_segments = (
+            stt_object.get("STT_RESULTS", {})
+            .get("raw", {})
+            .get("word_segments", [])
+        )
+        for i, word in enumerate(word_segments):
+            start = word.get("start", 0)
+            end = word.get("end", 0)
+            word["total_time"] = end - start
+
+            if i < len(word_segments) - 1:
+                next_start = word_segments[i + 1].get("start", 0)
+                word["time_to_next"] = next_start - end
+            else:
+                word["time_to_next"] = 0
+
+        return stt_object
 
 
 class LocalSTTrx(MQTTClient):
