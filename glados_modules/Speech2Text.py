@@ -168,20 +168,22 @@ class GladosSTT(Thread):
                         rq: str = self.glocal.random_question(True)
                         self.glocal.speak(f"{greet}. {rq}")
                         transcription = self.__get_audio(no_limit=True)
-                        self.logger.debug("Good user_prompt")
-                        # Check for a cancel command in the transcription.
-                        # TODO: Work out how the cancel command works.
-                        self.logger.debug("Checking for local command")
-                        if self.glocal.check_local_command(
-                            transcription.lower(),
-                            re.compile(r'cancel?')
-                        ):
-                            self.logger.debug("Cancel command issued")
-                            self.glocal.random_cancel_response()
-                            continue
-                        self.logger.debug("Local command check finished")
-                    self.logger.debug(f"Returned transcription is {transcription}")
-                    mp_list.append(pcommand["command"])
+                    # TODO fix up extra command vs no extra command as having extra command does nothing
+                    # once this is stable we can get timing back of audio and decide how to handle it
+                    self.logger.debug("Good user_prompt")
+                    # Check for a cancel command in the transcription.
+                    # TODO: Work out how the cancel command works.
+                    self.logger.debug("Checking for local command")
+                    if self.glocal.check_local_command(
+                        transcription.lower(),
+                        re.compile(r'cancel?')
+                    ):
+                        self.logger.debug("Cancel command issued")
+                        self.glocal.random_cancel_response()
+                        continue
+                    self.logger.debug("Local command check finished")
+                self.logger.debug(f"Returned transcription is {transcription}")
+                mp_list.append(pcommand["command"])
             except Exception as e:
                 self.logger.error(f"An unknown error occurred: {e}")
                 self.logger.error("Is is the audio card kernel module installed?")
