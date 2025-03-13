@@ -13,7 +13,7 @@ from cachetools import TTLCache
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GLaDosEnums import (ServoEnum, CameraEnum, TrackingEnums, LoggingEnums,
-                                        STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums)
+                                        STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
 
 
 class MQTTClient:
@@ -102,6 +102,12 @@ class TOFMessageBuilder:
     @staticmethod
     def send_tof_status_message(message):
         return {TOFEnums.TOF_STATUS_KEY.value: message}
+
+
+class LEDMessageBuilder:
+    @staticmethod
+    def send_led_animation(message):
+        return {LEDHead.MSG_COMMAND_KEY.value: message}
 
 
 class SttMessageBuilder:
