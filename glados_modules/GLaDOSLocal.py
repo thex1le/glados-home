@@ -106,7 +106,7 @@ class GladosLocal(Thread, MQTTClient):
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
-            console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+            console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
         MQTTClient.__init__(self, ip=ip, port=port)
         self.cmd_topic: str = MQTTEnums.VISION_RESULTS_MQTT_TOPIC.value
@@ -582,15 +582,19 @@ class GladosLocal(Thread, MQTTClient):
             data: Audio data in bytes.
         """
         # send auto out to get converted and time mapped
+        self.logger.debug("Sending audio bytes off to be processed")
         self.audioTx.send_bytes(data)
         time_map = self.localsttrx.get_segment_map(block=True)
+        self.logger.debug(f"Timing map is {time_map}")
         # send timing map to led
         led_msg = {LEDHead.MSG_COMMAND_KEY.value: LEDHead.LED_LOCATION.value,
                    LEDHead.LED_LOCATION.value: {
                        LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
                        LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
                    }
+        self.logger.debug(f"LED Message is {led_msg}")
         LEDMessageBuilder.send_led_animation(led_msg)
+        self.logger.debug("Playing audio file")
         play(AudioSegment.from_file(io.BytesIO(data)))
 
     def speak(self, text: str) -> None:
