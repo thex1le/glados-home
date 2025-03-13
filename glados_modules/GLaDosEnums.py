@@ -35,6 +35,19 @@ class SystemEnums(Enum):
     BROKER: str = 'broker'
 
 
+class LEDHead(Enum):
+    LED_LOCATION: str = "eye_led"
+    ANIMATION_STARTUP_KEY: str = "startup"
+    ANIMATION_DISCO_KEY: str = "disco"
+    ANIMATION_ANGRY_EYE_KEY: str = "angry_eye"
+    ANIMATION_NORMAL_EYE_KEY: str = "normal_eye"
+    ANIMATION_SPEECH_EYE_KEY: str = "speech_eye"
+    MSG_COMMAND_TYPE_KEY: str = "led"
+    MSG_COMMAND_KEY: str = "command"
+    MSG_INTENSITY_KEY: str = "intensity"
+    MSG_COMMAND_ARGUMENTS_KEY: str = "arguments"
+
+
 class STTEnums(Enum):
     """
     Enums for the Speech to text engine

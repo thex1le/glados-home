@@ -107,7 +107,8 @@ class NeoPixelAnimations:
             self.pixels.show()
             sleep(wait)
 
-    def intensity(self, wait: Union[int, float], color: Tuple[int, int, int]) -> None:
+    def intensity(self, wait: Union[int, float],
+                  color: Tuple[int, int, int], intensity_change: float = 0.1) -> None:
         """Increase the intensity of the given color gradually.
 
         The method starts out dim and gets brighter over the specified wait time.
@@ -115,6 +116,7 @@ class NeoPixelAnimations:
         Args:
             wait (Union[int, float]): Duration for the intensity change.
             color (Tuple[int, int, int]): The base color as a tuple of (R, G, B).
+            intensity_change (float): default .1, how much more intense the changes are at each step
         """
         self.pixels.brightness = 0.1
         self.pixels.auto_write = False
@@ -127,7 +129,7 @@ class NeoPixelAnimations:
             for i in self.pixel_grid:
                 self.pixels[i] = LedHelper.adjust_brightness(color, intense)
             self.pixels.show()
-            intense += 0.1
+            intense += intensity_change
             self.pixels.brightness = intense
             sleep(st)
 

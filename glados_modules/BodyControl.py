@@ -30,7 +30,7 @@ from glados_modules.MqttClient import (MQTTClient, ServoMessageBuilder, IMUMessa
                                        TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
 from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
 from glados_modules.GLaDosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
-                                        IMUEnums, TOFEnums, THEnums, MOXEnums)
+                                        IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -963,7 +963,7 @@ class LedHead(MQTTClient):
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
-        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
@@ -976,25 +976,35 @@ class LedHead(MQTTClient):
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
-        self.location: str = "eye_led"
-        self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco,
-                                                "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
+        self.location: str = LEDHead.LED_LOCATION.value
+        self.animations: Dict[str, Callable] = {LEDHead.ANIMATION_STARTUP_KEY.value: self.startup,
+                                                LEDHead.ANIMATION_DISCO_KEY.value: self.disco,
+                                                LEDHead.ANIMATION_ANGRY_EYE_KEY.value: self.angry_eye,
+                                                LEDHead.ANIMATION_NORMAL_EYE_KEY.value: self.normal_eye,
+                                                LEDHead.ANIMATION_SPEECH_EYE_KEY.value: self.speach_eye}
         self.glados_eye: Tuple[int, int, int] = (255, 165, 0)
         MQTTClient.__init__(self, broker.ip, broker.port)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
+        cmd_key = LEDHead.MSG_COMMAND_KEY.value
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
+        if j_msg.get(LEDHead.MSG_COMMAND_TYPE_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            if j_msg[self.location]['command'] in self.animations.keys():
-                self.animations[j_msg[self.location]['command']]()
+            animation_key = j_msg[self.location][cmd_key]
+            if animation_key in self.animations.keys():
+                if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
+                    args = j_msg[self.location].get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
+                    if args != '':
+                        self.animations[animation_key](args)
+                else:
+                    self.animations[animation_key]()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
+        if j_msg.get(LEDHead.MSG_COMMAND_TYPE_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            self.intensity = j_msg["intensity"]
+            self.intensity = j_msg[LEDHead.MSG_INTENSITY_KEY.value]
 
     def startup(self) -> None:
         self.logger.debug("Startup Sequence")
@@ -1040,11 +1050,17 @@ class LedHead(MQTTClient):
         self.pixels[0] = LedHelper.adjust_brightness(self.glados_eye, self.intensity[1])
         self.pixels.show()
 
-# NOTE you also need to code up a class for the Lamp portion its self...
+    def speach_eye(self, time_dict: dict = {}) -> None:
+        self.logger.debug("Speech Eye Pulse Triggered")
+        for k, v in time_dict:
+            # k is time duration of word & v is time of sleep till next word
+            self.ani.intensity(wait=k, color=self.glados_eye, intensity_change=0.002)
+            sleep(v)
+        self.normal_eye()
 
-# on the pi5 code, need to have classes to read from LIDAR sensor to channel..
-# also need class to read temp senders and have them take action
-# bird detection to kill external power? how will that work...
+    #TODO NOTE you also need to code up a class for the Lamp portion its self...
+
+    #TODO bird detection to kill external power? how will that work...
 
 
 if __name__ == "__main__":
