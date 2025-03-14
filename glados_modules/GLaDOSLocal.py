@@ -166,6 +166,9 @@ class GladosLocal(Thread, MQTTClient):
         # add in support to get timing maps for played audio
         self.audioTx = AudioServerTx(broker=audio_broker)
         self.localsttrx = LocalSTTrx(broker=mqtt_broker)
+        # play a silent bit to prime the audio system
+        play(AudioSegment.silent(duration=100))
+
         # TODO setup LEFT LCD
 
     def handle_intensity(self) -> None:
