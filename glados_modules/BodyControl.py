@@ -1052,10 +1052,11 @@ class LedHead(MQTTClient):
 
     def speach_eye(self, time_dict: dict = {}) -> None:
         self.logger.debug("Speech Eye Pulse Triggered")
-        for k, v in time_dict:
+        for k in time_dict.keys():
             # k is time duration of word & v is time of sleep till next word
             self.ani.intensity(wait=k, color=self.glados_eye, intensity_change=0.002)
-            sleep(v)
+            # fetch value and sleep that long
+            sleep(time_dict[k])
         self.normal_eye()
 
     #TODO NOTE you also need to code up a class for the Lamp portion its self...
