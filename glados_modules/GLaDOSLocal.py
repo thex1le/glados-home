@@ -588,7 +588,7 @@ class GladosLocal(Thread, MQTTClient):
             # send auto out to get converted and time mapped
             self.logger.debug("Sending audio bytes off to be processed")
             self.audioTx.send_bytes(data)
-            time_map = self.localsttrx.get_segment_map(block=True)
+            time_map = self.localsttrx.get_timing_map(block=True)
             self.logger.debug(f"Timing map is {time_map}")
             # send timing map to led
             led_msg = {LEDHead.MSG_COMMAND_KEY.value: LEDHead.LED_LOCATION.value,
