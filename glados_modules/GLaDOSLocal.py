@@ -587,7 +587,6 @@ class GladosLocal(Thread, MQTTClient):
         if led is True:
             # send auto out to get converted and time mapped
             self.logger.debug("Sending audio bytes off to be processed")
-            data = io.BytesIO(data)
             self.audioTx.send_bytes(data)
             time_map = self.localsttrx.get_segment_map(block=True)
             self.logger.debug(f"Timing map is {time_map}")
@@ -600,7 +599,7 @@ class GladosLocal(Thread, MQTTClient):
             self.logger.debug(f"LED Message is {led_msg}")
             LEDMessageBuilder.send_led_animation(led_msg)
         self.logger.debug("Playing audio file")
-        play(AudioSegment.from_file(data))
+        play(AudioSegment.from_file(io.BytesIO(data)))
 
     def speak(self, text: str) -> None:
         """Convert text to speech and play the resulting audio.
