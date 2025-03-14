@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional, Pattern, Union
 
 # 3rd party imports
 import requests
-from humanfriendly.terminal import message
 from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
