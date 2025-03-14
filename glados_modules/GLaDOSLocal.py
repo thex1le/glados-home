@@ -1,9 +1,9 @@
 import io
 import base64
 import random
-from threading import Thread, Lock
+from threading import Thread
 import time
-from os import path, getcwd
+from os import getcwd, path
 import multiprocessing as mp
 from queue import Queue
 from ctypes import *
@@ -100,12 +100,12 @@ class GladosLocal(Thread, MQTTClient):
         Thread.__init__(self)
         self.daemon = True  # Set this thread as a daemon
         conf_mqtt = config_file[SystemEnums.CONFIG_HEAD_MQTT.value]
-        conf_STT = config_file[STTEnums.CONFIG_HEAD_STT.value]
+        conf_stt = config_file[STTEnums.CONFIG_HEAD_STT.value]
         ip = conf_mqtt[SystemEnums.MQTT_SERVER_IP.value]
         port = int(conf_mqtt[SystemEnums.MQTT_PORT.value])
         mqtt_broker = MQTTClient.broker_tuple(ip, port)
-        audio_broker = MQTTClient.broker_tuple(conf_STT[STTEnums.STT_SERVER_IP.value],
-                                               int(conf_STT[STTEnums.STT_SERVER_PORT.value]))
+        audio_broker = MQTTClient.broker_tuple(conf_stt[STTEnums.STT_SERVER_IP.value],
+                                               int(conf_stt[STTEnums.STT_SERVER_PORT.value]))
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
@@ -135,22 +135,22 @@ class GladosLocal(Thread, MQTTClient):
             SystemEnums.CONFIG_HEAD_LOCALSPEAK.value
         ]
         root_path: str = self.configp.get("localpath", "./txt_responses")
-        self.greetings: List[str] = self.llp(self.configp.get("greetings", []),
+        self.greetings: List[str] = self.llp(self.configp.get("greetings", ""),
                                              root_path)
-        self.processing: List[str] = self.llp(self.configp.get("processing", []),
+        self.processing: List[str] = self.llp(self.configp.get("processing", ""),
+                                              root_path)
+        self.insults: List[str] = self.llp(self.configp.get("insults", ""),
+                                           root_path)
+        self.questions: List[str] = self.llp(self.configp.get("questions", ""),
                                              root_path)
-        self.insults: List[str] = self.llp(self.configp.get("insults", []),
+        self.qresponse: List[str] = self.llp(self.configp.get("qresponses", ""),
+                                             root_path)
+        self.cancel: List[str] = self.llp(self.configp.get("cancel", ""),
                                           root_path)
-        self.questions: List[str] = self.llp(self.configp.get("questions", []),
-                                            root_path)
-        self.qresponse: List[str] = self.llp(self.configp.get("qresponses", []),
-                                            root_path)
-        self.cancel: List[str] = self.llp(self.configp.get("cancel", []),
-                                         root_path)
         self.vision_confidence: float = float(
             self.configp.get("VisionConfidence", 0.0)
         )
-        self.fuck: List[str] = self.llp(self.configp.get("fuck", []), root_path)
+        self.fuck: List[str] = self.llp(self.configp.get("fuck", ""), root_path)
         self.mixer = Mixer("Master")
         self.__change_volume(
             int(config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value]["VolumeLevel"])
@@ -344,7 +344,7 @@ class GladosLocal(Thread, MQTTClient):
             raise GladosException(msg)
 
     def check_local_command(self, user_prompt: str,
-                              command: Union[str, Pattern]) -> bool:
+                            command: Union[str, Pattern]) -> bool:
         """Check if a user prompt matches a given command pattern.
 
         Args:
@@ -387,7 +387,7 @@ class GladosLocal(Thread, MQTTClient):
             True if the temperature command was detected, False otherwise.
         """
         c_str: str = r"what(?:'?s| is) the (current )?(outside )?(temp(erature)?)( outside)?\??"
-        check: bool = self.__check_local_command(
+        check: bool = self.check_local_command(
             user_prompt.lower(), re.compile(c_str)
         )
         if check:
@@ -403,7 +403,7 @@ class GladosLocal(Thread, MQTTClient):
         Returns:
             True if the command was detected, False otherwise.
         """
-        check: bool = self.__check_local_command(user_prompt.lower(), "fuck you")
+        check: bool = self.check_local_command(user_prompt.lower(), "fuck you")
         if check:
             self.random_fuck_response()
         return check
@@ -445,7 +445,7 @@ class GladosLocal(Thread, MQTTClient):
             True if a timer command was processed, False otherwise.
         """
         user_prompt_lower: str = user_prompt.lower()
-        check: bool = self.__check_local_command(
+        check: bool = self.check_local_command(
             user_prompt_lower, re.compile(r'set\s+(a\s+|the\s+)?timer')
         )
         if check:
@@ -467,7 +467,7 @@ class GladosLocal(Thread, MQTTClient):
                 time_string = ' and '.join(parts)
             self.speak(time_string)
         else:
-            check = self.__check_local_command(
+            check = self.check_local_command(
                 user_prompt_lower, re.compile(r'(stop|cancel)\s+(the\s+|a\s+)?timer')
             )
             if check:
@@ -636,10 +636,10 @@ class GladosLocal(Thread, MQTTClient):
         pc_command: List[str] = ["set volume", "change volume"]
         user_prompt_lower: str = user_prompt.lower()
         for pc in pc_command:
-            check = self.__check_local_command(user_prompt_lower, pc)
+            check = self.check_local_command(user_prompt_lower, pc)
             if check:
                 break
-        scheck: bool = self.__check_local_command(user_prompt_lower, re.compile(r'%'))
+        scheck: bool = self.check_local_command(user_prompt_lower, re.compile(r'%'))
         if scheck:
             level_matches = re.findall(r'\b\d+\b', user_prompt)
             if level_matches:
@@ -651,11 +651,12 @@ class GladosLocal(Thread, MQTTClient):
                 self.speak(msg)
         return check
 
+
 if __name__ == "__main__":
     import sys
     import configparser
     from os import path
-    from glados_modules.GLaDOSGpt import GladosGPT
+    from glados_modules.ChatGPTConnector import GladosGPT
     configp = configparser.ConfigParser()
     if path.isfile(sys.argv[1]) is True:
         configp.read(sys.argv[1])
