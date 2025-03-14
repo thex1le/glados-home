@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Pattern, Union
 
 # 3rd party imports
 import requests
+from humanfriendly.terminal import message
 from pydub import AudioSegment
 from pydub.playback import play
 from alsaaudio import Mixer
@@ -597,7 +598,8 @@ class GladosLocal(Thread, MQTTClient):
                            LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
                        }
             self.logger.debug(f"LED Message is {led_msg}")
-            LEDMessageBuilder.send_led_animation(led_msg)
+            self.send_command(command=LEDMessageBuilder.send_led_animation(led_msg),
+                              topic=MQTTEnums.BODY_LED_CONTROL_MQTT_TOPIC.value)
         self.logger.debug("Playing audio file")
         play(AudioSegment.from_file(io.BytesIO(data)))
 
