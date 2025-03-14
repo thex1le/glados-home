@@ -15,6 +15,7 @@ import busio
 import board
 from digitalio import DigitalInOut, Direction
 from PIL import Image, ImageDraw
+import neopixel
 
 # glados imports
 from glados_modules.MQTTConsumerModules import SensorTracker
@@ -958,7 +959,6 @@ class DumbLEDController(Thread):
 
 class LedHead(MQTTClient):
     def __init__(self, broker: NamedTuple) -> None:
-        import neopixel
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
