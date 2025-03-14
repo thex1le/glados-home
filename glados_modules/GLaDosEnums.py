@@ -36,7 +36,7 @@ class SystemEnums(Enum):
 
 
 class LEDHead(Enum):
-    LED_LOCATION: str = "eye_led"
+    EYE_LED_LOCATION: str = "eye_led"
     ANIMATION_STARTUP_KEY: str = "startup"
     ANIMATION_DISCO_KEY: str = "disco"
     ANIMATION_ANGRY_EYE_KEY: str = "angry_eye"
@@ -46,6 +46,7 @@ class LEDHead(Enum):
     MSG_COMMAND_KEY: str = "command"
     MSG_INTENSITY_KEY: str = "intensity"
     MSG_COMMAND_ARGUMENTS_KEY: str = "arguments"
+    MSG_COMMAND_LOCATION_KEY: str = "location"
 
 
 class STTEnums(Enum):
