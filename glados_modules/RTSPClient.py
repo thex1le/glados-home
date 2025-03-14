@@ -7,7 +7,7 @@ import cv2
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import CameraEnum, LoggingEnums
+from glados_modules.GladosEnums import CameraEnum, LoggingEnums
 
 
 class RtspConsumerError(Exception):

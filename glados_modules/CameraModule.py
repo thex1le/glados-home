@@ -7,8 +7,8 @@ from picamera2 import Picamera2, MappedArray, Preview
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum, SystemEnums
+from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
+from glados_modules.GladosEnums import CameraEnum, SystemEnums
 from glados_modules.RtspServer import RTSPServer
 
 

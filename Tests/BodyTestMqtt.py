@@ -3,7 +3,7 @@ import time
 import paho.mqtt.client as mqtt
 import json
 
-from glados_modules.MqttClient import ServoMessageBuilder, MQTTClient
+from glados_modules.MqttConnector import ServoMessageBuilder, MQTTClient
 
 if __name__ == "__main__":
     broker = "192.168.86.28"

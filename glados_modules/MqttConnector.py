@@ -14,6 +14,8 @@ from cachetools import TTLCache
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GLaDosEnums import (ServoEnum, CameraEnum, TrackingEnums, LoggingEnums,
                                         STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
+from glados_modules.GladosEnums import (ServoEnum, CameraEnum, TrackingEnums, LoggingEnums,
+                                        STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums)
 
 
 class MQTTClient:
