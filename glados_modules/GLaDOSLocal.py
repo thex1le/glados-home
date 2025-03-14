@@ -591,8 +591,7 @@ class GladosLocal(Thread, MQTTClient):
             time_map = self.localsttrx.get_timing_map(block=True)
             self.logger.debug(f"Timing map is {time_map}")
             # send timing map to led
-            led_msg = {LEDHead.MSG_COMMAND_KEY.value: LEDHead.LED_LOCATION.value,
-                       LEDHead.LED_LOCATION.value: {
+            led_msg = {LEDHead.LED_LOCATION.value: {
                            LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
                            LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
                        }
