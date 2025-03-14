@@ -976,7 +976,7 @@ class LedHead(MQTTClient):
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
-        self.location: str = LEDHead.LED_LOCATION.value
+        self.location: str = LEDHead.EYE_LED_LOCATION.value
         self.animations: Dict[str, Callable] = {LEDHead.ANIMATION_STARTUP_KEY.value: self.startup,
                                                 LEDHead.ANIMATION_DISCO_KEY.value: self.disco,
                                                 LEDHead.ANIMATION_ANGRY_EYE_KEY.value: self.angry_eye,
