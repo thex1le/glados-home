@@ -9,8 +9,8 @@ import regex as re
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums
-from glados_modules.WhisperSTT import LocalSTTrx, AudioServerTx
+from glados_modules.GladosEnums import LoggingEnums, SystemEnums, STTEnums
+from glados_modules.WhisperXSpeech2Text import LocalSTTrx, AudioServerTx
 
 
 class GladosSTT(Thread):
@@ -197,7 +197,7 @@ class GladosSTT(Thread):
 
 if __name__ == "__main__":
     # for module debug
-    from glados_modules.GLaDOSGpt import GladosGPT
+    from glados_modules.ChatGPTConnector import GladosGPT
     from argparse import ArgumentParser
     from configparser import ConfigParser
     from GLaDOS import GladosLocal

@@ -1,8 +1,8 @@
 from paho.mqtt.client import MQTTMessage
 from collections import namedtuple
 from typing import NamedTuple, Dict, Callable
-from glados_modules.MqttClient import MQTTClient
-from glados_modules.GLaDosEnums import TrackingEnums
+from glados_modules.MqttConnector import MQTTClient
+from glados_modules.GladosEnums import TrackingEnums
 from glados_modules.GlogConfig import setup_logger
 from json import loads
 from time import sleep

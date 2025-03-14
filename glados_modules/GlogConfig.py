@@ -1,6 +1,6 @@
 import logging
 from os import path, makedirs
-from glados_modules.GLaDosEnums import LoggingEnums
+from glados_modules.GladosEnums import LoggingEnums
 
 
 def setup_logger(

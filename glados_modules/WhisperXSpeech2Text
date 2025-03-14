@@ -13,7 +13,7 @@ from paho.mqtt.client import MQTTMessage
 # GLaDos module imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums, MQTTEnums
-from glados_modules.MqttClient import MQTTClient, SttMessageBuilder
+from glados_modules.MqttConnector import MQTTClient, SttMessageBuilder
 
 
 class AudioServerTx:

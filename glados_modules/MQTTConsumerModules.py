@@ -9,8 +9,8 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
-from glados_modules.GLaDosEnums import (
+from glados_modules.MqttConnector import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
+from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
     LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums
 )

@@ -3,8 +3,8 @@ import time
 import paho.mqtt.client as mqtt
 import json
 
-from glados_modules.MqttClient import TargetMessageBuilder
-from glados_modules.GLaDosEnums import TrackingEnums
+from glados_modules.MqttConnector import TargetMessageBuilder
+from glados_modules.GladosEnums import TrackingEnums
 
 
 class MQTTClient:

@@ -23,13 +23,13 @@ import regex as re
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GladosHomeAssistant import HomeAssistantLink
-from glados_modules.GLaDOSGpt import GladosGPT
+from glados_modules.HomeAssistantConnector import HomeAssistantLink
+from glados_modules.ChatGPTConnector import GladosGPT
 from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
-from glados_modules.MqttClient import MQTTClient
-from glados_modules.CameraRTSP import Camera
-from glados_modules.GLaDosEnums import CameraEnum, SystemEnums, MQTTEnums, LoggingEnums
+from glados_modules.MqttConnector import MQTTClient
+from glados_modules.CameraModule import Camera
+from glados_modules.GladosEnums import CameraEnum, SystemEnums, MQTTEnums, LoggingEnums
 
 
 # silence some errors on the terminal
