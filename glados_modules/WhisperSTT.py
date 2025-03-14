@@ -311,7 +311,7 @@ class LocalSTTrx(MQTTClient):
                 self.lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
                 raw_results: dict = msg.get(STTEnums.STT_RAW_RESULTS_KEY.value, {})
                 self.segment_map: dict = raw_results.get(STTEnums.STT_SEGMENTS_KEY.value, {})
-                self.timing_map: dict = raw_results.get(STTEnums.STT_TIME_MAP_KEY.value, {})
+                self.timing_map: dict = msg.get(STTEnums.STT_TIME_MAP_KEY.value, {})
 
     def get_text(self, block: bool = False, timeout: int = 10) -> str:
         """
