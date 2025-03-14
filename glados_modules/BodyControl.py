@@ -989,7 +989,7 @@ class LedHead(MQTTClient):
         j_msg = loads(msg.payload.decode())
         body = j_msg.get(LEDHead.MSG_COMMAND_KEY.value, {})
         if body.get(LEDHead.MSG_COMMAND_LOCATION_KEY.value, "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
+            self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
             animation_key = body.get(LEDHead.MSG_COMMAND_KEY.value, "")
             if animation_key in self.animations.keys():
                 if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
