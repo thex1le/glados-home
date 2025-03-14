@@ -987,13 +987,13 @@ class LedHead(MQTTClient):
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
-        msg = j_msg.get(LEDHead.MSG_COMMAND_KEY.value, {})
-        if msg.get(LEDHead.MSG_COMMAND_LOCATION_KEY.value, "") == self.location:
+        body = j_msg.get(LEDHead.MSG_COMMAND_KEY.value, {})
+        if body.get(LEDHead.MSG_COMMAND_LOCATION_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            animation_key = msg.get(LEDHead.MSG_COMMAND_KEY.value, "")
+            animation_key = body.get(LEDHead.MSG_COMMAND_KEY.value, "")
             if animation_key in self.animations.keys():
                 if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
-                    args = msg.get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
+                    args = body.get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
                     if args != '':
                         self.animations[animation_key](args)
                 else:
