@@ -409,7 +409,7 @@ class TempHumSensor(MQTTClient, Thread):
 
     Attributes:
         SHT40_broker (tuple): The broker tuple obtained from MQTTClient.
-        SHT40 (adafruit_sht4x): The sensor object used for readings.
+        sht40 (adafruit_sht4x): The sensor object used for readings.
     """
 
     SHT40_broker = MQTTClient.broker_tuple
@@ -584,7 +584,7 @@ class Gservo(MQTTClient, Thread):
     """
     Generic Servo Class to take movement commands from MQTT for a servo and send status to MQTT
     """
-    def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple,
+    def __init__(self, location: str, servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
         Thread.__init__(self)
