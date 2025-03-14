@@ -6,42 +6,11 @@ import sys
 import configparser
 
 # glados imports
-from glados_modules.GLaDOSGpt import GladosGPT
-from glados_modules.GlogConfig import setup_logger
-from glados_modules.HomeAssistantConnector import HomeAssistantLink
 from glados_modules.ChatGPTConnector import GladosGPT
-from glados_modules.EggTimer import EggTimer
 from glados_modules.Speech2Text import GladosSTT
-from glados_modules.CameraRTSP import Camera
-from glados_modules.GLaDosEnums import CameraEnum
 from glados_modules.GLaDOSLocal import GladosLocal
-from glados_modules.MqttConnector import MQTTClient
 from glados_modules.CameraModule import Camera
-from glados_modules.GladosEnums import CameraEnum, SystemEnums, MQTTEnums, LoggingEnums
-
-
-# silence some errors on the terminal
-def py_error_handler(filename, line, function, err, fmt):
-    pass
-
-
-# silence some errors on the terminal
-ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
-c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
-
-
-@contextmanager
-def noalsaerr():
-    asound = cdll.LoadLibrary(SystemEnums.LIB_ASOUND.value)
-    asound.snd_lib_error_set_handler(c_error_handler)
-    yield
-    asound.snd_lib_error_set_handler(None)
-
-
-with noalsaerr():
-    p = pyaudio.PyAudio()
-# stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=1)
-stream = p.open(format=pyaudio.paFloat32, channels=2, rate=44100, output=1)
+from glados_modules.GladosEnums import CameraEnum
 
 
 class GladosException(Exception):

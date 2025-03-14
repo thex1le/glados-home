@@ -12,7 +12,7 @@ from paho.mqtt.client import MQTTMessage
 
 # GLaDos module imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums, MQTTEnums
+from glados_modules.GladosEnums import LoggingEnums, SystemEnums, STTEnums, MQTTEnums
 from glados_modules.MqttConnector import MQTTClient, SttMessageBuilder
 
 

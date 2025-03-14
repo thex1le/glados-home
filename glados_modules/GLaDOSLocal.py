@@ -19,11 +19,11 @@ import regex as re
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GladosHomeAssistant import HomeAssistantLink
+from glados_modules.HomeAssistantConnector import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
-from glados_modules.MqttClient import MQTTClient, LEDMessageBuilder
-from glados_modules.GLaDosEnums import SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums
-from glados_modules.WhisperSTT import AudioServerTx, LocalSTTrx
+from glados_modules.MqttConnector import MQTTClient, LEDMessageBuilder
+from glados_modules.GladosEnums import SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums
+from glados_modules.WhisperXSpeech2Text import AudioServerTx, LocalSTTrx
 
 
 # silence some errors on the terminal

@@ -26,16 +26,11 @@ import adafruit_ens160
 # glados imports
 from glados_modules.MQTTConsumerModules import SensorTracker
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
-                                       TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
-from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
+from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
                                         IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
 from glados_modules.MqttConnector import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
                                           TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
 from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations
-from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
-                                        IMUEnums, TOFEnums, THEnums, MOXEnums)
 
 
 class GladosLCD(Thread, MQTTClient):
