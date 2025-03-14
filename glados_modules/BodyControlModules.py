@@ -11,17 +11,11 @@ from copy import copy
 # 3rd party
 from paho.mqtt.client import MQTTMessage
 from adafruit_servokit import ServoKit
-import neopixel
 import adafruit_pca9685
 import busio
 import board
 from digitalio import DigitalInOut, Direction
 from PIL import Image, ImageDraw
-from adafruit_rgb_display import st7789
-import adafruit_bno055
-import adafruit_vl53l4cd
-import adafruit_sht4x
-import adafruit_ens160
 
 # glados imports
 from glados_modules.MQTTConsumerModules import SensorTracker
@@ -37,6 +31,7 @@ class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
                  sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
+        from adafruit_rgb_display import st7789
         Thread.__init__(self)
         Thread.daemon = True
         self.location = location
@@ -267,6 +262,7 @@ class MoxGas(MQTTClient, Thread):
         Args:
             broker: An object containing broker information with attributes 'ip' and 'port'.
         """
+        import adafruit_ens160
         self.__name__ = self.__class__.__name__
         Thread.__init__(self)
         self.daemon = True
@@ -354,6 +350,7 @@ class TOF(MQTTClient, Thread):
             broker (Any): An object with 'ip' and 'port' attributes required
                 to establish the MQTT connection.
         """
+        import adafruit_vl53l4cd
         self.__name__ = self.__class__.__name__
         Thread.__init__(self)
         self.daemon = True
@@ -429,6 +426,7 @@ class TempHumSensor(MQTTClient, Thread):
             broker (Any): An object with 'ip' and 'port' attributes required
                 to establish the MQTT connection.
         """
+        import adafruit_sht4x
         self.__name__ = self.__class__.__name__
         Thread.__init__(self)
         self.daemon = True
@@ -514,6 +512,7 @@ class IMU(MQTTClient, Thread):
             broker (Any): An object with 'ip' and 'port' attributes required
                 to establish the MQTT connection.
         """
+        import adafruit_bno055
         self.__name__ = self.__class__.__name__
         Thread.__init__(self)
         self.daemon = True
@@ -960,6 +959,7 @@ class DumbLEDController(Thread):
 
 class LedHead(MQTTClient):
     def __init__(self, broker: NamedTuple) -> None:
+        import neopixel
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
