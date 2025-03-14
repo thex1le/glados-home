@@ -10,7 +10,6 @@ from copy import copy
 
 # 3rd party
 from paho.mqtt.client import MQTTMessage
-from adafruit_servokit import ServoKit
 import adafruit_pca9685
 import busio
 import board
@@ -1065,6 +1064,7 @@ class LedHead(MQTTClient):
 
 
 if __name__ == "__main__":
+    from adafruit_servokit import ServoKit
     ip = '192.168.1.39'
     Angle_tuple = namedtuple("angle", ['max', 'min', 'center'])
     Pulse_tuple = namedtuple("pulse", ['max', 'min'])
