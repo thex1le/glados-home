@@ -994,8 +994,10 @@ class LedHead(MQTTClient):
                 if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
                     args = body.get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
                     if args != '':
+                        self.logger.debug("LED Head Animation Triggered with arguments")
                         self.animations[animation_key](args)
                 else:
+                    self.logger.debug("LED Head Animation Triggered with no arguments")
                     self.animations[animation_key]()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
