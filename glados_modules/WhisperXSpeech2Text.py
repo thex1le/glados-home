@@ -373,7 +373,6 @@ class LocalSTTrx(MQTTClient):
 
 if __name__ == "__main__":
     # Test stub
-    import time
     broker = AudioServerRX.broker_tuple
     server_broker = broker("127.0.0.1", 5000)
     mqtt_broker = broker("192.168.1.39", 1883)
@@ -384,6 +383,6 @@ if __name__ == "__main__":
     tx = AudioServerTx(server_broker)
     with open(sys.argv[1], "rb") as f:
         tx.send_bytes(f.read())
-    time.sleep(5)
+    sleep(5)
     print(lsttrx.get_lang())
     print(lsttrx.get_text())
