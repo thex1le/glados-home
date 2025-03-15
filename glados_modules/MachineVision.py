@@ -39,7 +39,7 @@ from glados_modules.RTSPClient import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
 from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums
-from glados_modules.MQTTConsumerModules import ServoLocation
+from glados_modules.MqttConsumerModules import ServoLocation
 from glados_modules.VisionTracker import MotionTrack
 
 

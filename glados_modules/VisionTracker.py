@@ -11,7 +11,7 @@ import numpy as np
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttConnector import MQTTClient, ServoMessageBuilder
-from glados_modules.MQTTConsumerModules import ServoLocation, VisionTracker
+from glados_modules.MqttConsumerModules import ServoLocation, VisionTracker
 from glados_modules.Kalman2D import KalmanFilter2D
 from glados_modules.GladosEnums import (CameraEnum, ServoEnum, SystemEnums,
                                         TrackingEnums, VisionResultsEnum, LoggingEnums)

@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw
 import neopixel
 
 # glados imports
-from glados_modules.MQTTConsumerModules import SensorTracker
+from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
                                         IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
