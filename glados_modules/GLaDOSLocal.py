@@ -596,7 +596,10 @@ class GladosLocal(Thread, MQTTClient):
             # send timing map to led
             led_msg = {LEDHead.MSG_COMMAND_LOCATION_KEY.value: LEDHead.EYE_LED_LOCATION.value,
                        LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
-                       LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: time_map}
+                       LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: {
+                           LEDHead.ARGS_KEY_TIME_DICT.value: time_map,
+                           LEDHead.ARGS_KEY_DELAY: SystemEnums.SPEAKER_DELAY.value}
+                       }
 
             self.logger.debug(f"LED Message is {led_msg}")
             self.send_command(command=LEDMessageBuilder.send_led_animation(led_msg),

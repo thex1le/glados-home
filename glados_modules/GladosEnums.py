@@ -33,6 +33,7 @@ class SystemEnums(Enum):
     BROKER_IP: str = 'ip'
     BROKER_PORT: str = 'port'
     BROKER: str = 'broker'
+    SPEAKER_DELAY: int = 1.6686527729034424
 
 
 class LEDHead(Enum):
@@ -47,6 +48,9 @@ class LEDHead(Enum):
     MSG_INTENSITY_KEY: str = "intensity"
     MSG_COMMAND_ARGUMENTS_KEY: str = "arguments"
     MSG_COMMAND_LOCATION_KEY: str = "location"
+    MSG_COMMAND_START_DELAY: str = "start_delay"
+    ARGS_KEY_TIME_DICT: str = "time_dict"
+    ARGS_KEY_DELAY: str = "delay"
 
 
 class STTEnums(Enum):

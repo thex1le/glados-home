@@ -993,6 +993,7 @@ class LedHead(MQTTClient):
             if animation_key in self.animations.keys():
                 if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
                     args = body.get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
+                    # TODO You left off switching this to **KWARGS and just passing the msg in
                     if args != '':
                         self.logger.debug("LED Head Animation Triggered with arguments")
                         self.animations[animation_key](args)
@@ -1051,14 +1052,22 @@ class LedHead(MQTTClient):
         self.pixels[0] = LedHelper.adjust_brightness(self.glados_eye, self.intensity[1])
         self.pixels.show()
 
-    def speach_eye(self, time_dict: dict = {}) -> None:
+    def speach_eye(self, **kwargs) -> None:
         self.logger.debug("Speech Eye Pulse Triggered")
-        for k in time_dict.keys():
-            # k is time duration of word & v is time of sleep till next word
-            self.ani.intensity(wait=float(k), color=self.glados_eye, intensity_change=0.002)
-            # fetch value and sleep that long
-            sleep(float(time_dict[k]))
-        self.normal_eye()
+        td = LEDHead.ARGS_KEY_TIME_DICT.value
+        delay = LEDHead.ARGS_KEY_DELAY.value
+        if {td, delay}.issubset(kwargs):
+            ds = float(kwargs[delay])
+            self.logger.debug(f"Sleeping for {ds} seconds for audio sync")
+            sleep(ds)
+            for k in kwargs[td].keys():
+                # k is time duration of word & v is time of sleep till next word
+                self.ani.intensity(wait=float(k), color=self.glados_eye, intensity_change=0.002)
+                # fetch value and sleep that long
+                sleep(float(kwargs[td][k]))
+            self.normal_eye()
+        else:
+            self.logger.error(f"Missing either {td} or {delay} in {kwargs} arguments, speech eye animation failed")
 
     #TODO NOTE you also need to code up a class for the Lamp portion its self...
 
