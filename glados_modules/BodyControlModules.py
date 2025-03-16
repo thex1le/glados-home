@@ -996,7 +996,7 @@ class LedHead(MQTTClient):
                     # TODO You left off switching this to **KWARGS and just passing the msg in
                     if args != '':
                         self.logger.debug("LED Head Animation Triggered with arguments")
-                        self.animations[animation_key](args)
+                        self.animations[animation_key](**args)
                 else:
                     self.logger.debug("LED Head Animation Triggered with no arguments")
                     self.animations[animation_key]()
