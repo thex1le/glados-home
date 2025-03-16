@@ -33,7 +33,8 @@ class SystemEnums(Enum):
     BROKER_IP: str = 'ip'
     BROKER_PORT: str = 'port'
     BROKER: str = 'broker'
-    SPEAKER_DELAY: int = 1.6686527729034424
+    #SPEAKER_DELAY: int = 1.6686527729034424
+    SPEAKER_DELAY: int = 1.12
 
 
 class LEDHead(Enum):
