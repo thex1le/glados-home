@@ -9,8 +9,8 @@ import regex as re
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums
-from glados_modules.WhisperSTT import LocalSTTrx, AudioServerTx
+from glados_modules.GladosEnums import LoggingEnums, SystemEnums, STTEnums
+from glados_modules.WhisperXSpeech2Text import LocalSTTrx, AudioServerTx
 
 
 class GladosSTT(Thread):
@@ -96,11 +96,10 @@ class GladosSTT(Thread):
             rtn: dict = {"greeting": None, "has_extra_command": False, "command": None}
         return rtn
 
-    def __get_audio(self, sr: Any, duration: float = 0.5, no_limit: bool = False, noise: bool = False) -> str:
+    def __get_audio(self, duration: float = 0.5, no_limit: bool = False, noise: bool = False) -> str:
         """Record audio from a microphone, send it for transcription, and return the resulting text.
 
         Args:
-            sr (Any): The speech recognition module (typically the 'speech_recognition' module).
             duration (float, optional): Time in seconds to adjust for ambient noise. Defaults to 0.5.
             no_limit (bool, optional): If True, record without a phrase time limit. Defaults to False.
             noise (bool, optional): If True, adjust for ambient noise. Defaults to False.
@@ -117,10 +116,12 @@ class GladosSTT(Thread):
         if no_limit is False:
             self.logger.debug("Recording Short Audio")
             audio = self.recognizer.listen(self.mic)
+            self.logger.debug("Record Short Audio Complete")
         else:
             self.logger.debug("Time limit removed on audio recording, Recording long audio")
             self.mic.pause_threshold = 1
             audio = self.recognizer.listen(self.mic, phrase_time_limit=None, timeout=None)
+            self.logger.debug("Long audio recording complete")
         self.logger.debug("Recording audio complete & sending audio for transcription")
         self.audioTx.send_bytes(audio.get_wav_data())
         audio_text = self.localsttrx.get_text(block=True)
@@ -147,39 +148,45 @@ class GladosSTT(Thread):
         self.mic = sr.Microphone(device_index=1)
         # open the stream
         self.mic.__enter__()
-        # Import the speech recognition module after process fork.
-        import speech_recognition as sr
         while True:
             msg: str = "Say 'Hey GLaDOS' to start recording your question"
             self.logger.info(msg)
             # TODO: Investigate why the mic doesn't always open and audio may not be transmitted via send_bytes.
             try:
-                transcription = self.__get_audio(sr, noise=True)
+                transcription = self.__get_audio(noise=True)
                 pcommand: Dict[str, Union[Optional[str], bool]] = GladosSTT.parse_command(transcription)
                 self.logger.debug(f"Parse command is {pcommand}")
                 if pcommand["greeting"] is not None:
                     # Pause and take a longer recording for the command if necessary.
                     # TODO: Reconsider how this works with multithreading.
+                    self.logger.debug("We got a greeting, play a noise to note this")
+                    self.glocal.play_ding_up()
+                    self.logger.debug("Noise Complete")
                     self.logger.debug(pcommand)
                     if not pcommand["has_extra_command"]:
                         greet: str = self.glocal.random_greeting(True)
                         rq: str = self.glocal.random_question(True)
                         self.glocal.speak(f"{greet}. {rq}")
-                        transcription = self.__get_audio(sr, no_limit=True)
-                        self.logger.debug("Good user_prompt")
-                        # Check for a cancel command in the transcription.
-                        # TODO: Work out how the cancel command works.
-                        if self.glocal._gladosLocal__check_local_command(
-                            transcription.lower(),
-                            re.compile(r'cancel?')
-                        ):
-                            self.logger.debug("Cancel command issued")
-                            self.glocal.random_cancel_response()
-                            continue
-                    self.logger.debug(f"Returned transcription is {transcription}")
-                    mp_list.append(pcommand["command"])
+                        transcription = self.__get_audio(no_limit=True)
+                    # TODO fix up extra command vs no extra command as having extra command does nothing
+                    # once this is stable we can get timing back of audio and decide how to handle it
+                    self.logger.debug("Good user_prompt")
+                    # Check for a cancel command in the transcription.
+                    # TODO: Work out how the cancel command works.
+                    self.logger.debug("Checking for local command")
+                    if self.glocal.check_local_command(
+                        transcription.lower(),
+                        re.compile(r'cancel?')
+                    ):
+                        self.logger.debug("Cancel command issued")
+                        self.glocal.random_cancel_response()
+                        continue
+                    self.logger.debug("Local command check finished")
+                self.logger.debug(f"Returned transcription is {transcription}")
+                mp_list.append(pcommand["command"])
             except Exception as e:
                 self.logger.error(f"An unknown error occurred: {e}")
+                self.logger.error("Is is the audio card kernel module installed?")
 
     def run(self) -> None:
         """Run the speech-to-text processing loop in a separate process.
@@ -189,7 +196,7 @@ class GladosSTT(Thread):
         """
         with mp.Manager() as manager:
             self.mplist = manager.list()
-            self.proc = mp.Process(target=self.record, args=(self.mplist,))
+            self.proc = Thread(target=self.record, args=(self.mplist,))
             self.proc.start()
             while True:
                 sleep(10)
@@ -197,7 +204,7 @@ class GladosSTT(Thread):
 
 if __name__ == "__main__":
     # for module debug
-    from glados_modules.GLaDOSGpt import GladosGPT
+    from glados_modules.ChatGPTConnector import GladosGPT
     from argparse import ArgumentParser
     from configparser import ConfigParser
     from GLaDOS import GladosLocal

@@ -10,9 +10,9 @@ from collections import namedtuple
 from adafruit_servokit import ServoKit
 
 # glados imports
-from glados_modules.BodyControl import Gservo, LedHead, LedShoulders, GladosLCD
-from glados_modules.CameraRTSP import GLaDOSServerException, Camera
-from glados_modules.GLaDosEnums import CameraEnum, ServoEnum, SystemEnums
+from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD
+from glados_modules.CameraModule import GLaDOSServerException, Camera
+from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums
 
 
 if __name__ == "__main__":

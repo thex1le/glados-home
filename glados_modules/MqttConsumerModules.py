@@ -9,10 +9,10 @@ from cachetools import TTLCache
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
-from glados_modules.GLaDosEnums import (
+from glados_modules.MqttConnector import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
+from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
-    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums
+    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums
 )
 
 
@@ -395,11 +395,15 @@ class SensorTracker(MQTTClient):
         )
         self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
             MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
-            MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd
+            MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd,
+            MQTTEnums.TH_STATUS_TOPIC.value: self.th_handle_cmd,
+            MQTTEnums.MOX_STATUS_TOPIC.value: self.mox_handle_cmd
         }
         super().__init__(ip=broker.ip, port=broker.port)
         self.imu_status: dict = {}
         self.tof_status: dict = {}
+        self.mox_status: dict = {}
+        self.th_status: dict = {}
 
     def _handle_status(
         self,
@@ -427,6 +431,7 @@ class SensorTracker(MQTTClient):
         Args:
             msg (MQTTMessage): The MQTT message containing TOF status.
         """
+        self.logger.debug(f"TOF MQTT Handler Triggered")
         self._handle_status(
             msg,
             sensor_key=TOFEnums.TOF_STATUS_KEY.value,
@@ -439,10 +444,37 @@ class SensorTracker(MQTTClient):
         Args:
             msg (MQTTMessage): The MQTT message containing IMU status.
         """
+        self.logger.debug(f"IMU MQTT Handler Triggered")
         self._handle_status(
             msg,
             sensor_key=IMUEnums.IMU_STATUS_KEY.value,
             sensor_name=IMUEnums.SENSOR_NAME.value
+        )
+
+    def mox_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming MOX GAS status messages.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing IMU status.
+        """
+        self.logger.debug(f"MOX MQTT Handler Triggered")
+        self._handle_status(
+            msg,
+            sensor_key=MOXEnums.MOX_STATUS_KEY.value,
+            sensor_name=MOXEnums.SENSOR_NAME.value
+        )
+
+    def th_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming Temp * Humidity status messages.
+
+        Args:
+            msg (MQTTMessage): The MQTT message containing Temp & Humidity status.
+        """
+        self.logger.debug(f"Temp & Humidity MQTT Handler Triggered")
+        self._handle_status(
+            msg,
+            sensor_key=THEnums.TH_STATUS_KEY.value,
+            sensor_name=THEnums.SENSOR_NAME.value
         )
 
     def __load_message(self, json_message: MQTTMessage) -> Dict[str, Any]:
@@ -477,7 +509,7 @@ class SensorTracker(MQTTClient):
 
 if __name__ == "__main__":
     b = namedtuple("broker", ["ip", "port"])
-    broker = b('192.168.1.29', 1883)
+    broker = b('192.168.1.39', 1883)
     # Assuming broker is a NamedTuple with 'ip' and 'port' attributes
     servo_location_tracker = ServoLocation(broker)
     # Retrieve the current servo angles
@@ -494,5 +526,7 @@ if __name__ == "__main__":
         print(servo_location_tracker.get_imu_status())
     st = SensorTracker(broker=broker)
     sleep(2)
-    st.get_sensor_status(TOFEnums.TOF_STATUS_KEY.value)
-    st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
+    print(st.get_sensor_status(TOFEnums.TOF_STATUS_KEY.value))
+    print(st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value))
+    print(st.get_sensor_status(THEnums.TH_STATUS_KEY.value))
+    print(st.get_sensor_status(MOXEnums.MOX_STATUS_KEY.value))

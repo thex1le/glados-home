@@ -4,7 +4,7 @@ from homeassistant_api import Client
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import LoggingEnums
+from glados_modules.GladosEnums import LoggingEnums
 
 
 class HomeAssistantLink:
@@ -35,22 +35,4 @@ class HomeAssistantLink:
         wdata = self.__get_weather()
         watt = wdata.state.attributes
         return f"The current temperature is {watt['temperature']}"
-
-    # TODO need to figure out how were going to sync the camera "scan / hunt" function for new people
-
-
-""" stub code for camera body hunt
- def target_scan(self, target="person", search_time=90, confidence=.70):
-     self.logger.debug(f"Camera Scanning for target: {target}")
-     target_found = False
-     t = time()
-     while (time() - t) < search_time and target_found is False:
-         if target in self.results.keys():
-             for p in self.results[target]['objects']:
-                 if p['confidence'] >= confidence:
-                     # found the target in the timeframe
-                     target_found = True
-                     self.logger.debug(f"Camera Found target: {target} , {p}")
-                     break
-"""
 

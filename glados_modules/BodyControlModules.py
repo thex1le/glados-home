@@ -10,29 +10,28 @@ from copy import copy
 
 # 3rd party
 from paho.mqtt.client import MQTTMessage
-from adafruit_servokit import ServoKit
-import neopixel
 import adafruit_pca9685
 import busio
 import board
 from digitalio import DigitalInOut, Direction
 from PIL import Image, ImageDraw
-from adafruit_rgb_display import st7789
-import adafruit_bno055
-import adafruit_vl53l4cd
-
+import neopixel
 
 # glados imports
+from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.MqttClient import MQTTClient, ServoMessageBuilder, IMUMessageBuilder, TOFMessageBuilder
-from glados_modules.LedHelper import LedHelper, NeoPixelAnimations
-from glados_modules.GLaDosEnums import ServoEnum, SystemEnums, LoggingEnums, MQTTEnums, IMUEnums, TOFEnums
+from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
+                                        IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
+from glados_modules.MqttConnector import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
+                                          TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
+from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations
 
 
 class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
                  sck=board.SCK, mosi=board.MOSI, flip=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
+        from adafruit_rgb_display import st7789
         Thread.__init__(self)
         Thread.daemon = True
         self.location = location
@@ -242,6 +241,91 @@ class GladosLCD(Thread, MQTTClient):
         self.stop_loop = True
 
 
+class MoxGas(MQTTClient, Thread):
+    """Manage MOX gas sensor polling and MQTT communication.
+
+    This class inherits from both MQTTClient and Thread to allow continuous sensor
+    data polling in a separate thread and to facilitate MQTT messaging.
+
+    Attributes:
+        MOX_GAS_broker: Broker tuple provided by MQTTClient.
+        logger: Logger instance for recording events.
+        st: SensorTracker instance for temperature and humidity data.
+        mox: MOX sensor instance from adafruit_ens160.ENS160.
+    """
+
+    MOX_GAS_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: Any) -> None:
+        """Initialize the MOX gas sensor, MQTT client, and sensor tracking.
+
+        Args:
+            broker: An object containing broker information with attributes 'ip' and 'port'.
+        """
+        import adafruit_ens160
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        self.logger = setup_logger(
+            name=self.__name__,
+            console_logging=LoggingEnums.LOG_LEVEL_INFO.value
+        )
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        i2c = board.I2C()  # Uses board.SCL and board.SDA for I2C communication
+        # Attach sensor tracker to enable access to temperature and humidity readings.
+        self.st = SensorTracker(broker=broker)
+        self.mox = adafruit_ens160.ENS160(i2c)
+        self.logger.debug(f"Firmware Version: {self.mox.firmware_version}")
+
+    def get_sensor(self) -> Dict[str, Any]:
+        """Retrieve and process sensor data from the MOX gas sensor.
+
+        This method retrieves temperature and humidity data via a SensorTracker,
+        applies compensation to the sensor readings, and gathers the sensor's AQI,
+        TVOC, and eCO2 measurements along with a timestamp.
+
+        Returns:
+            A dictionary containing:
+                - MOX AQI value.
+                - MOX TVOC value.
+                - MOX eCO2 value.
+                - A timestamp indicating when the data was retrieved.
+        """
+        # Get temperature and humidity data
+        th_data = self.st.get_sensor_status(THEnums.TH_STATUS_KEY.value)
+        # Retrieve temperature and humidity compensation values, using defaults if necessary.
+        tc = th_data.get(THEnums.TH_CELSIUS_KEY.value, 25)
+        hc = th_data.get(THEnums.TH_HUMIDITY_KEY.value, 50)
+        self.logger.debug(f"Setting Temperature Compensation to: {tc}")
+        self.mox.temperature_compensation = tc
+        self.logger.debug(f"Setting Humidity Compensation to: {hc}")
+        self.mox.humidity_compensation = hc
+
+        sensor_data: Dict[str, Any] = {
+            MOXEnums.MOX_AQI.value: self.mox.AQI,
+            MOXEnums.MOX_TVOC.value: self.mox.TVOC,
+            MOXEnums.MOX_ECO2.value: self.mox.eCO2,
+            MOXEnums.MOX_TIME_STAMP_KEY.value: time(),
+        }
+        self.logger.debug(f"MOX Data: {sensor_data}")
+        return sensor_data
+
+    def run(self) -> None:
+        """Continuously poll the sensor and publish its status via MQTT.
+
+        This method runs in a separate thread, continuously retrieving sensor data,
+        building a status message, and sending it through the MQTT client.
+        """
+        self.logger.info("MOX Gas Sensor polling started")
+        while True:
+            status = MoxGasMessageBuilder.send_mox_status_message(self.get_sensor())
+            self.send_command(
+                topic=MQTTEnums.MOX_STATUS_TOPIC.value,
+                command=status
+            )
+            sleep(0.1)
+
+
 class TOF(MQTTClient, Thread):
     """TOF control class to poll the TOF and push updates to MQTT.
 
@@ -266,6 +350,7 @@ class TOF(MQTTClient, Thread):
             broker (Any): An object with 'ip' and 'port' attributes required
                 to establish the MQTT connection.
         """
+        import adafruit_vl53l4cd
         self.__name__ = self.__class__.__name__
         Thread.__init__(self)
         self.daemon = True
@@ -317,6 +402,91 @@ class TOF(MQTTClient, Thread):
             sleep(0.1)
 
 
+class TempHumSensor(MQTTClient, Thread):
+    """SHT40 Temp and Humidity control class to poll and push updates to MQTT.
+
+    This class is a multithreaded SHT40 controller that polls sensor data
+    from an Adafruit SHT40 sensor via I2C and publishes updates using MQTT.
+
+    Attributes:
+        SHT40_broker (tuple): The broker tuple obtained from MQTTClient.
+        sht40 (adafruit_sht4x): The sensor object used for readings.
+    """
+
+    SHT40_broker = MQTTClient.broker_tuple
+
+    def __init__(self, broker: Any) -> None:
+        """Initializes the TOF object.
+
+        This method sets up the thread as a daemon, initializes the I2C
+        interface, and creates the sensor object. It also initializes the
+        MQTT client using the provided broker details.
+
+        Args:
+            broker (Any): An object with 'ip' and 'port' attributes required
+                to establish the MQTT connection.
+        """
+        import adafruit_sht4x
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        i2c = board.I2C()  # uses board.SCL and board.SDA
+        self.sht40 = adafruit_sht4x.SHT4x(i2c)
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        self.logger.debug(adafruit_sht4x.Mode.string[self.sht40.mode])
+
+    def convert_c2f(self, temp: float) -> float:
+        """Convert Celsius to Fahrenheit
+
+        This method converts Celsius Temperature data to Fahrenheit
+
+        Args:
+            temp (float): Celsius temperature to convert
+
+        Returns:
+            float: Returns a float of the temperature in Fahrenheit from Celsius
+        """
+        f_temp = (temp * 9 / 5) + 32
+        self.logger.debug(f"Converted {temp}C to {f_temp}F")
+        return round(f_temp, 1)
+
+    def get_sensor(self) -> Dict[str, Any]:
+        """Retrieve sensor data.
+
+        This method gathers sensor Temp Humidity data, It also attaches a timestamp to the reading.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the sensor data, where the keys
+            are defined by the Enums and the values are the corresponding sensor
+            readings.
+        """
+        temp, relative_humid = self.sht40.measurements
+        temp = round(temp, 1)
+        relative_humid = round(relative_humid, 1)
+        sdata: Dict[str, Any] = {
+                THEnums.TH_HUMIDITY_KEY.value: relative_humid,
+                THEnums.TH_CELSIUS_KEY.value: temp,
+                THEnums.TH_FAHRENHEIT_KEY.value: self.convert_c2f(temp),
+                THEnums.TH_TIME_STAMP_KEY.value: time()
+        }
+        self.logger.debug(f"Time and Humidity Data: {sdata}")
+        return sdata
+
+    def run(self) -> None:
+        """Thread loop to send a sensor command 10x a second.
+
+        This method continuously retrieves sensor data, builds a status
+        message using the THMessageBuilder, and sends the command to the
+        designated MQTT topic. The loop runs approximately 10 times per second.
+        """
+        self.logger.info("Temp & Humidity Sensor polling started")
+        while True:
+            status = THMessageBuilder.send_th_status_message(self.get_sensor())
+            self.send_command(topic=MQTTEnums.TH_STATUS_TOPIC.value, command=status)
+            sleep(0.1)
+
+
 class IMU(MQTTClient, Thread):
     """IMU control class to poll the IMU and push updates to MQTT.
 
@@ -342,6 +512,7 @@ class IMU(MQTTClient, Thread):
             broker (Any): An object with 'ip' and 'port' attributes required
                 to establish the MQTT connection.
         """
+        import adafruit_bno055
         self.__name__ = self.__class__.__name__
         Thread.__init__(self)
         self.daemon = True
@@ -414,7 +585,7 @@ class Gservo(MQTTClient, Thread):
     """
     Generic Servo Class to take movement commands from MQTT for a servo and send status to MQTT
     """
-    def __init__(self, location: str, servo: ServoKit.servo, axis: str, broker: NamedTuple,
+    def __init__(self, location: str, servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
         Thread.__init__(self)
@@ -791,7 +962,7 @@ class LedHead(MQTTClient):
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
-        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
@@ -804,25 +975,38 @@ class LedHead(MQTTClient):
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
-        self.location: str = "eye_led"
-        self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco,
-                                                "angry_eye": self.angry_eye, "normal_eye": self.normal_eye}
+        self.location: str = LEDHead.EYE_LED_LOCATION.value
+        self.animations: Dict[str, Callable] = {LEDHead.ANIMATION_STARTUP_KEY.value: self.startup,
+                                                LEDHead.ANIMATION_DISCO_KEY.value: self.disco,
+                                                LEDHead.ANIMATION_ANGRY_EYE_KEY.value: self.angry_eye,
+                                                LEDHead.ANIMATION_NORMAL_EYE_KEY.value: self.normal_eye,
+                                                LEDHead.ANIMATION_SPEECH_EYE_KEY.value: self.speach_eye}
         self.glados_eye: Tuple[int, int, int] = (255, 165, 0)
         MQTTClient.__init__(self, broker.ip, broker.port)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
-            self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            if j_msg[self.location]['command'] in self.animations.keys():
-                self.animations[j_msg[self.location]['command']]()
+        body = j_msg.get(LEDHead.MSG_COMMAND_KEY.value, {})
+        if body.get(LEDHead.MSG_COMMAND_LOCATION_KEY.value, "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
+            animation_key = body.get(LEDHead.MSG_COMMAND_KEY.value, "")
+            if animation_key in self.animations.keys():
+                if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
+                    args = body.get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
+                    # TODO You left off switching this to **KWARGS and just passing the msg in
+                    if args != '':
+                        self.logger.debug("LED Head Animation Triggered with arguments")
+                        self.animations[animation_key](**args)
+                else:
+                    self.logger.debug("LED Head Animation Triggered with no arguments")
+                    self.animations[animation_key]()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
+        if j_msg.get(LEDHead.MSG_COMMAND_TYPE_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            self.intensity = j_msg["intensity"]
+            self.intensity = j_msg[LEDHead.MSG_INTENSITY_KEY.value]
 
     def startup(self) -> None:
         self.logger.debug("Startup Sequence")
@@ -868,15 +1052,31 @@ class LedHead(MQTTClient):
         self.pixels[0] = LedHelper.adjust_brightness(self.glados_eye, self.intensity[1])
         self.pixels.show()
 
-# NOTE you also need to code up a class for the Lamp portion its self...
+    def speach_eye(self, **kwargs) -> None:
+        self.logger.debug("Speech Eye Pulse Triggered")
+        td = LEDHead.ARGS_KEY_TIME_DICT.value
+        delay = LEDHead.ARGS_KEY_DELAY.value
+        if {td, delay}.issubset(kwargs):
+            ds = float(kwargs[delay])
+            self.logger.debug(f"Sleeping for {ds} seconds for audio sync")
+            sleep(ds)
+            for k in kwargs[td].keys():
+                # k is time duration of word & v is time of sleep till next word
+                self.ani.intensity(wait=float(k), color=self.glados_eye, intensity_change=0.002)
+                # fetch value and sleep that long
+                sleep(float(kwargs[td][k]))
+            self.normal_eye()
+        else:
+            self.logger.error(f"Missing either {td} or {delay} in {kwargs} arguments, speech eye animation failed")
 
-# on the pi5 code, need to have classes to read from LIDAR sensor to channel..
-# also need class to read temp senders and have them take action
-# bird detection to kill external power? how will that work...
+    #TODO NOTE you also need to code up a class for the Lamp portion its self...
+
+    #TODO bird detection to kill external power? how will that work...
 
 
 if __name__ == "__main__":
-    ip = '192.168.1.29'
+    from adafruit_servokit import ServoKit
+    ip = '192.168.1.39'
     Angle_tuple = namedtuple("angle", ['max', 'min', 'center'])
     Pulse_tuple = namedtuple("pulse", ['max', 'min'])
     Mqtt_tuple = namedtuple("mqtt", ["ip", "port"])
@@ -903,5 +1103,9 @@ if __name__ == "__main__":
     imu.start()
     tof = TOF(broker=mqtt_connect)
     tof.start()
+    th = TempHumSensor(broker=mqtt_connect)
+    th.start()
+    mg = MoxGas(broker=mqtt_connect)
+    mg.start()
     while True:
         sleep(1)

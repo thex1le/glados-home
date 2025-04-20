@@ -1,6 +1,6 @@
 import socket
 import sys
-from typing import NamedTuple, Optional, Callable, Dict
+from typing import NamedTuple, Optional, Callable, Dict, Any
 from collections import namedtuple
 from threading import Thread
 from json import loads, JSONDecodeError
@@ -12,8 +12,8 @@ from paho.mqtt.client import MQTTMessage
 
 # GLaDos module imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.GLaDosEnums import LoggingEnums, SystemEnums, STTEnums, MQTTEnums
-from glados_modules.MqttClient import MQTTClient, SttMessageBuilder
+from glados_modules.GladosEnums import LoggingEnums, SystemEnums, STTEnums, MQTTEnums
+from glados_modules.MqttConnector import MQTTClient, SttMessageBuilder
 
 
 class AudioServerTx:
@@ -70,11 +70,7 @@ class AudioServerTx:
 
 
 class AudioServerRX(Thread):
-    """Receives an audio byte stream from a remote client.
-
-    This class sets up a TCP server that listens for incoming connections and
-    collects data from clients into a byte stream for further processing.
-    """
+    """Receives an audio byte stream from a remote client concurrently."""
 
     # Create a named tuple for broker configuration (IP and port)
     broker_tuple = namedtuple("broker", ["ip", "port"])
@@ -85,16 +81,8 @@ class AudioServerRX(Thread):
         buffer: int = 4096,
         callback: Optional[Callable[[bytes], None]] = None
     ) -> None:
-        """Initialize an instance of AudioServerRX.
-
-        Args:
-            broker (NamedTuple): Broker configuration containing 'ip' and 'port'.
-            buffer (int, optional): Buffer size in bytes for receiving data. Defaults to 4096.
-            callback (Optional[Callable[[bytes], None]], optional): Callback function to process
-                the received byte stream. Defaults to None, which uses a do-nothing function.
-        """
         Thread.__init__(self)
-        Thread.daemon = True
+        self.daemon = True
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
@@ -107,11 +95,7 @@ class AudioServerRX(Thread):
         self.buffer: int = buffer
 
     def start_server(self) -> None:
-        """Start the TCP server to listen for and receive a byte stream.
-
-        The server runs in an infinite loop, accepting client connections and
-        handling each connection to receive the audio byte stream.
-        """
+        """Start the TCP server to listen for and receive byte streams concurrently."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
             server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server_socket.bind((self.broker.ip, self.broker.port))
@@ -122,35 +106,26 @@ class AudioServerRX(Thread):
                 try:
                     conn, addr = server_socket.accept()
                     self.logger.info(f"Connection established with {addr}")
-                    self.handle_client(conn)
+                    # Spawn a new thread for each client connection
+                    client_thread = Thread(
+                        target=self.handle_client, args=(conn,)
+                    )
+                    client_thread.daemon = True
+                    client_thread.start()
                 except Exception as e:
                     self.logger.error(f"Unexpected server error: {e}")
 
     def run(self) -> None:
-        """
-        Start the TCP server Thread
-        """
+        """Start the TCP server Thread."""
         self.start_server()
 
     @staticmethod
     def do_nothing(data: bytes) -> None:
-        """A callback function that does nothing.
-
-        Args:
-            data (bytes): The received byte stream.
-        """
+        """A callback function that does nothing."""
         pass
 
     def handle_client(self, conn: socket.socket) -> None:
-        """Handle a client connection by receiving the byte stream.
-
-        This method continuously reads data from the client connection until no
-        more data is received. The received data is accumulated into a bytearray
-        and then processed by the callback function.
-
-        Args:
-            conn (socket.socket): The client socket connection.
-        """
+        """Handle a client connection by receiving the byte stream."""
         try:
             received_bytes: bytearray = bytearray()
             while True:
@@ -184,12 +159,17 @@ class LocalSTTtx(MQTTClient):
         import ffmpeg
         self.ffmpeg = ffmpeg
         import whisperx as whisper
+        self.whisper = whisper
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
             name=self.__name__,
             console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
-        self.model = whisper.load_model(whisper_arch="large-v2", device="cuda", compute_type="float16")
+        self.device = 'cuda'
+        self.model = self.whisper.load_model(whisper_arch="large-v2", device=self.device, compute_type="float16")
+        # preload an english algiment model
+        self.en_align_model, self.en_a_metadata = self.whisper.load_align_model(
+            language_code=STTEnums.STT_EN_LANG_KEY.value, device=self.device)
         super().__init__(ip=broker.ip, port=broker.port)
 
     def process_audio(self, byte_stream: bytes) -> None:
@@ -200,14 +180,23 @@ class LocalSTTtx(MQTTClient):
         """
         audio: np.ndarray = self.load_audio_from_bytes(byte_stream)
         results = self.model.transcribe(audio, batch_size=16)
-        self.logger.debug(f"Detected language: {results['language']}")
+        r_lang = results[STTEnums.STT_LANGUAGE_KEY.value]
+        # align the output if its english
+        if r_lang == STTEnums.STT_EN_LANG_KEY.value:
+            results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.en_align_model,
+                                         self.en_a_metadata, audio, self.device, return_char_alignments=False)
+        # add extra timing info to results
+        results, timing_map = self.add_time_metrics_word_segments(results)
+        self.logger.debug(f"Detected language: {r_lang}")
         text = ""
-        for t in results['segments']:
+        for t in results[STTEnums.STT_SEGMENTS_KEY.value]:
             text += t["text"]
         self.logger.debug(f"Detected text: {text}")
         rsp = {
             STTEnums.STT_TEXT_KEY.value: text,
-            STTEnums.STT_LANGUAGE_KEY.value: results["language"],
+            STTEnums.STT_RAW_RESULTS_KEY.value: results,
+            STTEnums.STT_LANGUAGE_KEY.value: r_lang,
+            STTEnums.STT_TIME_MAP_KEY.value: timing_map
         }
         self.logger.debug(f"Detected Language is {rsp[STTEnums.STT_LANGUAGE_KEY.value]}")
         self.send_command(
@@ -236,6 +225,43 @@ class LocalSTTtx(MQTTClient):
         audio_np: np.ndarray = np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
         return audio_np
 
+    @staticmethod
+    def add_time_metrics_word_segments(stt_object: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[float, float]]:
+        """Add timing metrics to each word in the word_segments list.
+
+        This function updates the input STT object by adding two keys to each word in the
+        'word_segments' list:
+            - 'total_time': The duration of the word (end - start).
+            - 'time_to_next': The time gap between the current word's end and the next word's start.
+              For the last word, the value is set to 0.
+
+        Args:
+            stt_object (Dict[str, Any]): The input STT object containing 'word_segments' in
+                STT_RESULTS -> raw.
+
+        Returns:
+            Dict[str, Any]: The modified STT object with added timing information for each word.
+        """
+        time_map = {}
+        word_segments = (
+            stt_object.get(STTEnums.STT_WORD_SEGMENTS_KEY.value, [])
+        )
+        for i, word in enumerate(word_segments):
+            start = word.get("start", 0)
+            end = word.get("end", 0)
+            tt = end - start
+            word["total_time"] = tt
+
+            if i < len(word_segments) - 1:
+                next_start = word_segments[i + 1].get("start", 0)
+                ttn = next_start - end
+                word["time_to_next"] = ttn
+            else:
+                ttn = 0
+                word["time_to_next"] = ttn
+            time_map[tt] = ttn
+        return stt_object, time_map
+
 
 class LocalSTTrx(MQTTClient):
     """Processes local speech-to-text received via MQTT.
@@ -260,12 +286,16 @@ class LocalSTTrx(MQTTClient):
             self.cmd_topic: self.handle_cmd}
         self.text: str = ""
         self.lang: str = ""
+        self.timing_map: dict = {}
+        self.segment_map: dir = {}
         self.last_text: str = ""
         self.last_lang: str = ""
+        self.last_segment_map: dict = {}
+        self.last_timing_map: dict = {}
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         """
-        Handle incoming MQTT commands for the servo
+        Handle incoming MQTT commands for the local speech to text receiver
         :msg: mqtt message to process
         :return:
         """
@@ -279,8 +309,11 @@ class LocalSTTrx(MQTTClient):
             with self._lock:
                 self.text: str = msg.get(STTEnums.STT_TEXT_KEY.value, "")
                 self.lang: str = msg.get(STTEnums.STT_LANGUAGE_KEY.value, "")
+                raw_results: dict = msg.get(STTEnums.STT_RAW_RESULTS_KEY.value, {})
+                self.segment_map: dict = raw_results.get(STTEnums.STT_WORD_SEGMENTS_KEY.value, {})
+                self.timing_map: dict = msg.get(STTEnums.STT_TIME_MAP_KEY.value, {})
 
-    def get_text(self, block: bool = False, timeout: int=10) -> str:
+    def get_text(self, block: bool = False, timeout: int = 10) -> str:
         """
         Return the last text off the mqtt message, or an empty "" if no message or error
         :return:
@@ -295,7 +328,7 @@ class LocalSTTrx(MQTTClient):
         self.last_text = self.text
         return self.text
 
-    def get_lang(self, block: bool = False, timeout: int=10) -> str:
+    def get_lang(self, block: bool = False, timeout: int = 10) -> str:
         """
         Return the language of the last text, or an empty "" if no message or error
         """
@@ -304,18 +337,45 @@ class LocalSTTrx(MQTTClient):
             while self.lang in ("", self.last_lang):
                 # sleep block while we wait for an update
                 sleep(0.1)
-                if time() -t >= timeout:
+                if time() - t >= timeout:
                     break
         self.last_lang = self.lang
         return self.lang
 
+    def get_timing_map(self, block: bool = False, timeout: int = 10) -> dict:
+        """
+        Return map of just the timing of and between words or an empty "" if no message or error
+        """
+        t = time()
+        if block is True:
+            while self.timing_map in ({}, self.last_timing_map):
+                # sleep block while we wait for an update
+                sleep(0.1)
+                if time() - t >= timeout:
+                    break
+        self.last_timing_map = self.timing_map
+        return self.timing_map
+
+    def get_segment_map(self, block: bool = False, timeout: int = 10) -> dict:
+        """
+        Return the language of the last text, or an empty "" if no message or error
+        """
+        t = time()
+        if block is True:
+            while self.segment_map in ({}, self.last_segment_map):
+                # sleep block while we wait for an update
+                sleep(0.1)
+                if time() - t >= timeout:
+                    break
+        self.last_segment_map = self.segment_map
+        return self.segment_map
+
 
 if __name__ == "__main__":
     # Test stub
-    import time
     broker = AudioServerRX.broker_tuple
     server_broker = broker("127.0.0.1", 5000)
-    mqtt_broker = broker("192.168.86.28", 1883)
+    mqtt_broker = broker("192.168.1.39", 1883)
     lstttx = LocalSTTtx(mqtt_broker)
     rx = AudioServerRX(server_broker, callback=lstttx.process_audio)
     rx.start()
@@ -323,6 +383,6 @@ if __name__ == "__main__":
     tx = AudioServerTx(server_broker)
     with open(sys.argv[1], "rb") as f:
         tx.send_bytes(f.read())
-    time.sleep(5)
+    sleep(5)
     print(lsttrx.get_lang())
     print(lsttrx.get_text())

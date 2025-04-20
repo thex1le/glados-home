@@ -38,6 +38,25 @@ class SystemEnums(Enum):
     PI4_B_PLUS: str = "Raspberry Pi 4 Model B Rev 1.4"
     PI5_B_PLUS: str = "Raspberry Pi 5 Model B Rev 1.0"
     X86_SERVER: str = 'x86_server'
+    #SPEAKER_DELAY: int = 1.6686527729034424
+    SPEAKER_DELAY: int = 1.12
+
+
+class LEDHead(Enum):
+    EYE_LED_LOCATION: str = "eye_led"
+    ANIMATION_STARTUP_KEY: str = "startup"
+    ANIMATION_DISCO_KEY: str = "disco"
+    ANIMATION_ANGRY_EYE_KEY: str = "angry_eye"
+    ANIMATION_NORMAL_EYE_KEY: str = "normal_eye"
+    ANIMATION_SPEECH_EYE_KEY: str = "speech_eye"
+    MSG_COMMAND_TYPE_KEY: str = "led"
+    MSG_COMMAND_KEY: str = "command"
+    MSG_INTENSITY_KEY: str = "intensity"
+    MSG_COMMAND_ARGUMENTS_KEY: str = "arguments"
+    MSG_COMMAND_LOCATION_KEY: str = "location"
+    MSG_COMMAND_START_DELAY: str = "start_delay"
+    ARGS_KEY_TIME_DICT: str = "time_dict"
+    ARGS_KEY_DELAY: str = "delay"
 
 
 class STTEnums(Enum):
@@ -50,6 +69,11 @@ class STTEnums(Enum):
     STT_RESULTS_KEY: str = "STT_RESULTS"
     STT_TEXT_KEY: str = "text"
     STT_LANGUAGE_KEY: str = "language"
+    STT_SEGMENTS_KEY: str = "segments"
+    STT_WORD_SEGMENTS_KEY: str = "word_segments"
+    STT_TIME_MAP_KEY: str = "time_map"
+    STT_RAW_RESULTS_KEY: str = "raw"
+    STT_EN_LANG_KEY: str = "en"
 
 
 class IMUEnums(Enum):
@@ -76,6 +100,30 @@ class TOFEnums(Enum):
     TOF_TIME_STAMP_KEY: str = "time"
     TOF_STATUS_KEY: str = "tof_status"
     SENSOR_NAME: str = "TOF"
+
+
+class THEnums(Enum):
+    """
+    Enums for the Temp and Humidity sensor
+    """
+    TH_TIME_STAMP_KEY: str = "time"
+    TH_STATUS_KEY: str = "th_status"
+    TH_HUMIDITY_KEY: str = "humidity"
+    TH_CELSIUS_KEY: str = "celsius"
+    TH_FAHRENHEIT_KEY: str = "fahrenheit"
+    SENSOR_NAME: str = "TH"
+
+
+class MOXEnums(Enum):
+    """
+    Enums for the MOX Gas Sensor Data
+    """
+    MOX_TIME_STAMP_KEY: str = "time"
+    MOX_STATUS_KEY: str = "mox_status"
+    SENSOR_NAME: str = "MOX"
+    MOX_AQI: str = "AQI (1-5):"
+    MOX_TVOC: str = "TVOC (ppb):"
+    MOX_ECO2: str = "eCO2 (ppm):"
 
 
 class MQTTEnums(Enum):

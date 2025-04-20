@@ -35,12 +35,12 @@ import numpy as np
 
 # glados imports
 from glados_modules.GlogConfig import setup_logger
-from glados_modules.Rtsp_Rx import RtspConsumer
+from glados_modules.RTSPClient import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
-from glados_modules.MqttClient import MQTTClient, CameraMessageBuilder
-from glados_modules.GLaDosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums
-from glados_modules.GladosData import ServoLocation
-from glados_modules.Tracker import MotionTrack
+from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
+from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums
+from glados_modules.MqttConsumerModules import ServoLocation
+from glados_modules.VisionTracker import MotionTrack
 
 
 class GLaDOSServerException(Exception):

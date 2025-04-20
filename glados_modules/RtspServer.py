@@ -11,6 +11,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.GLaDosEnums import CameraEnum, LoggingEnums, SystemEnums
 
 
+
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def __init__(self, cam_x, cam_y, fps=30, **properties):
         super(RtspSystem, self).__init__(**properties)
@@ -51,8 +52,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         t = Thread(target=self._thread_rtsp)
         t.start()
 
-    @staticmethod
-    def _thread_rtsp():
+    def _thread_rtsp(self):
         loop = GLib.MainLoop()
         loop.run()
 

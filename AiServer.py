@@ -6,8 +6,8 @@ from os import path
 
 # glados imports
 from glados_modules.MachineVision import MLDetect, GLaDOSServerException
-from glados_modules.WhisperSTT import AudioServerRX, LocalSTTtx, SystemEnums
-from glados_modules.GLaDosEnums import STTEnums
+from glados_modules.WhisperXSpeech2Text import AudioServerRX, LocalSTTtx
+from glados_modules.GladosEnums import STTEnums, SystemEnums
 from gladosTTS import engine as glados_voice
 
 if __name__ == "__main__":
