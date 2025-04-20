@@ -244,7 +244,7 @@ class LocalSTTtx(MQTTClient):
         """
         time_map = {}
         word_segments = (
-            stt_object.get("word_segments", [])
+            stt_object.get(STTEnums.STT_WORD_SEGMENTS_KEY.value, [])
         )
         for i, word in enumerate(word_segments):
             start = word.get("start", 0)
