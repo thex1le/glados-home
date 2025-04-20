@@ -10,7 +10,8 @@ from glados_modules.ChatGPTConnector import GladosGPT
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
 from glados_modules.CameraModule import Camera
-from glados_modules.GladosEnums import CameraEnum
+from glados_modules.GladosEnums import CameraEnum, SystemEnums
+from glados_modules.BodyControlModules import IMU
 
 
 class GladosException(Exception):
@@ -33,6 +34,13 @@ if __name__ == "__main__":
         configp.read(args.conf[0])
     else:
         raise GladosException("Unable to load file {}".format(args.conf[0]))
+    # start the IMU to track movement
+    mqtt_c = configp[SystemEnums.CONFIG_HEAD_MQTT.value]
+    # pull the MQTT server connection info from the config
+    mqtt_broker = IMU.broker_tuple(mqtt_c[SystemEnums.MQTT_SERVER_IP.value], mqtt_c[SystemEnums.MQTT_PORT.value])
+    # pass it to the imu body module and start the IMU polling server
+    imu = IMU(broker=mqtt_broker)
+    imu.start()
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
     gl.speak("Oh Its you! , , Its been a long time...")
