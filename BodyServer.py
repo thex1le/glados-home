@@ -10,7 +10,7 @@ from collections import namedtuple
 from adafruit_servokit import ServoKit
 
 # glados imports
-from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD
+from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD, IMU
 from glados_modules.CameraModule import GLaDOSServerException, Camera
 from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums
 
@@ -78,6 +78,10 @@ if __name__ == "__main__":
                                  animation_path=animation_path)
     glados_right_lcd.start()
     led_head.startup()
+    # startup the IMU sensor in the head
+    imu = IMU(broker=mqtt_connect)
+    imu.start()
+
     cefh = config_p[CameraEnum.CONFIG_HEAD.value]
     head_camera = Camera(configfile=config_p, location=cefh[CameraEnum.CAMERA_HEAD_FACTORY.value],
                          rtspport=int(cefh[CameraEnum.CAMERA_HEAD_PORT.value]))
