@@ -330,12 +330,15 @@ class ServoEnum(Enum):
     LOCATION_BODY_LEFT_RIGHT: str = "body_left_right"
     LOCATION_CORE: str = "body"
     SERVO_DEFAULT_SPEED: int = 1
-    IMU_GYRO_THRESH = "imu_gyro_threshold"
-    IMU_GYRO_SPIKE_THRESH = "imu_gyro_spike_threshold"
-    IMU_ACCEL_THRESH = "imu_accel_threshold"
-    IMU_ACCEL_SPIKE_THRESH = "imu_accel_spike_threshold"
-    IMU_JERK_THRESHOLD = "imu_jerk_threshold"
-    IMU_HOLD_FRAME_COUNT = "imu_hold_stable_frame_count"
+    # rads/s
+    IMU_GYRO_THRESH: float = 0.03
+    IMU_GYRO_SPIKE_THRESH: float = 0.5
+    # m/s squared
+    IMU_ACCEL_THRESH: float = 0.2
+    IMU_ACCEL_SPIKE_THRESH: float = 5.0
+    IMU_JERK_THRESHOLD: int = 20
+    # frame count to wait
+    IMU_HOLD_FRAME_COUNT: int = 1
     IMU_MOVEMENT_SHOCK: str = "shock"
     IMU_MOVEMENT_SERVO: str = "normal_movement"
     MSG_LOCATION_KEY: str = "servo"
