@@ -274,15 +274,20 @@ class ServoLocation(MQTTClient):
         Returns:
             bool: True if any servo is moving, False otherwise.
         """
-        if not self.body_map or len(self.body_map) != len(self.servo_list):
-            self.logger.debug("Servo map incomplete, updating servo statuses.")
-            self.update_servo_status()
-        for servo in self.servo_list:
-            if servo not in self.body_map:
-                continue
-            if self.body_map[servo].moving is True:
-                return True
-        return False
+        ret = False
+        # prefer an imu check over a much longer servo status check
+        if self.get_imu_moving_status() is True:
+            ret = True
+        else:
+            if not self.body_map or len(self.body_map) != len(self.servo_list):
+                self.logger.debug("Servo map incomplete, updating servo statuses.")
+                self.update_servo_status()
+            for servo in self.servo_list:
+                if servo not in self.body_map:
+                    continue
+                if self.body_map[servo].moving is True:
+                    ret = True
+        return ret
 
 
 class VisionTracker(MQTTClient):
