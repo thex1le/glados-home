@@ -171,10 +171,10 @@ class ServoLocation(MQTTClient):
         Returns:
             Dict[Any, Any]: A dictionary representing the latest raw IMU status.
         """
-        imu_status = st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
+        imu_status = self.st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
         while imu_status == {} and block is True:
             # block until we get a status
-            imu_status = st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
+            imu_status = self.st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
         self.imu_status = imu_status
         return imu_status
 
