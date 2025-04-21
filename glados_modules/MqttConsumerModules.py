@@ -40,7 +40,6 @@ class ServoLocation(MQTTClient):
         # Initialize topic handlers for servo and IMU messages
         self.topic_handler: Dict[str, Callable[[MQTTMessage], None]] = {
             ServoEnum.MQTT_STATUS_TOPIC.value: self.servo_handle_cmd,
-            MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
         }
         self.body_map: Dict[Any, Any] = {}
         self.min: str = ServoEnum.MSG_MIN.value
@@ -50,6 +49,16 @@ class ServoLocation(MQTTClient):
         self.moving: str = ServoEnum.MSG_MOVING.value
         self.axis: str = ServoEnum.MSG_AXIS.value
         self.last_angle: str = ServoEnum.MSG_LAST_ANGLE.value
+        self.gyro_thresh: float = float(ServoEnum.IMU_GYRO_THRESH.value)
+        self.gyro_spike_thresh: float = float(ServoEnum.IMU_GYRO_SPIKE_THRESH.value)
+        self.accel_thresh: float = float(ServoEnum.IMU_ACCEL_THRESH.value)
+        self.accel_spike_thresh: float = float(ServoEnum.IMU_ACCEL_SPIKE_THRESH.value)
+        self.jerk_threshold: float = float(ServoEnum.IMU_JERK_THRESHOLD.value)
+        self.stable_frames: int = int(ServoEnum.IMU_HOLD_FRAME_COUNT.value)
+        self.gyro_stable_count: int = 0
+        self.accel_stable_count: int = 0
+        self._last_time: float = time()
+        self._last_accel: int = 0
         self.ServoTuple = namedtuple(
             ServoEnum.MSG_LOCATION_KEY.value,
             [
@@ -71,6 +80,7 @@ class ServoLocation(MQTTClient):
         )
         # Initialize IMU status mapping
         self.imu_status: Dict[Any, Any] = {}
+        self.st = SensorTracker(broker=broker)
         # Call the superclass constructor for MQTT client initialization
         super().__init__(ip=broker.ip, port=broker.port)
 
@@ -127,22 +137,6 @@ class ServoLocation(MQTTClient):
             self.logger.error(f"Failed to decode JSON message: {e}")
         return rtn
 
-    def imu_handle_cmd(self, msg: MQTTMessage) -> None:
-        """Handle incoming IMU status messages.
-
-        This method processes an incoming IMU status MQTT message and updates
-        the internal IMU status if the expected key is present.
-
-        Args:
-            msg (MQTTMessage): The MQTT message containing IMU status.
-        """
-        j_msg: Dict[str, Any] = self.__load_message(msg)
-        if not j_msg:
-            self.logger.error("Failed to decode imu status message")
-        elif IMUEnums.IMU_STATUS_KEY.value in j_msg:
-            self.logger.debug("Received IMU status message")
-            self.imu_status = j_msg[IMUEnums.IMU_STATUS_KEY.value]
-
     def servo_handle_cmd(self, msg: MQTTMessage) -> None:
         """Handle incoming servo status messages.
 
@@ -171,13 +165,94 @@ class ServoLocation(MQTTClient):
                     results.get(self.last_angle),
                 )
 
-    def get_imu_status(self) -> Dict[Any, Any]:
+    def get_imu_status(self, block: bool = True) -> Dict[Any, Any]:
         """Get the current IMU status.
 
         Returns:
-            Dict[Any, Any]: A dictionary representing the latest IMU status.
+            Dict[Any, Any]: A dictionary representing the latest raw IMU status.
         """
-        return self.imu_status
+        imu_status = st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
+        while imu_status == {} and block is True:
+            # block until we get a status
+            imu_status = st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value)
+        self.imu_status = imu_status
+        return imu_status
+
+    def get_imu_moving_status(self) -> bool:
+        """Return if the IMU is showing movement
+
+        Returns:
+            Bool[True, False]: A bool if the IMU in robot head is stable or not
+        """
+        ret = False
+        if self.imu_status != {}:
+            # 1) rotational rate
+            gx, gy, gz = self.imu_status['gyroscope']
+            gyro_mag = max(abs(gx), abs(gy), abs(gz))
+            # 2) linear acceleration (gravity‐subtracted)
+            lx, ly, lz = self.imu_status['linear']
+            accel_mag = max(abs(lx), abs(ly), abs(lz))
+            # if we're below threshold, increment stability counter
+            if gyro_mag < self.gyro_thresh:
+                self.gyro_stable_count += 1
+            else:
+                self.gyro_stable_count = 0
+            if accel_mag < self.accel_thresh:
+                self.accel_stable_count += 1
+            else:
+                self.accel_stable_count = 0
+            ret = self.gyro_stable_count >= self.stable_frames and self.accel_stable_count >= self.stable_frames
+        return ret
+
+    def get_imu_movement_type(self) -> str:
+        """
+        Returns one of:
+          - IMU_MOVEMENT_SERVO  ("normal_movement")
+          - IMU_MOVEMENT_SHOCK  ("shock")
+          - None                 (i.e. still/idle, no movement at all)
+        """
+        imu = self.get_imu_status()
+        # 1) commanded?
+        commanded = self.check_movement()
+
+        # 2) compute gyro & accel magnitudes
+        gx, gy, gz = imu['gyroscope']
+        lx, ly, lz = imu['linear']  # already gravity‑subtracted
+        gyro_mag = max(abs(gx), abs(gy), abs(gz))
+        accel_mag = max(abs(lx), abs(ly), abs(lz))
+
+        # 3) compute jerk
+        now = imu['time']
+        # assume self._last_accel and self._last_time stored from previous call
+        if hasattr(self, '_last_time') and now > self._last_time:
+            dt = now - self._last_time
+            jerk = abs(accel_mag - self._last_accel) / dt
+        else:
+            jerk = 0.0
+        self._last_accel = accel_mag
+        self._last_time = now
+
+        # 4) spike test
+        is_spike = (
+                gyro_mag > self.gyro_spike_thresh or
+                accel_mag > self.accel_spike_thresh or
+                jerk > self.jerk_threshold
+        )
+
+        # 5) classify
+        if commanded:
+            # during a servo‐driven motion
+            return (
+                ServoEnum.IMU_MOVEMENT_SHOCK.value
+                if is_spike
+                else ServoEnum.IMU_MOVEMENT_SERVO.value
+            )
+        else:
+            # idle robot
+            if is_spike:
+                return ServoEnum.IMU_MOVEMENT_SHOCK.value
+            else:
+                return None
 
     def get_angle_map(self) -> Dict[Any, Any]:
         """Retrieve a copy of the servo angle map.
