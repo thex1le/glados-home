@@ -578,7 +578,7 @@ class IMU(MQTTClient, Thread):
         while True:
             status = IMUMessageBuilder.send_imu_status_message(self.get_sensor())
             self.send_command(topic=MQTTEnums.IMU_STATUS_TOPIC.value, command=status)
-            sleep(0.04)
+            sleep(0.1)
 
 
 class Gservo(MQTTClient, Thread):
