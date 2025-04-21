@@ -593,14 +593,16 @@ class Gservo(MQTTClient, Thread):
         self.stop = False
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         # 1 degree movement speed
-        degree_per_second = servo_speed / 60
-        self.speed_settings = {
-            1: degree_per_second * 5,  # Calm movement
-            2: degree_per_second * 4,  # Neutral
-            3: degree_per_second * 3,  # Slightly agitated
-            4: degree_per_second * 2,  # Angry
-            5: degree_per_second * 1   # Frustrated/fastest
+        degree_per_second = 60 / servo_speed
+        fractions = {
+            1: 0.20,  # Calm movement
+            2: 0.40,  # Neutral
+            3: 0.60,  # Slightly agitated
+            4: 0.80,  # Angry
+            5: 1.00   # Frustrated/fastest
         }
+        self.speed_settings = {lvl: degree_per_second * frac
+                               for lvl, frac in fractions.items()}
         self.location: str = location
         self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC.value
         self.status_topic = ServoEnum.MQTT_STATUS_TOPIC.value
@@ -634,15 +636,12 @@ class Gservo(MQTTClient, Thread):
         :return: The time (in seconds) it will take to complete the movement.
         """
         with self._lock:
-            # Determine the distance (degrees) the servo will move
-            distance_to_travel = abs(self.current_angle - target_angle)
-            # Get the speed in degrees per second from the speed settings
-            speed_in_degrees_per_second = self.speed_settings[self.speed]
-
-        # Calculate the time required to move the specified distance at the current speed
-        move_time = distance_to_travel / speed_in_degrees_per_second
-        self.logger.debug(f"Calculated move time: {move_time} seconds to move {distance_to_travel} degrees "
-                          f"at speed setting {self.speed} ({speed_in_degrees_per_second} degrees/second)")
+            distance = abs(self.current_angle - target_angle)
+            # speed_settings[self.speed] is now °/s
+            move_time = distance / self.speed_settings[self.speed]
+            self.logger.debug(
+                f"Moving {distance}° at {self.speed_settings[self.speed]:.1f}°/s → {move_time:.3f}s"
+            )
         return move_time
 
     def send_status(self) -> None:
@@ -751,42 +750,55 @@ class Gservo(MQTTClient, Thread):
 
     def s_curve_move(self) -> None:
         """
-        Calculate S curves and send small steps to the servo to move
-        :return:
+        Calculate S curves and send small steps to the servo to move,
+        while remaining thread-safe and responsive to new commands.
         """
+        # grab everything we need under the lock, then release
         with self._lock:
-            total_distance = abs(self.angle - self.current_angle)
-            target_angle = copy(self.angle)
-            current_angle = copy(self.current_angle)
-            speed_setting = copy(self.speed_settings[self.speed])
-
-        if total_distance != 0:
-            # Time for full move
-            full_time = total_distance * speed_setting
-            # Divide the movement into small steps
-            steps = 100
-            time_per_step = full_time / steps
-            for i in range(steps + 1):
-                # Calculate S-curve (using a simple cosine-based ease-in and ease-out)
-                t = i / steps
-                if t < 0.5:
-                    t = 2 * t ** 2
-                else:
-                    t = -1 + (4 - 2 * t) * t
-                new_angle = current_angle + (target_angle - current_angle) * t
-                with self._lock:
-                    self.servo.angle = new_angle
-                    self.current_angle = target_angle
-                    # allow for dynamic updates and break the loop if there is an update
-                    if target_angle != self.angle:
-                        # we have a new angle break the loop
-                        self.logger.debug(f"New angle Request breaking movement for {self.location}")
-                        break
-                    else:
-                        sleep(time_per_step)
-            self.logger.debug(f"{self.location}, sleeping for {full_time} seconds while we move")
-            self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
+            target = self.angle
+            current = self.current_angle
+            speed_dps = self.speed_settings[self.speed]
+        distance = abs(target - current)
+        if distance == 0 or speed_dps <= 0:
             return
+        # total time to move (seconds)
+        full_time = distance / speed_dps
+        steps = 100
+        dt = full_time / steps
+        for i in range(steps + 1):
+            # check for an updated command
+            with self._lock:
+                if self.angle != target:
+                    self.logger.debug(
+                        f"{self.location}: "
+                        f"new target {self.angle} detected, aborting S‑curve at step {i}"
+                    )
+                    return
+                base_current = current
+                base_target  = target
+
+            # simple cosine S-curve
+            t = i / steps
+            if t < 0.5:
+                t = 2 * t * t
+            else:
+                t = -1 + (4 - 2 * t) * t
+            new_angle = base_current + (base_target - base_current) * t
+            # apply the step
+            with self._lock:
+                self.servo.angle = new_angle
+                self.current_angle = new_angle
+            sleep(dt)
+        # final snap to exactly the target
+        with self._lock:
+            self.servo.angle = self.angle
+            self.current_angle = self.angle
+
+        self.logger.debug(
+            f"{self.location}: "
+            f"completed S‑curve {distance:.1f}° in {full_time:.3f}s "
+            f"(@ {speed_dps:.1f}°/s)"
+        )
 
     def get_moving_status(self) -> bool:
         """
