@@ -828,6 +828,7 @@ class Gservo(MQTTClient, Thread):
                     self.moving = False
         # settle after the move
         self.send_status()
+        sleep(0.2)
 
 
 class LedShoulders(MQTTClient):
