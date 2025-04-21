@@ -610,3 +610,6 @@ if __name__ == "__main__":
     print(st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value))
     print(st.get_sensor_status(THEnums.TH_STATUS_KEY.value))
     print(st.get_sensor_status(MOXEnums.MOX_STATUS_KEY.value))
+    while True:
+        print(st.get_sensor_status(IMUEnums.IMU_STATUS_KEY.value))
+        sleep(.2)
