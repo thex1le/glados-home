@@ -209,23 +209,20 @@ class MLDetect(Thread, MQTTClient):
         Start a separate tracking thread for each camera.
         """
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
-        pose_model: Optional[Wholebody] = None
         for camera_key in self.cam_configs.keys():
             with safe_globals([DetectionModel, Sequential, Conv]):
                 detection_model = YOLO(self.model_config)
-            if camera_key == CameraEnum.CAMERA_HEAD.value:
-                # only build a pose model for the camera head
-                self.logger.debug("Creating Pose model")
-                openpose_skeleton = False  # True for openpose-style, False for mmpose-style
-                backend = 'onnxruntime'  # opencv, onnxruntime, openvino
-                pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
+            self.logger.debug("Creating Pose model")
+            openpose_skeleton = False  # True for openpose-style, False for mmpose-style
+            backend = 'onnxruntime'  # opencv, onnxruntime, openvino
+            pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
             thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
                                                                        detection_model, pose_model), daemon=True)
             thread.start()
             self.cam_configs[camera_key]["tracker_thread"] = thread
 
     def __process_image(self, image_dict: Dict[str, Any], d_model: YOLO,
-                        p_model: Optional[Wholebody]) -> Dict[str, Any]:
+                        p_model: Wholebody) -> Dict[str, Any]:
         """
         Process a single image with YOLO detection and optional RTM pose estimation.
         Annotate the image, draw bounding boxes and pose skeleton, and stream via RTSP.
