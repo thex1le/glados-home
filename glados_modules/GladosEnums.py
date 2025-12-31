@@ -1,138 +1,137 @@
 from enum import Enum
 from logging import DEBUG, INFO
-from typing import Dict
 
 
 class LoggingEnums(Enum):
     """Enum class to store logging-related constants."""
-    LOG_LEVEL_DEBUG: int = DEBUG
-    LOG_LEVEL_INFO: int = INFO
-    LOG_FOLDER_DEFAULT_NAME: str = "logs"
-    LOG_FILE_TYPE: str = ".log"
-    LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    LOG_LEVEL_DEBUG = DEBUG
+    LOG_LEVEL_INFO = INFO
+    LOG_FOLDER_DEFAULT_NAME = "logs"
+    LOG_FILE_TYPE = ".log"
+    LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
 class SystemEnums(Enum):
     """Enum class to store GLaDOS system-related constants."""
-    MQTT_INTENSITY_TOPIC: str = "intensity"
-    CONFIG_HEAD_MQTT: str = "MQTT"
-    CONFIG_HEAD_DEFAULT: str = "DEFAULT"
-    CONFIG_HEAD_LOCALSPEAK: str = "LOCALSPEAK"
-    MQTT_PORT: str = "mqtt_port"
-    MQTT_SERVER_IP: str = "mqtt_server_ip"
-    CONFIG_HEAD_RTSP: str = "RTSP"
-    RTSP_PORT: str = "rtsp_port"
-    RTSP_SERVER_IP: str = "rtsp_server_ip"
-    APERTURE_ANIMATION: str = "aperture_animation"
-    WORKING_ROOT: str = "working_root"
-    VOLUME_LEVEL: str = "VolumeLevel"
-    VOICE_URL: str = "VoiceUrl"
-    RIGHT_LCD: str = "right_lcd"
-    LEFT_LCD: str = "left_lcd"
-    LIB_ASOUND: str = "libasound.so"
-    BROKER_IP: str = 'ip'
-    BROKER_PORT: str = 'port'
-    BROKER: str = 'broker'
-    #SPEAKER_DELAY: int = 1.6686527729034424
-    SPEAKER_DELAY: int = 1.12
+    MQTT_INTENSITY_TOPIC = "intensity"
+    CONFIG_HEAD_MQTT = "MQTT"
+    CONFIG_HEAD_DEFAULT = "DEFAULT"
+    CONFIG_HEAD_LOCALSPEAK = "LOCALSPEAK"
+    MQTT_PORT = "mqtt_port"
+    MQTT_SERVER_IP = "mqtt_server_ip"
+    CONFIG_HEAD_RTSP = "RTSP"
+    RTSP_PORT = "rtsp_port"
+    RTSP_SERVER_IP = "rtsp_server_ip"
+    APERTURE_ANIMATION = "aperture_animation"
+    WORKING_ROOT = "working_root"
+    VOLUME_LEVEL = "VolumeLevel"
+    VOICE_URL = "VoiceUrl"
+    RIGHT_LCD = "right_lcd"
+    LEFT_LCD = "left_lcd"
+    LIB_ASOUND = "libasound.so"
+    BROKER_IP = 'ip'
+    BROKER_PORT = 'port'
+    BROKER = 'broker'
+    # SPEAKER_DELAY: int = 1.6686527729034424
+    SPEAKER_DELAY = 1.12
 
 
 class LEDHead(Enum):
-    EYE_LED_LOCATION: str = "eye_led"
-    ANIMATION_STARTUP_KEY: str = "startup"
-    ANIMATION_DISCO_KEY: str = "disco"
-    ANIMATION_ANGRY_EYE_KEY: str = "angry_eye"
-    ANIMATION_NORMAL_EYE_KEY: str = "normal_eye"
-    ANIMATION_SPEECH_EYE_KEY: str = "speech_eye"
-    MSG_COMMAND_TYPE_KEY: str = "led"
-    MSG_COMMAND_KEY: str = "command"
-    MSG_INTENSITY_KEY: str = "intensity"
-    MSG_COMMAND_ARGUMENTS_KEY: str = "arguments"
-    MSG_COMMAND_LOCATION_KEY: str = "location"
-    MSG_COMMAND_START_DELAY: str = "start_delay"
-    ARGS_KEY_TIME_DICT: str = "time_dict"
-    ARGS_KEY_DELAY: str = "delay"
+    EYE_LED_LOCATION = "eye_led"
+    ANIMATION_STARTUP_KEY = "startup"
+    ANIMATION_DISCO_KEY = "disco"
+    ANIMATION_ANGRY_EYE_KEY = "angry_eye"
+    ANIMATION_NORMAL_EYE_KEY = "normal_eye"
+    ANIMATION_SPEECH_EYE_KEY = "speech_eye"
+    MSG_COMMAND_TYPE_KEY = "led"
+    MSG_COMMAND_KEY = "command"
+    MSG_INTENSITY_KEY = "intensity"
+    MSG_COMMAND_ARGUMENTS_KEY = "arguments"
+    MSG_COMMAND_LOCATION_KEY = "location"
+    MSG_COMMAND_START_DELAY = "start_delay"
+    ARGS_KEY_TIME_DICT = "time_dict"
+    ARGS_KEY_DELAY = "delay"
 
 
 class STTEnums(Enum):
     """
     Enums for the Speech to text engine
     """
-    CONFIG_HEAD_STT: str = "STT"
-    STT_SERVER_IP: str = "stt_server_ip"
-    STT_SERVER_PORT: str = "stt_server_port"
-    STT_RESULTS_KEY: str = "STT_RESULTS"
-    STT_TEXT_KEY: str = "text"
-    STT_LANGUAGE_KEY: str = "language"
-    STT_SEGMENTS_KEY: str = "segments"
-    STT_WORD_SEGMENTS_KEY: str = "word_segments"
-    STT_TIME_MAP_KEY: str = "time_map"
-    STT_RAW_RESULTS_KEY: str = "raw"
-    STT_EN_LANG_KEY: str = "en"
+    CONFIG_HEAD_STT = "STT"
+    STT_SERVER_IP = "stt_server_ip"
+    STT_SERVER_PORT = "stt_server_port"
+    STT_RESULTS_KEY = "STT_RESULTS"
+    STT_TEXT_KEY = "text"
+    STT_LANGUAGE_KEY = "language"
+    STT_SEGMENTS_KEY = "segments"
+    STT_WORD_SEGMENTS_KEY = "word_segments"
+    STT_TIME_MAP_KEY = "time_map"
+    STT_RAW_RESULTS_KEY = "raw"
+    STT_EN_LANG_KEY = "en"
 
 
 class IMUEnums(Enum):
     """
     Enums for the IMU Sensor Data
     """
-    TEMP_KEY: str = "temperature"
-    ACCEL_KEY: str = "accelerometer"
-    MAGNETO_KEY: str = "magnetometer"
-    GYRO_KEY: str = "gyroscope"
-    EULER_KEY: str = "euler"
-    QUAT_KEY: str = "quaternion"
-    LINEAR_KEY: str = "linear"
-    GRAVITY_KEY: str = "gravity"
-    IMU_STATUS_KEY: str = "imu_status"
-    IMU_TIME_STAMP_KEY: str = "time"
-    SENSOR_NAME: str = "IMU"
+    TEMP_KEY = "temperature"
+    ACCEL_KEY = "accelerometer"
+    MAGNETO_KEY = "magnetometer"
+    GYRO_KEY = "gyroscope"
+    EULER_KEY = "euler"
+    QUAT_KEY = "quaternion"
+    LINEAR_KEY = "linear"
+    GRAVITY_KEY = "gravity"
+    IMU_STATUS_KEY = "imu_status"
+    IMU_TIME_STAMP_KEY = "time"
+    SENSOR_NAME = "IMU"
 
 
 class TOFEnums(Enum):
     """
     Enums for the TOF Sensor Data
     """
-    TOF_TIME_STAMP_KEY: str = "time"
-    TOF_STATUS_KEY: str = "tof_status"
-    SENSOR_NAME: str = "TOF"
+    TOF_TIME_STAMP_KEY = "time"
+    TOF_STATUS_KEY = "tof_status"
+    SENSOR_NAME = "TOF"
 
 
 class THEnums(Enum):
     """
     Enums for the Temp and Humidity sensor
     """
-    TH_TIME_STAMP_KEY: str = "time"
-    TH_STATUS_KEY: str = "th_status"
-    TH_HUMIDITY_KEY: str = "humidity"
-    TH_CELSIUS_KEY: str = "celsius"
-    TH_FAHRENHEIT_KEY: str = "fahrenheit"
-    SENSOR_NAME: str = "TH"
+    TH_TIME_STAMP_KEY = "time"
+    TH_STATUS_KEY = "th_status"
+    TH_HUMIDITY_KEY = "humidity"
+    TH_CELSIUS_KEY = "celsius"
+    TH_FAHRENHEIT_KEY = "fahrenheit"
+    SENSOR_NAME = "TH"
 
 
 class MOXEnums(Enum):
     """
     Enums for the MOX Gas Sensor Data
     """
-    MOX_TIME_STAMP_KEY: str = "time"
-    MOX_STATUS_KEY: str = "mox_status"
-    SENSOR_NAME: str = "MOX"
-    MOX_AQI: str = "AQI (1-5):"
-    MOX_TVOC: str = "TVOC (ppb):"
-    MOX_ECO2: str = "eCO2 (ppm):"
+    MOX_TIME_STAMP_KEY = "time"
+    MOX_STATUS_KEY = "mox_status"
+    SENSOR_NAME = "MOX"
+    MOX_AQI = "AQI (1-5):"
+    MOX_TVOC = "TVOC (ppb):"
+    MOX_ECO2 = "eCO2 (ppm):"
 
 
 class MQTTEnums(Enum):
     """
     Enum for MQTT Topics
     """
-    STT_RESULTS_MQTT_TOPIC: str = "sst/results"
-    VISION_RESULTS_MQTT_TOPIC: str = "vision/camera_response"
-    BODY_LED_CONTROL_MQTT_TOPIC: str = "body/led"
-    IMU_STATUS_TOPIC: str = "body/imu/status"
-    TOF_STATUS_TOPIC: str = "body/tof/status"
-    MOX_STATUS_TOPIC: str = "body/mox/status"
-    SYSTEM_INTENSITY_TOPIC: str = "intensity"
-    TH_STATUS_TOPIC: str = "body/th/status"
+    STT_RESULTS_MQTT_TOPIC = "sst/results"
+    VISION_RESULTS_MQTT_TOPIC = "vision/camera_response"
+    BODY_LED_CONTROL_MQTT_TOPIC = "body/led"
+    IMU_STATUS_TOPIC = "body/imu/status"
+    TOF_STATUS_TOPIC = "body/tof/status"
+    MOX_STATUS_TOPIC = "body/mox/status"
+    SYSTEM_INTENSITY_TOPIC = "intensity"
+    TH_STATUS_TOPIC = "body/th/status"
 
 
 class VisionResultsEnum(Enum):
@@ -148,17 +147,17 @@ class VisionResultsEnum(Enum):
     """
 
     # Keys for object detection results
-    VISION_RESULTS_COUNT_KEY: str = "count"
-    VISION_RESULTS_RESULTS_KEY: str = "results"
-    VISION_RESULTS_OBJECTS_KEY: str = "objects"
-    VISION_RESULTS_CLASS_KEY: str = "class_name"
-    VISION_RESULTS_CONFIDENCE_KEY: str = "confidence"
-    VISION_RESULTS_TS_KEY: str = "ts"
-    VISION_RESULTS_BOX_KEY: str = "box"
+    VISION_RESULTS_COUNT_KEY = "count"
+    VISION_RESULTS_RESULTS_KEY = "results"
+    VISION_RESULTS_OBJECTS_KEY = "objects"
+    VISION_RESULTS_CLASS_KEY = "class_name"
+    VISION_RESULTS_CONFIDENCE_KEY = "confidence"
+    VISION_RESULTS_TS_KEY = "ts"
+    VISION_RESULTS_BOX_KEY = "box"
     # Key used for class name in YOLO results
-    YOLO_CLASS_NAME_KEY: str = "name"
+    YOLO_CLASS_NAME_KEY = "name"
 
-    VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY: Dict[int, str] = {
+    VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY = {
                 # COCO WholeBody keypoint mapping (133 Key points)
                 # Body Key points (0-16)
                 0: "Nose",
@@ -312,113 +311,113 @@ class ServoEnum(Enum):
     """
     Enum of servo location names for use in mqtt topics and other interactions with them
     """
-    CONFIG_HEAD: str = "SERVOS"
+    CONFIG_HEAD = "SERVOS"
     DEFAULT_MAX_MIN_CENTER = "default_max_min_center"
     HEAD_MIN_MAX_CENTER = "head_min_max_center"
     NECK_MIN_MAX_CENTER = "neck_min_max_center"
-    SERVO_MG90D_SPEED: str = "mg90d_speed"
-    SERVO_MG92B_SPEED: str = "mg92b_speed"
-    SERVO_M995R_SPEED: str = "mg995r_speed"
-    SERVO_MG90D_PULSE: str = "mg90d_pulse"
-    SERVO_MG92B_PULSE: str = "mg92b_pulse"
-    SERVO_M995R_PULSE: str = "mg995r_pulse"
-    SERVO_GS3508MG_PULSE: str = "gs3508mg_pulse"
-    SERVO_GS3508MG_SPEED: str = "gs3508mg_speed"
-    LOCATION_HEAD_UP_DOWN: str = "head_up_down"
-    LOCATION_HEAD_LEFT_RIGHT: str = "head_left_right"
-    LOCATION_BODY_UP_DOWN: str = "body_up_down"
-    LOCATION_BODY_LEFT_RIGHT: str = "body_left_right"
-    LOCATION_CORE: str = "body"
-    SERVO_DEFAULT_SPEED: int = 1
+    SERVO_MG90D_SPEED = "mg90d_speed"
+    SERVO_MG92B_SPEED = "mg92b_speed"
+    SERVO_M995R_SPEED = "mg995r_speed"
+    SERVO_MG90D_PULSE = "mg90d_pulse"
+    SERVO_MG92B_PULSE = "mg92b_pulse"
+    SERVO_M995R_PULSE = "mg995r_pulse"
+    SERVO_GS3508MG_PULSE = "gs3508mg_pulse"
+    SERVO_GS3508MG_SPEED = "gs3508mg_speed"
+    LOCATION_HEAD_UP_DOWN = "head_up_down"
+    LOCATION_HEAD_LEFT_RIGHT = "head_left_right"
+    LOCATION_BODY_UP_DOWN = "body_up_down"
+    LOCATION_BODY_LEFT_RIGHT = "body_left_right"
+    LOCATION_CORE = "body"
+    SERVO_DEFAULT_SPEED = 1
     # rads/s
-    IMU_GYRO_THRESH: float = 0.03
-    IMU_GYRO_SPIKE_THRESH: float = 0.5
+    IMU_GYRO_THRESH = 0.03
+    IMU_GYRO_SPIKE_THRESH = 0.5
     # m/s squared
-    IMU_ACCEL_THRESH: float = 0.2
-    IMU_ACCEL_SPIKE_THRESH: float = 5.0
-    IMU_JERK_THRESHOLD: int = 20
+    IMU_ACCEL_THRESH = 0.2
+    IMU_ACCEL_SPIKE_THRESH = 5.0
+    IMU_JERK_THRESHOLD = 20
     # frame count to wait
-    IMU_HOLD_FRAME_COUNT: int = 1
-    IMU_MOVEMENT_SHOCK: str = "shock"
-    IMU_MOVEMENT_SERVO: str = "normal_movement"
-    MSG_LOCATION_KEY: str = "servo"
-    MSG_COMMAND_KEY: str = "cmd"
-    MSG_COMMAND_MOVE: str = "move"
-    MSG_COMMAND_STATUS: str = "status"
-    MSG_RESULTS: str = "results"
-    MSG_ANGLE: str = "angle"
-    MSG_SPEED: str = "speed"
-    MSG_MAX: str = "max"
-    MSG_MIN: str = "min"
-    MSG_MIDDLE: str = "middle"
-    MSG_CURRENT_ANGLE: str = "current"
-    MSG_LAST_ANGLE: str = "last"
-    MSG_LOCATION: str = "location"
-    MSG_MOVING: str = "moving"
-    MSG_AXIS: str = "axis"
-    X_AXIS: str = "x"
-    Y_AXIS: str = "y"
-    MQTT_COMMAND_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}"
-    MQTT_STATUS_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
+    IMU_HOLD_FRAME_COUNT = 1
+    IMU_MOVEMENT_SHOCK = "shock"
+    IMU_MOVEMENT_SERVO = "normal_movement"
+    MSG_LOCATION_KEY = "servo"
+    MSG_COMMAND_KEY = "cmd"
+    MSG_COMMAND_MOVE = "move"
+    MSG_COMMAND_STATUS = "status"
+    MSG_RESULTS = "results"
+    MSG_ANGLE = "angle"
+    MSG_SPEED = "speed"
+    MSG_MAX = "max"
+    MSG_MIN = "min"
+    MSG_MIDDLE = "middle"
+    MSG_CURRENT_ANGLE = "current"
+    MSG_LAST_ANGLE = "last"
+    MSG_LOCATION = "location"
+    MSG_MOVING = "moving"
+    MSG_AXIS = "axis"
+    X_AXIS = "x"
+    Y_AXIS = "y"
+    MQTT_COMMAND_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}"
+    MQTT_STATUS_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
 
 
 class CameraEnum(Enum):
     """
     Enum of camera location names for use in mqtt topics and other interactions with them
     """
-    CONFIG_HEAD: str = "CAMERAS"
-    LOCATION_CORE: str = "vision"
-    MSG_LOCATION_KEY: str = "camera"
-    MSG_CAMERA_NUMBER: str = "number"
-    MSG_COMMAND_STATUS: str = "status"
-    MSG_COMMAND_KEY: str = "cmd"
-    MSG_RESULTS: str = "results"
-    MSG_RAW_IMAGE: str = "raw"
-    MSG_RESOLUTION: str = "resolution"
-    MSG_FPS: str = "fps"
-    MSG_FACTORY: str = "factory"
-    MSG_RTSP_URI: str = "rtsp_uri"
+    CONFIG_HEAD = "CAMERAS"
+    LOCATION_CORE = "vision"
+    MSG_LOCATION_KEY = "camera"
+    MSG_CAMERA_NUMBER = "number"
+    MSG_COMMAND_STATUS = "status"
+    MSG_COMMAND_KEY = "cmd"
+    MSG_RESULTS = "results"
+    MSG_RAW_IMAGE = "raw"
+    MSG_RESOLUTION = "resolution"
+    MSG_FPS = "fps"
+    MSG_FACTORY = "factory"
+    MSG_RTSP_URI = "rtsp_uri"
     CAMERA_AI_SERVER_RX = "camera_ai_server_rx"
     CAMERA_AI_SERVER_RX_TIMEOUT = "camera_ai_server_rx_timeout"
-    CAMERA_HEAD: str = f"{MSG_LOCATION_KEY}_head"
-    CAMERA_LEFT: str = f"{MSG_LOCATION_KEY}_left"
-    CAMERA_RIGHT: str = f"{MSG_LOCATION_KEY}_right"
-    MQTT_RESPONSE_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_RESULTS}"
-    MQTT_STATUS_TOPIC: str = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
-    CAMERA_HEAD_RESOLUTION: str = f"{CAMERA_HEAD}_{MSG_RESOLUTION}"
-    CAMERA_LEFT_RESOLUTION: str = f"{CAMERA_LEFT}_{MSG_RESOLUTION}"
-    CAMERA_RIGHT_RESOLUTION: str = f"{CAMERA_RIGHT}_{MSG_RESOLUTION}"
-    CAMERA_HEAD_FPS: str = f"{CAMERA_HEAD}_{MSG_FPS}"
-    CAMERA_LEFT_FPS: str = f"{CAMERA_LEFT}_{MSG_FPS}"
-    CAMERA_RIGHT_FPS: str = f"{CAMERA_RIGHT}_{MSG_FPS}"
-    CAMERA_HEAD_FACTORY: str = f"{CAMERA_HEAD}_{MSG_FACTORY}"
-    CAMERA_LEFT_FACTORY: str = f"{CAMERA_LEFT}_{MSG_FACTORY}"
-    CAMERA_RIGHT_FACTORY: str = f"{CAMERA_RIGHT}_{MSG_FACTORY}"
-    CAMERA_HEAD_PORT: str = f"{CAMERA_HEAD}_rtsp_port"
-    CAMERA_RIGHT_PORT: str = f"{CAMERA_RIGHT}_rtsp_port"
-    CAMERA_LEFT_PORT: str = f"{CAMERA_LEFT}_rtsp_port"
-    CAMERA_HEAD_RTSP_IP: str = f"{CAMERA_HEAD}_rtsp_ip"
-    CAMERA_RIGHT_RTSP_IP: str = f"{CAMERA_RIGHT}_rtsp_ip"
-    CAMERA_LEFT_RTSP_IP: str = f"{CAMERA_LEFT}_rtsp_ip"
-    CAMERA_HEAD_FOV_X: int = 54
-    CAMERA_HEAD_FOV_Y: int = 41
-    CAMERA_RIGHT_FOV: int = 160
-    CAMERA_LEFT_FOV: int = 160
-    X_RESOLUTION: str = 'x'
-    Y_RESOLUTION: str = 'y'
+    CAMERA_HEAD = f"{MSG_LOCATION_KEY}_head"
+    CAMERA_LEFT = f"{MSG_LOCATION_KEY}_left"
+    CAMERA_RIGHT = f"{MSG_LOCATION_KEY}_right"
+    MQTT_RESPONSE_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_RESULTS}"
+    MQTT_STATUS_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
+    CAMERA_HEAD_RESOLUTION = f"{CAMERA_HEAD}_{MSG_RESOLUTION}"
+    CAMERA_LEFT_RESOLUTION = f"{CAMERA_LEFT}_{MSG_RESOLUTION}"
+    CAMERA_RIGHT_RESOLUTION = f"{CAMERA_RIGHT}_{MSG_RESOLUTION}"
+    CAMERA_HEAD_FPS = f"{CAMERA_HEAD}_{MSG_FPS}"
+    CAMERA_LEFT_FPS = f"{CAMERA_LEFT}_{MSG_FPS}"
+    CAMERA_RIGHT_FPS = f"{CAMERA_RIGHT}_{MSG_FPS}"
+    CAMERA_HEAD_FACTORY = f"{CAMERA_HEAD}_{MSG_FACTORY}"
+    CAMERA_LEFT_FACTORY = f"{CAMERA_LEFT}_{MSG_FACTORY}"
+    CAMERA_RIGHT_FACTORY = f"{CAMERA_RIGHT}_{MSG_FACTORY}"
+    CAMERA_HEAD_PORT = f"{CAMERA_HEAD}_rtsp_port"
+    CAMERA_RIGHT_PORT = f"{CAMERA_RIGHT}_rtsp_port"
+    CAMERA_LEFT_PORT = f"{CAMERA_LEFT}_rtsp_port"
+    CAMERA_HEAD_RTSP_IP = f"{CAMERA_HEAD}_rtsp_ip"
+    CAMERA_RIGHT_RTSP_IP = f"{CAMERA_RIGHT}_rtsp_ip"
+    CAMERA_LEFT_RTSP_IP = f"{CAMERA_LEFT}_rtsp_ip"
+    CAMERA_HEAD_FOV_X = 54
+    CAMERA_HEAD_FOV_Y = 41
+    CAMERA_RIGHT_FOV = 160
+    CAMERA_LEFT_FOV = 160
+    X_RESOLUTION = 'x'
+    Y_RESOLUTION = 'y'
 
 
 class TrackingEnums(Enum):
-    MSG_LOCATION_KEY: str = "system"
-    MSG_COMMAND_KEY: str = "track"
-    MSG_COMMAND_START: str = "start"
-    MSG_CAMERA_KEY: str = "camera"
-    MQTT_COMMAND_TOPIC: str = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_KEY}"
-    BODY_LEFT_CAMERA_ANGLE: int = 134
-    BODY_RIGHT_CAMERA_ANGLE: int = 44
-    BODY_HEAD_CAMERA: str = f"{MSG_CAMERA_KEY}_head"
-    BODY_LEFT_CAMERA: str = f"{MSG_CAMERA_KEY}_left"
-    BODY_RIGHT_CAMERA: str = f"{MSG_CAMERA_KEY}_right"
-    KEY_CONFIDENCE: str = "confidence"
-    KEY_POSE: str = "pose"
-    KEY_BOX: str = "box"
+    MSG_LOCATION_KEY = "system"
+    MSG_COMMAND_KEY = "track"
+    MSG_COMMAND_START = "start"
+    MSG_CAMERA_KEY = "camera"
+    MQTT_COMMAND_TOPIC = f"{MSG_LOCATION_KEY}/{MSG_COMMAND_KEY}"
+    BODY_LEFT_CAMERA_ANGLE = 134
+    BODY_RIGHT_CAMERA_ANGLE = 44
+    BODY_HEAD_CAMERA = f"{MSG_CAMERA_KEY}_head"
+    BODY_LEFT_CAMERA = f"{MSG_CAMERA_KEY}_left"
+    BODY_RIGHT_CAMERA = f"{MSG_CAMERA_KEY}_right"
+    KEY_CONFIDENCE = "confidence"
+    KEY_POSE = "pose"
+    KEY_BOX = "box"
