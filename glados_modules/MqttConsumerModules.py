@@ -419,6 +419,7 @@ class VisionTracker(MQTTClient):
                         )
                         if self.last_message is None:
                             self.last_message = time()
+
                         if time() - self.last_message >= 0.5:
                             if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
                                 self.send_command(
