@@ -36,6 +36,30 @@ class SystemEnums(Enum):
     SPEAKER_DELAY = 1.12
 
 
+class LEDShoulders(Enum):
+    LOCATION = "shoulder_led"
+    MSG_TYPE_KEY = "led"
+    MSG_COMMAND_KEY = "command"
+    MSG_INTENSITY_KEY = "intensity"
+    ANIMATION_STARTUP = "startup"
+    ANIMATION_DISCO = "disco"
+    ANIMATION_TWINKLE = "twinkle"
+
+
+class LEDLampStrip8(Enum):
+    LOCATION = "strip8_led"
+    MSG_TYPE_KEY = "led"
+    MSG_COMMAND_KEY = "command"
+    MSG_ARGUMENTS_KEY = "arguments"
+    MSG_INTENSITY_KEY = "intensity"
+    ANIMATION_STARTUP = "startup"
+    ANIMATION_DISCO = "disco"
+    ANIMATION_TWINKLE = "twinkle"
+    ANIMATION_PULSE = "pulse"
+    ANIMATION_CLEAR = "clear"
+    ANIMATION_WHITE_LIGHT = "white_light"
+
+
 class LEDHead(Enum):
     EYE_LED_LOCATION = "eye_led"
     ANIMATION_STARTUP_KEY = "startup"

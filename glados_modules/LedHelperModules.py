@@ -1,5 +1,6 @@
+import random
 from time import sleep, time
-from typing import Any, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 
 class LedHelper:
@@ -90,6 +91,9 @@ class NeoPixelAnimations:
             # Generate a grid for all LEDs if none provided.
             self.pixel_grid = tuple(range(self.pixel_number))
         self.wheel = LedHelper.color_wheel
+        self._twinkle_loop: bool = False
+        self._disco_loop: bool = False
+        self._pulse_loop: bool = False
 
     def rainbow_cycle(self, wait: Union[int, float], order: str = "RGB") -> None:
         """Cycle through all the colors of the rainbow spectrum.
@@ -118,20 +122,103 @@ class NeoPixelAnimations:
             color (Tuple[int, int, int]): The base color as a tuple of (R, G, B).
             intensity_change (float): default .1, how much more intense the changes are at each step
         """
-        self.pixels.brightness = 0.1
         self.pixels.auto_write = False
         start_time = time()
         intense = 0.1
         st = wait / 10
         while (time() - start_time) <= wait:
-            if intense > 10:
-                intense = 10
+            if intense >= 1.0:
+                intense = 1.0
             for i in self.pixel_grid:
                 self.pixels[i] = LedHelper.adjust_brightness(color, intense)
             self.pixels.show()
             intense += intensity_change
-            self.pixels.brightness = intense
             sleep(st)
+
+    def disco(self, wait: Union[int, float] = 0.05, order: str = "RGB") -> None:
+        """Run a continuous rainbow cycle animation until stop_disco is called.
+
+        Args:
+            wait (Union[int, float]): Time delay between color updates. Defaults to 0.05.
+            order (str): Color channel order. Defaults to "RGB".
+        """
+        self.stop_twinkle()
+        self.pixels.auto_write = False
+        wait = float(wait)
+        self._disco_loop = True
+        j = 0
+        while self._disco_loop:
+            for i in self.pixel_grid:
+                pixel_index = (i * 256 // self.pixel_number) + j
+                self.pixels[i] = self.wheel(pixel_index & 255, order=order)
+            self.pixels.show()
+            sleep(wait)
+            j = (j + 1) % 256
+
+    def stop_disco(self) -> None:
+        """Stop a running disco animation."""
+        self._disco_loop = False
+        self.stop_pulse()
+
+    def twinkle(self, color: Tuple, pixel_grid: Optional[List[int]] = None,
+                wait: Union[int, float] = 0.1) -> None:
+        """Randomly vary brightness across pixels in a loop until stop_twinkle is called.
+
+        Args:
+            color (Tuple): The base color to twinkle.
+            pixel_grid (Optional[List[int]]): Pixel indices to animate. Defaults to self.pixel_grid.
+            wait (Union[int, float]): Sleep duration between frames. Defaults to 0.1.
+        """
+        self.stop_disco()
+        self.stop_pulse()
+        grid = pixel_grid if pixel_grid is not None else self.pixel_grid
+        self._twinkle_loop = True
+        while self._twinkle_loop:
+            for i in grid:
+                self.pixels[i] = LedHelper.adjust_brightness(
+                    color, random.choice([x / 10.0 for x in range(1, 9)])
+                )
+            self.pixels.show()
+            sleep(wait)
+
+    def stop_twinkle(self) -> None:
+        """Stop a running twinkle animation."""
+        self._twinkle_loop = False
+
+    def pulse(self, color: Tuple, mode: str = "all", pixel_index: int = 0,
+              steps: int = 20, wait: Union[int, float] = 0.05) -> None:
+        """Continuously fade a color in and out using adjust_brightness until stop_pulse is called.
+
+        Args:
+            color (Tuple): The color to pulse.
+            mode (str): "all" pulses every pixel together, "single" pulses one pixel,
+                        "random" picks a new random subset of pixels each cycle. Defaults to "all".
+            pixel_index (int): Pixel to pulse when mode is "single". Defaults to 0.
+            steps (int): Number of brightness steps per ramp direction. Defaults to 20.
+            wait (Union[int, float]): Sleep between each step in seconds. Defaults to 0.05.
+        """
+        self.stop_disco()
+        self.stop_twinkle()
+        factors = [i / steps for i in list(range(1, steps + 1)) + list(range(steps - 1, 0, -1))]
+        self._pulse_loop = True
+        while self._pulse_loop:
+            if mode == "random":
+                targets = random.sample(list(self.pixel_grid), k=random.randint(1, len(self.pixel_grid)))
+            elif mode == "single":
+                targets = [pixel_index]
+            else:
+                targets = self.pixel_grid
+            for factor in factors:
+                if not self._pulse_loop:
+                    break
+                for i in targets:
+                    self.pixels[i] = LedHelper.adjust_brightness(color, factor)
+                self.pixels.show()
+                sleep(wait)
+
+    def stop_pulse(self) -> None:
+        """Stop a running pulse animation."""
+        self._pulse_loop = False
 
     def fade_color(self,
                    start_color: Tuple[int, int, int],
@@ -151,7 +238,7 @@ class NeoPixelAnimations:
             order (str, optional): The color order, either "RGB", "GRB", "RGBW", or "GRBW".
                 Defaults to "RGB".
             intensity (Tuple[float, float], optional): A tuple representing brightness intensity.
-                The first value is the maximum brightness and the second value is currently unused.
+                The first value is the maximum brightness, and the second value is currently unused.
                 Defaults to (0.1, 0.1).
         """
         intensity_cycle = steps / (intensity[0] * 10)
@@ -176,22 +263,60 @@ class NeoPixelAnimations:
                     ic_count = 1
             sleep(0.1)
 
-    @staticmethod
-    def pwmintensity(wait: Union[int, float], pwmled: Any) -> None:
-        """Increase the duty cycle of a PWM LED gradually.
+
+class PWMLedAnimations:
+    """Animations for PWM-controlled LEDs (e.g. adafruit PCA9685 channels)."""
+
+    def __init__(self, pwmled: Any) -> None:
+        """Initialize PWMLedAnimations.
 
         Args:
-            wait (Union[int, float]): Duration for the PWM intensity change.
-            pwmled (Any): An object representing a PWM LED that has a duty_cycle attribute.
+            pwmled (Any): An object representing a PWM LED with a duty_cycle attribute.
         """
-        dc = 100
-        pwmled.duty_cycle = dc
-        start_time = time()
-        increase = 65535 / wait
-        st = wait / 65535
-        while (time() - start_time) <= wait:
-            dc += increase
-            if dc > 65535:
-                dc = 65535
-            pwmled.duty_cycle = int(dc)
-            sleep(1)
+        self.pwmled = pwmled
+        self._pulse_loop: bool = False
+
+    def intensity(self, wait: Union[int, float], steps: int = 100) -> None:
+        """Increase the duty cycle of the PWM LED gradually from low to full.
+
+        Args:
+            wait (Union[int, float]): Duration for the ramp in seconds.
+            steps (int): Number of increments across the ramp. Defaults to 100.
+        """
+        st = float(wait) / steps
+        increase = 65535 / steps
+        dc = 100.0
+        self.pwmled.duty_cycle = int(dc)
+        for _ in range(steps):
+            dc = min(dc + increase, 65535)
+            self.pwmled.duty_cycle = int(dc)
+            sleep(st)
+
+    def pulse(self, period: Union[int, float] = 2.0, steps: int = 100) -> None:
+        """Continuously ramp the PWM LED up and down until stop_pulse is called.
+
+        Args:
+            period (Union[int, float]): Duration of one full up-and-down cycle in seconds. Defaults to 2.0.
+            steps (int): Number of increments per ramp direction. Defaults to 100.
+        """
+        st = float(period) / (steps * 2)
+        increase = 65535 / steps
+        self._pulse_loop = True
+        while self._pulse_loop:
+            dc = 100.0
+            for _ in range(steps):
+                if not self._pulse_loop:
+                    break
+                dc = min(dc + increase, 65535)
+                self.pwmled.duty_cycle = int(dc)
+                sleep(st)
+            for _ in range(steps):
+                if not self._pulse_loop:
+                    break
+                dc = max(dc - increase, 100)
+                self.pwmled.duty_cycle = int(dc)
+                sleep(st)
+
+    def stop_pulse(self) -> None:
+        """Stop a running pulse animation."""
+        self._pulse_loop = False

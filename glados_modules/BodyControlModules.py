@@ -16,15 +16,17 @@ import board
 from digitalio import DigitalInOut, Direction
 from PIL import Image, ImageDraw
 import neopixel
+import RPi.GPIO as GPIO
 
 # glados imports
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
-                                        IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
+                                        IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead,
+                                        LEDLampStrip8, LEDShoulders)
 from glados_modules.MqttConnector import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
                                           TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
-from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations
+from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations, PWMLedAnimations
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -856,51 +858,50 @@ class LedShoulders(MQTTClient):
         self.stripes: list = list()
         self.stripes.extend(range(8, 24))
         self.stripes.extend(range(40, 56))
-        self.cmd_topic: str = "body/led"
-        self.intensity_topic: str = "intensity"
+        self.cmd_topic: str = MQTTEnums.BODY_LED_CONTROL_MQTT_TOPIC.value
+        self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
                                                    self.intensity_topic: self.handle_intensity}
-        self.location: str = "shoulder_led"
-        self.animations: Dict[str, Callable] = {"startup": self.startup, "disco": self.disco, "twinkle": self.twinkle}
-        self.twinkle_loop: bool = False
+        self.location: str = LEDShoulders.LOCATION.value
+        self.animations: Dict[str, Callable] = {
+            LEDShoulders.ANIMATION_STARTUP.value: self.startup,
+            LEDShoulders.ANIMATION_DISCO.value: self.disco,
+            LEDShoulders.ANIMATION_TWINKLE.value: self.twinkle,
+        }
         MQTTClient.__init__(self, broker.ip, broker.port)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
+        if j_msg.get(LEDShoulders.MSG_TYPE_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            if j_msg[self.location]['command'] in self.animations.keys():
-                self.animations[j_msg[self.location]['command']]()
+            cmd = j_msg[self.location].get(LEDShoulders.MSG_COMMAND_KEY.value, "")
+            if cmd in self.animations.keys():
+                self.animations[cmd]()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO figure out update commands
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("led", "") == self.location:
+        if j_msg.get(LEDShoulders.MSG_TYPE_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic},  {j_msg}")
-            self.intensity = j_msg["intensity"]
+            self.intensity = j_msg[LEDShoulders.MSG_INTENSITY_KEY.value]
 
     def startup(self) -> None:
-        self.twinkle_loop = False
+        self.ani.stop_twinkle()
+        self.ani.stop_disco()
         for p in range(0, 63):
             self.pixels[p] = self.lh.adjust_brightness((255, 0, 0), self.intensity[0])
             sleep(.2)
 
     def disco(self) -> None:
-        self.twinkle_loop = False
+        self.ani.stop_twinkle()
         self.logger.debug("Triggered Disco Mode")
         self.pixels.brightness = self.intensity[0]
-        eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "RGB"))
-        eye_led_thread.start()
+        Thread(target=self.ani.disco, args=(0.05, "RGB")).start()
 
     def twinkle(self) -> None:
-        self.twinkle_loop = True
-        self.logger.debug("Triggered Disco Mode")
+        self.logger.debug("Triggered Twinkle Mode")
         self.pixels.brightness = self.intensity[0]
-        while self.twinkle_loop:
-            for p in self.stripes:
-                cd = self.lh.adjust_brightness((255, 0, 0), random.choice([x / 10.0 for x in range(1, 9)]))
-                self.pixels[p] = cd
-            self.pixels.show()
+        Thread(target=self.ani.twinkle, args=((255, 0, 0),), kwargs={"pixel_grid": self.stripes}).start()
 
 
 class DumbLEDController(Thread):
@@ -982,6 +983,7 @@ class LedHead(MQTTClient):
         self.pwm_led = self.hat.channels[4]
         self.hat.frequency = 60
         self.pwm_led.duty_cycle = 250
+        self.pwm_ani = PWMLedAnimations(self.pwm_led)
         self.intensity: Tuple[float, float] = (.1, .5)
         self.cmd_topic: str = MQTTEnums.BODY_LED_CONTROL_MQTT_TOPIC.value
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
@@ -1023,7 +1025,7 @@ class LedHead(MQTTClient):
     def startup(self) -> None:
         self.logger.debug("Startup Sequence")
         eye_led_thread = Thread(target=self.ani.intensity, args=(10, self.glados_eye))
-        pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
+        pwm_led_thread = Thread(target=self.pwm_ani.intensity, args=(10,))
         eye_led_thread.start()
         pwm_led_thread.start()
         eye_led_thread.join()
@@ -1034,7 +1036,7 @@ class LedHead(MQTTClient):
         self.logger.debug("Triggered Disco Mode")
         self.pixels.brightness = self.intensity[0]
         eye_led_thread = Thread(target=self.ani.rainbow_cycle, args=(.05, "RGB"))
-        pwm_led_thread = Thread(target=self.ani.pwmintensity, args=(10, self.pwm_led))
+        pwm_led_thread = Thread(target=self.pwm_ani.intensity, args=(10,))
         eye_led_thread.start()
         pwm_led_thread.start()
         eye_led_thread.join()
@@ -1081,9 +1083,189 @@ class LedHead(MQTTClient):
         else:
             self.logger.error(f"Missing either {td} or {delay} in {kwargs} arguments, speech eye animation failed")
 
-    #TODO NOTE you also need to code up a class for the Lamp portion its self...
 
-    #TODO bird detection to kill external power? how will that work...
+class Relay:
+    """Controls an active-high relay connected to a Raspberry Pi GPIO pin.
+
+    This class assumes an *active-high* relay:
+
+    - GPIO HIGH -> Relay ON
+    - GPIO LOW -> Relay OFF
+
+    Attributes:
+        pin: BCM GPIO pin number used to control the relay.
+    """
+
+    def __init__(self, pin: int) -> None:
+        """Initializes the relay GPIO pin as an output and turns it OFF.
+
+        Args:
+            pin: BCM GPIO pin number (not physical board pin number).
+        """
+        self.pin: int = pin
+
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        GPIO.setup(self.pin, GPIO.OUT, initial=GPIO.LOW)  # Start OFF
+
+    def on(self) -> None:
+        """Turns the relay ON (sets GPIO HIGH)."""
+        GPIO.output(self.pin, GPIO.HIGH)
+
+    def off(self) -> None:
+        """Turns the relay OFF (sets GPIO LOW)."""
+        GPIO.output(self.pin, GPIO.LOW)
+
+    def toggle(self) -> bool:
+        """Toggles the relay state.
+
+        Returns:
+            The new relay state (True for ON, False for OFF).
+        """
+        current_state: bool = bool(GPIO.input(self.pin))
+        new_state: bool = not current_state
+        GPIO.output(self.pin, GPIO.HIGH if new_state else GPIO.LOW)
+        return new_state
+
+    def pulse(self, duration_s: float) -> None:
+        """Turns the relay ON for a fixed duration, then turns it OFF.
+
+        Args:
+            duration_s: Pulse duration in seconds.
+
+        Raises:
+            ValueError: If `duration_s` is negative.
+        """
+        if duration_s < 0:
+            raise ValueError("duration_s must be non-negative.")
+
+        self.on()
+        sleep(duration_s)
+        self.off()
+
+    def cleanup(self) -> None:
+        """Turns the relay OFF and releases the GPIO pin."""
+        self.off()  # Fail-safe OFF
+        GPIO.cleanup(self.pin)
+
+
+class LampStrip8(MQTTClient):
+    """Controls a strip of 8 NeoPixel LEDs via MQTT."""
+
+    NUM_PIXELS = 8
+    MAX_INTENSITY = 0.9
+
+    def __init__(self, broker: NamedTuple, pin=board.D21, pixel_order=neopixel.RGBW) -> None:
+        self.__name__ = "Lamp_Strip8_Controller"
+        self.logger = setup_logger(self.__name__, LoggingEnums.LOG_LEVEL_INFO.value)
+        self.pixels = neopixel.NeoPixel(pin, self.NUM_PIXELS, brightness=0.5, auto_write=False,
+                                        pixel_order=pixel_order)
+        self.lh = LedHelper
+        self.ani = NeoPixelAnimations(self.pixels, self.NUM_PIXELS)
+        self.intensity: Tuple[float, float] = (0.5, 0.5)
+        self.cmd_topic: str = MQTTEnums.BODY_LED_CONTROL_MQTT_TOPIC.value
+        self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
+        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd,
+                                                   self.intensity_topic: self.handle_intensity}
+        self.location: str = LEDLampStrip8.LOCATION.value
+        self.animations: Dict[str, Callable] = {
+            LEDLampStrip8.ANIMATION_STARTUP.value: self.startup,
+            LEDLampStrip8.ANIMATION_DISCO.value: self.disco,
+            LEDLampStrip8.ANIMATION_TWINKLE.value: self.twinkle,
+            LEDLampStrip8.ANIMATION_PULSE.value: self.pulse,
+            LEDLampStrip8.ANIMATION_CLEAR.value: self.clear,
+            LEDLampStrip8.ANIMATION_WHITE_LIGHT.value: self.white_light,
+        }
+        self._twinkle_loop: bool = False
+        MQTTClient.__init__(self, broker.ip, broker.port)
+
+    def handle_cmd(self, msg: MQTTMessage) -> None:
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get(LEDLampStrip8.MSG_TYPE_KEY.value, "") == self.location:
+            self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
+            body = j_msg.get(self.location, {})
+            cmd = body.get(LEDLampStrip8.MSG_COMMAND_KEY.value, "")
+            if cmd in self.animations:
+                args = body.get(LEDLampStrip8.MSG_ARGUMENTS_KEY.value, {})
+                if args:
+                    self.animations[cmd](**args)
+                else:
+                    self.animations[cmd]()
+
+    def handle_intensity(self, msg: MQTTMessage) -> None:
+        j_msg = loads(msg.payload.decode())
+        if j_msg.get(LEDLampStrip8.MSG_TYPE_KEY.value, "") == self.location:
+            raw = j_msg[LEDLampStrip8.MSG_INTENSITY_KEY.value]
+            self.intensity = (self._validate_intensity(raw[0]),
+                              self._validate_intensity(raw[1]))
+            self.pixels.brightness = self.intensity[0]
+
+    def _validate_intensity(self, value: float) -> float:
+        if value >= 1.0:
+            msg = f"Intensity {value} is >= 1.0, which is not allowed for LampStrip8 (max {self.MAX_INTENSITY})"
+            self.logger.error(msg)
+            raise ValueError(msg)
+        return min(value, self.MAX_INTENSITY)
+
+    def set_all(self, color: Tuple[int, int, int, int]) -> None:
+        """Set all 8 pixels to the same RGBW color."""
+        self.pixels.fill(color)
+        self.pixels.show()
+
+    def set_pixel(self, index: int, color: Tuple[int, int, int, int]) -> None:
+        """Set a single pixel by index (0-7)."""
+        if 0 <= index < self.NUM_PIXELS:
+            self.pixels[index] = color
+            self.pixels.show()
+
+    def white_light(self, intensity: float = 0.5) -> None:
+        """Set all pixels to pure white using the W channel at the given intensity."""
+        self._twinkle_loop = False
+        safe_intensity = self._validate_intensity(intensity)
+        self.pixels.brightness = safe_intensity
+        self.pixels.fill((0, 0, 0, 255))
+        self.pixels.show()
+
+    def clear(self) -> None:
+        """Turn off all pixels."""
+        self._twinkle_loop = False
+        self.pixels.fill((0, 0, 0, 0))
+        self.pixels.show()
+
+    def startup(self) -> None:
+        """Sequential fill from first to last pixel."""
+        self._twinkle_loop = False
+        self.pixels.brightness = self.intensity[0]
+        color = self.lh.adjust_brightness((255, 165, 0, 0), self.intensity[0])
+        for i in range(self.NUM_PIXELS):
+            self.pixels[i] = color
+            self.pixels.show()
+            sleep(0.1)
+
+    def disco(self) -> None:
+        """Rainbow cycle across all pixels."""
+        self._twinkle_loop = False
+        self.pixels.brightness = self.intensity[0]
+        thread = Thread(target=self.ani.rainbow_cycle, args=(0.05, "RGBW"))
+        thread.start()
+
+    def twinkle(self, color: Tuple[int, int, int, int] = (255, 165, 0, 0)) -> None:
+        """Randomly vary brightness across pixels."""
+        self._twinkle_loop = True
+        self.pixels.brightness = self.intensity[0]
+        while self._twinkle_loop:
+            for i in range(self.NUM_PIXELS):
+                self.pixels[i] = self.lh.adjust_brightness(color, random.choice([x / 10.0 for x in range(1, 9)]))
+            self.pixels.show()
+            sleep(0.1)
+
+    def pulse(self, color: Tuple[int, int, int, int] = (255, 165, 0, 0)) -> None:
+        """Pulse all pixels from dim to bright and back."""
+        self._twinkle_loop = False
+        for level in list(range(1, 11)) + list(range(10, 0, -1)):
+            self.pixels.fill(self.lh.adjust_brightness(color, level / 10.0))
+            self.pixels.show()
+            sleep(0.05)
 
 
 if __name__ == "__main__":
