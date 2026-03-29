@@ -28,7 +28,8 @@ echo "--- Installing system packages ---"
 # Common across all systems: GStreamer + PyGObject build deps
 COMMON_APT=(
     libcairo2-dev
-    libgirepository1.0-dev
+    gobject-introspection
+    pkg-config
     gir1.2-gstreamer-1.0
     gstreamer1.0-tools
     gstreamer1.0-plugins-base
@@ -38,6 +39,13 @@ COMMON_APT=(
     python3-dev
     python3-venv
 )
+
+# GObject Introspection dev headers: try 2.0 first (newer distros), fall back to 1.0
+if apt-cache show libgirepository-2.0-dev &>/dev/null; then
+    COMMON_APT+=(libgirepository-2.0-dev)
+else
+    COMMON_APT+=(libgirepository1.0-dev)
+fi
 
 case "$SYSTEM" in
     gpu)
