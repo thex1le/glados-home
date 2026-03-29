@@ -1,4 +1,5 @@
 # native imports
+import logging
 from typing import Dict, Callable, NamedTuple
 from json import dumps, loads
 from uuid import uuid4
@@ -13,7 +14,8 @@ from cachetools import TTLCache
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, CameraEnum, TrackingEnums, LoggingEnums,
-                                        STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead)
+                                        STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead,
+                                        MQTTEnums)
 
 
 class MQTTClient:
@@ -33,6 +35,10 @@ class MQTTClient:
                                        console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
             self.__name__ = self.__class__.__name__
         self._lock = Lock()
+        # Add log level control topic (all MQTT clients can receive this)
+        self._log_level_topic = MQTTEnums.SYSTEM_LOG_LEVEL_TOPIC.value
+        if self._log_level_topic not in self.topic_handler:
+            self.topic_handler[self._log_level_topic] = self._handle_log_level
         self.client: mqtt.Client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -51,6 +57,7 @@ class MQTTClient:
         if uuid is None:
             self.logger.error("NO UUID IN MESSAGE")
             return
+        handler = None
         with self._lock:
             if uuid not in self.uuid_cache.keys():
                 self.uuid_cache[uuid] = time()
@@ -70,6 +77,25 @@ class MQTTClient:
             m["uuid"] = str(uuid4())
             self.logger.debug(f"{self.__name__} sending {m} command")
             self.client.publish(topic, dumps(m), qos=qos)
+
+    def _handle_log_level(self, msg) -> None:
+        """Handle remote log level change via MQTT.
+
+        Message format: {"module": "MotionTrack", "level": "DEBUG"}
+        Use module "*" to change all loggers on this system.
+        """
+        try:
+            j_msg = loads(msg.payload.decode())
+        except Exception:
+            return
+        target_module = j_msg.get("module", "")
+        level_str = j_msg.get("level", "INFO").upper()
+        level = getattr(logging, level_str, logging.INFO)
+        if target_module == self.__name__ or target_module == "*":
+            self.logger.setLevel(level)
+            for handler in self.logger.handlers:
+                handler.setLevel(level)
+            self.logger.info(f"Log level changed to {level_str} (via MQTT)")
 
 
 # TODO flesh out message classes for easy update in one place
@@ -154,6 +180,16 @@ class ServoMessageBuilder:
     @staticmethod
     def head_left_right(angle: int, speed=ServoEnum.SERVO_DEFAULT_SPEED.value) -> dict:
         return ServoMessageBuilder.move(ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, angle, speed)
+
+    @staticmethod
+    def move_all(targets: dict) -> dict:
+        """Build a consolidated move command for all servos in one message.
+
+        Args:
+            targets: dict of {location: {"angle": int, "speed": int}, ...}
+        """
+        return {ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_MOVE_ALL.value,
+                ServoEnum.MSG_TARGETS.value: targets}
 
     @staticmethod
     def get_status(location):

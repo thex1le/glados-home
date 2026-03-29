@@ -10,8 +10,10 @@ from glados_modules.ChatGPTConnector import GladosGPT
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
 from glados_modules.CameraModule import Camera
-from glados_modules.GladosEnums import CameraEnum, SystemEnums
+from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums
 from glados_modules.BodyControlModules import IMU
+from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.WebDashboard import WebDashboard
 
 
 class GladosException(Exception):
@@ -57,6 +59,30 @@ if __name__ == "__main__":
     # give time for first camera to start before we spin up the second
     time.sleep(5)
     right_camera.start()
+    # Start health monitoring
+    health = HealthMonitor(broker=mqtt_broker, system_name="glados_main")
+    health.register("IMU", imu)
+    health.register("GladosLocal", gl)
+    health.register("STT", gstt)
+    health.register("left_camera", left_camera)
+    health.register("right_camera", right_camera)
+    health.start()
+    # Start web dashboard (Pi5: consumes RTSP since cameras are separate processes)
+    left_port = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value]
+    right_port = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_PORT.value]
+    dash_port = int(configp.get(DashboardEnums.CONFIG_HEAD.value,
+                                 DashboardEnums.DASHBOARD_PORT.value,
+                                 fallback=DashboardEnums.DEFAULT_PORT.value))
+    dashboard = WebDashboard(
+        system_name="glados_main",
+        health_monitor=health,
+        feed_uris={
+            "Left Eye (Raw)": f"rtsp://localhost:{left_port}/{left_camera_location}",
+            "Right Eye (Raw)": f"rtsp://localhost:{right_port}/{right_camera_location}",
+        },
+        port=dash_port
+    )
+    dashboard.start()
     while True:
         prompt = gstt.get_text()
         if prompt is not None:

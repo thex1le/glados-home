@@ -1,0 +1,47 @@
+# GLaDOS Pi5 (Main Controller) - voice, cameras, AI interaction
+# Install: pip install -r requirements_pi5.txt
+
+# MQTT communication
+paho-mqtt
+cachetools
+
+# Video / streaming
+opencv-python
+numpy
+PyGObject                        # GStreamer RTSP server bindings
+
+# Camera
+picamera2
+
+# Web dashboard
+flask
+
+# Image processing
+pillow
+
+# Voice / audio
+pydub
+pyalsaaudio                      # ALSA mixer control
+SpeechRecognition
+regex                            # fuzzy regex for wake word matching
+
+# Audio streaming to GPU server
+ffmpeg-python
+
+# AI / chat
+requests                         # OpenAI API calls + TTS HTTP calls
+
+# Home automation
+homeassistant-api
+
+# Raspberry Pi GPIO & I2C
+# NOTE: BodyControlModules.py has top-level imports for these even though
+# Pi5 only uses the IMU class. These must be installed for the import to work.
+RPi.GPIO
+adafruit-blinka                  # board, busio, digitalio
+adafruit-circuitpython-pca9685
+adafruit-circuitpython-neopixel
+adafruit-circuitpython-rgb-display
+
+# IMU sensor (Pi5 runs IMU polling)
+adafruit-circuitpython-bno055

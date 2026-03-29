@@ -1,0 +1,40 @@
+# GLaDOS Pi4 (Body Server) - servo control, sensors, LEDs, head camera
+# Install: pip install -r requirements_pi4.txt
+
+# MQTT communication
+paho-mqtt
+cachetools
+
+# Video / streaming
+opencv-python
+numpy
+PyGObject                        # GStreamer RTSP server bindings
+
+# Camera
+picamera2
+
+# Web dashboard
+flask
+
+# Image processing (LCD display)
+pillow
+
+# Raspberry Pi GPIO & I2C
+RPi.GPIO
+adafruit-blinka                  # board, busio, digitalio
+
+# Servo control
+adafruit-circuitpython-servokit
+adafruit-circuitpython-pca9685
+
+# LEDs
+adafruit-circuitpython-neopixel
+
+# LCD display
+adafruit-circuitpython-rgb-display
+
+# Sensors (imported inside class __init__, only needed if sensor is connected)
+adafruit-circuitpython-bno055    # IMU
+adafruit-circuitpython-sht4x     # Temperature & humidity
+adafruit-circuitpython-vl53l4cd  # Time-of-flight distance
+adafruit-circuitpython-ens160    # MOX gas sensor

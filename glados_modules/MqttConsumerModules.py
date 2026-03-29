@@ -49,6 +49,7 @@ class ServoLocation(MQTTClient):
         self.moving: str = ServoEnum.MSG_MOVING.value
         self.axis: str = ServoEnum.MSG_AXIS.value
         self.last_angle: str = ServoEnum.MSG_LAST_ANGLE.value
+        self.velocity: str = ServoEnum.MSG_VELOCITY.value
         self.gyro_thresh: float = float(ServoEnum.IMU_GYRO_THRESH.value)
         self.gyro_spike_thresh: float = float(ServoEnum.IMU_GYRO_SPIKE_THRESH.value)
         self.accel_thresh: float = float(ServoEnum.IMU_ACCEL_THRESH.value)
@@ -70,6 +71,7 @@ class ServoLocation(MQTTClient):
                 self.moving,
                 ServoEnum.MSG_LOCATION.value,
                 self.last_angle,
+                self.velocity,
             ],
         )
         self.servo_list = (
@@ -163,6 +165,7 @@ class ServoLocation(MQTTClient):
                     results.get(self.moving),
                     location,
                     results.get(self.last_angle),
+                    results.get(self.velocity, 0.0),
                 )
 
     def get_imu_status(self, block: bool = True) -> Dict[Any, Any]:

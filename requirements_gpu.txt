@@ -1,0 +1,31 @@
+# GLaDOS GPU Server (AI Server) - YOLO, pose estimation, WhisperX, TTS
+# Install: pip install -r requirements_gpu.txt
+#
+# NOTE: Install PyTorch with CUDA first from https://pytorch.org/get-started/
+# e.g.: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# MQTT communication
+paho-mqtt
+cachetools
+
+# Video / streaming
+opencv-python
+numpy
+PyGObject                        # GStreamer RTSP server bindings
+
+# Web dashboard
+flask
+
+# AI / ML - Object detection
+ultralytics                      # YOLOv8
+
+# AI / ML - Pose estimation
+rtmlib                           # RTMLib whole-body pose (133 keypoints)
+
+# AI / ML - Speech to text
+whisperx                         # WhisperX audio transcription
+ffmpeg-python
+
+# AI / ML - Core (install separately with CUDA support)
+# torch
+# torchvision

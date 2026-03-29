@@ -23,7 +23,8 @@ from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
                                         IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead,
-                                        LEDLampStrip8, LEDShoulders)
+                                        LEDLampStrip8, LEDShoulders, MotionProfile, TraceEnums,
+                                        LCDEnums)
 from glados_modules.MqttConnector import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
                                           TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
 from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations, PWMLedAnimations
@@ -35,13 +36,13 @@ class GladosLCD(Thread, MQTTClient):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         from adafruit_rgb_display import st7789
         Thread.__init__(self)
-        Thread.daemon = True
+        self.daemon = True
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.location: str = location
         self.animation_path: str = animation_path
-        self.cmd_topic: str = "body/lcd"
+        self.cmd_topic: str = MQTTEnums.LCD_CONTROL_MQTT_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
         self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
                                   y_offset=122, cs=DigitalInOut(cs), dc=DigitalInOut(dc),
@@ -64,26 +65,20 @@ class GladosLCD(Thread, MQTTClient):
 
     def handle_cmd(self, msg) -> None:
         j_msg = loads(msg.payload.decode())
-        if j_msg.get("lcd", "") == self.location:
+        if j_msg.get(LCDEnums.MSG_LOCATION_KEY.value, "") == self.location:
             self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
-            if j_msg.get("cmd", "") == "set_breath":
-                # command looks like nested {"cmd", "set_breath", options: { COMMAND DICT}}
-                self.set_breath_options(j_msg["options"])
-                # TODO make this enum
-                self.send_command({self.location: self.get_breath_options()}, "status")
-            elif j_msg.get("cmd", "") == "get_breath":
-                # mark the location of response
-                # TODO make this enum
-                self.send_command({self.location: self.get_breath_options()}, "body/lcd")
-            # comment this command out right now till we know if we need syncing between LCD's
-            # calling startup via mqtt causes a dead_lock that doesn't return and stops all other commands
-            """
-            elif j_msg.get("cmd", "") == "startup":
-                # trigger startup animation
-                self.stop()
-                self.__startup()
-                self.client.publish("status", dumps({self.location: {"cmd": "startup",  "status": "complete"}}))
-            """
+            cmd = j_msg.get(LCDEnums.MSG_COMMAND_KEY.value, "")
+            if cmd == LCDEnums.COMMAND_SET_BREATH.value:
+                self.set_breath_options(j_msg[LCDEnums.OPTIONS_KEY.value])
+                self.send_command({self.location: self.get_breath_options()},
+                                  MQTTEnums.LCD_STATUS_MQTT_TOPIC.value)
+            elif cmd == LCDEnums.COMMAND_GET_BREATH.value:
+                self.send_command({self.location: self.get_breath_options()},
+                                  MQTTEnums.LCD_CONTROL_MQTT_TOPIC.value)
+            # commented out: startup via MQTT causes a deadlock
+            # elif cmd == LCDEnums.COMMAND_STARTUP.value:
+            #     self.stop()
+            #     self.__startup()
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
         self.breath_animation = breath_dict['animation']
@@ -585,26 +580,21 @@ class IMU(MQTTClient, Thread):
 
 class Gservo(MQTTClient, Thread):
     """
-    Generic Servo Class to take movement commands from MQTT for a servo and send status to MQTT
+    Spring-damper servo controller. Runs a continuous 50Hz physics loop that smoothly
+    chases target angles with organic acceleration, overshoot, and deceleration.
+    New targets blend in seamlessly -- no abort/restart jitter.
+
+    Head servos use fast response (high omega) with slight overshoot (zeta < 1).
+    Body servos use slow response (low omega) with critical damping (zeta = 1).
+    Both move simultaneously; head locks on first, body swings in behind.
     """
     def __init__(self, location: str, servo, axis: str, broker: NamedTuple,
                  servo_range: NamedTuple, pulse_max_min=None, servo_speed: float = 0.1) -> None:
         self.__name__ = f"{self.__class__.__name__}_{location}"
         Thread.__init__(self)
-        Thread.daemon = True
+        self.daemon = True
         self.stop = False
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
-        # 1 degree movement speed
-        degree_per_second = 60 / servo_speed
-        fractions = {
-            1: 0.20,  # Calm movement
-            2: 0.40,  # Neutral
-            3: 0.60,  # Slightly agitated
-            4: 0.80,  # Angry
-            5: 1.00   # Frustrated/fastest
-        }
-        self.speed_settings = {lvl: degree_per_second * frac
-                               for lvl, frac in fractions.items()}
         self.location: str = location
         self.cmd_topic = ServoEnum.MQTT_COMMAND_TOPIC.value
         self.status_topic = ServoEnum.MQTT_STATUS_TOPIC.value
@@ -612,237 +602,196 @@ class Gservo(MQTTClient, Thread):
         self.topic_handler: Dict[str, Callable] = {
             self.cmd_topic: self.handle_cmd,
             self.intensity_topic: self.handle_intensity}
-        self.min_angle: int = 0
         self.servo = servo
         if pulse_max_min is not None:
             self.servo.set_pulse_width_range(min_pulse=pulse_max_min.min, max_pulse=pulse_max_min.max)
-        self.speed: int = 5
         self.servo_range = servo_range
-        self.middle_angle = int(self.servo_range.center)
-        self.angle: int = self.middle_angle
-        self.current_angle: int = self.angle
-        self.first_boot: bool = True
+        self.middle_angle: int = int(self.servo_range.center)
         self.axis: str = axis.lower()
+
+        # Determine servo type (head vs body) for spring-damper parameter selection
+        self._is_head_servo: bool = location in ServoEnum.HEAD_SERVO_LOCATIONS.value
+
+        # Spring-damper state
+        self.target_angle: float = float(self.middle_angle)
+        self.position: float = float(self.middle_angle)
+        self.velocity: float = 0.0
+        self.speed: int = MotionProfile.DEFAULT_TRACKING_SPEED.value
+        self._update_spring_params(self.speed)
+
+        # Backward-compatible aliases (used by external code reading servo state)
+        self.angle: float = self.target_angle
+        self.current_angle: float = self.position
         self.moving: bool = False
+        self._tick_count: int = 0
+
         # Call the superclass constructor to initialize MQTTClient and the lock
         MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
-        #super().__init__(broker.ip, broker.port)
-        # Move to the initial position and send status
-        self.move()
+        # Set hardware to initial position
+        self.servo.angle = self.position
         self.send_status()
 
-    def calculate_move_time(self, target_angle: int) -> float:
-        """
-        Calculate the time it will take the servo to move to the target angle based on its current speed setting.
-        :param target_angle: The desired angle to which the servo should move.
-        :return: The time (in seconds) it will take to complete the movement.
-        """
-        with self._lock:
-            distance = abs(self.current_angle - target_angle)
-            # speed_settings[self.speed] is now °/s
-            move_time = distance / self.speed_settings[self.speed]
-            self.logger.debug(
-                f"Moving {distance}° at {self.speed_settings[self.speed]:.1f}°/s → {move_time:.3f}s"
-            )
-        return move_time
+    def _update_spring_params(self, speed_level: int) -> None:
+        """Update omega and zeta from the MotionProfile based on speed level and servo type."""
+        speed_level = max(1, min(5, speed_level))
+        if self._is_head_servo:
+            params = MotionProfile.HEAD_PARAMS.value
+        else:
+            params = MotionProfile.BODY_PARAMS.value
+        self.omega, self.zeta = params[speed_level]
+        self.logger.debug(f"{self.location}: spring params speed={speed_level} omega={self.omega} zeta={self.zeta}")
 
     def send_status(self) -> None:
-        """
-        Send current angle status to mqtt
-        :return:
-        """
-        # Send current status
+        """Send current position, velocity, and servo state to MQTT."""
         status = ServoMessageBuilder.send_status(self.location, self.get_angles())
         self.send_command(topic=self.status_topic, command=status)
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
-        """
-        Handle incoming MQTT commands for the servo
-        :return:
-        """
+        """Handle incoming MQTT commands: move, move_all, and status requests."""
         try:
             j_msg = loads(msg.payload.decode())
         except JSONDecodeError as e:
             self.logger.error(f"Failed to decode JSON message: {e}")
             return
 
+        cmd = j_msg.get(ServoEnum.MSG_COMMAND_KEY.value, "")
+
+        # Single servo move command (backward compatible)
         if j_msg.get(ServoEnum.MSG_LOCATION_KEY.value, "") == self.location:
-            # Move command
-            cmd = j_msg.get(ServoEnum.MSG_COMMAND_KEY.value, "")
             if cmd == ServoEnum.MSG_COMMAND_MOVE.value:
                 self.logger.debug(f"{self.location}, {msg.topic}, {j_msg}")
-                angle: int = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
-                speed: int = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
+                angle = int(j_msg.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
+                speed = int(j_msg.get(ServoEnum.MSG_SPEED.value, self.speed))
                 self.set_speed_angle((speed, angle))
             elif cmd == ServoEnum.MSG_COMMAND_STATUS.value:
                 self.send_status()
 
-    def run(self):
-        while self.stop is False:
-            # note there is a sleep in the move
-            self.move()
+        # Consolidated move_all command: all servos targeted in one message
+        elif cmd == ServoEnum.MSG_COMMAND_MOVE_ALL.value:
+            targets = j_msg.get(ServoEnum.MSG_TARGETS.value, {})
+            my_target = targets.get(self.location, None)
+            if my_target is not None:
+                angle = int(my_target.get(ServoEnum.MSG_ANGLE.value, self.middle_angle))
+                speed = int(my_target.get(ServoEnum.MSG_SPEED.value, self.speed))
+                # Log trace latency if present
+                trace_id = j_msg.get(TraceEnums.TRACE_ID.value)
+                ts_vision = j_msg.get(TraceEnums.TS_VISION.value)
+                if trace_id and ts_vision:
+                    from time import time as _time
+                    latency_ms = round((_time() - ts_vision) * 1000, 1)
+                    self.logger.debug(f"{self.location}: trace={trace_id} latency={latency_ms}ms "
+                                      f"angle={angle} speed={speed}")
+                else:
+                    self.logger.debug(f"{self.location}: move_all target angle={angle} speed={speed}")
+                self.set_speed_angle((speed, angle))
+
+    def run(self) -> None:
+        """Continuous 50Hz spring-damper physics loop.
+
+        Every tick:
+        - Read target under lock
+        - Compute spring-damper acceleration and integrate
+        - Write to servo hardware
+        - Periodically send MQTT status
+        """
+        dt = MotionProfile.PHYSICS_DT.value
+        status_interval = MotionProfile.STATUS_SEND_INTERVAL.value
+        vel_thresh = MotionProfile.MOVING_VELOCITY_THRESHOLD.value
+        pos_thresh = MotionProfile.MOVING_POSITION_THRESHOLD.value
+
+        while not self.stop:
+            # Read state under lock
+            with self._lock:
+                target = self.target_angle
+                pos = self.position
+                vel = self.velocity
+                omega = self.omega
+                zeta = self.zeta
+
+            # Spring-damper physics
+            error = target - pos
+            accel = (omega ** 2) * error - 2.0 * zeta * omega * vel
+            vel += accel * dt
+            pos += vel * dt
+
+            # Clamp to physical servo range
+            if pos <= self.servo_range.min:
+                pos = float(self.servo_range.min)
+                if vel < 0:
+                    vel = 0.0
+            elif pos >= self.servo_range.max:
+                pos = float(self.servo_range.max)
+                if vel > 0:
+                    vel = 0.0
+
+            # Write to hardware
+            self.servo.angle = pos
+
+            # Update state under lock
+            with self._lock:
+                self.position = pos
+                self.velocity = vel
+                self.moving = abs(vel) > vel_thresh or abs(error) > pos_thresh
+                # Keep backward-compatible aliases in sync
+                self.current_angle = pos
+
+            # Periodic MQTT status broadcast (~5Hz)
+            self._tick_count += 1
+            if self._tick_count % status_interval == 0:
+                self.send_status()
+
+            sleep(dt)
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         # TODO: Implement intensity handling
         pass
 
     def get_angles(self) -> dict:
-        """
-        Return a dict object with severo values
-        :return: dict object of max, min, middle, current_angle and axis location
-        """
+        """Return servo state including position, velocity, and range."""
         with self._lock:
             return {
                 ServoEnum.MSG_MAX.value: self.servo_range.max,
                 ServoEnum.MSG_MIN.value: self.servo_range.min,
                 ServoEnum.MSG_MIDDLE.value: self.middle_angle,
-                ServoEnum.MSG_CURRENT_ANGLE.value: self.current_angle,
+                ServoEnum.MSG_CURRENT_ANGLE.value: round(self.position, 2),
+                ServoEnum.MSG_VELOCITY.value: round(self.velocity, 2),
                 ServoEnum.MSG_AXIS.value: self.axis,
                 ServoEnum.MSG_MOVING.value: self.moving,
-                ServoEnum.MSG_LAST_ANGLE.value: self.angle
+                ServoEnum.MSG_LAST_ANGLE.value: round(self.target_angle, 2)
             }
 
     def set_speed(self, speed: int) -> None:
-        """
-        Scrub any input and make sure it fits the speed between 1-5
-        :return:
-        """
-        if speed >= 5:
-            speed = 5
-        elif speed <= 1:
-            speed = 1
+        """Set speed level (1-5) and update spring-damper parameters."""
+        speed = max(1, min(5, round(speed)))
         with self._lock:
-            self.speed = round(speed)
-            self.logger.debug(f"Speed set to {self.speed}")
+            self.speed = speed
+        self._update_spring_params(speed)
 
-    def set_angle(self, angle: int) -> None:
-        """
-        Set angle for servo and make sure it fits with in max and min range for servo
-        :return:
-        """
+    def set_angle(self, angle: float) -> None:
+        """Set target angle, clamped to servo range."""
         max_angle = self.servo_range.max
         min_angle = self.servo_range.min
         with self._lock:
-            if angle >= max_angle:
-                self.angle = max_angle
-                self.logger.debug(f"{angle} is above {max_angle}, setting to {max_angle}")
-            elif angle <= min_angle:
-                self.angle = min_angle
-                self.logger.debug(f"{angle} is below {min_angle}, setting to {min_angle}")
-            else:
-                self.angle = angle
-                self.logger.debug(f"Angle set to {self.angle}")
+            self.target_angle = float(max(min_angle, min(max_angle, angle)))
+            # Keep backward-compatible alias in sync
+            self.angle = self.target_angle
+            self.logger.debug(f"Target angle set to {self.target_angle}")
 
     def set_speed_angle(self, speed_angle: Tuple[int, int]) -> None:
-        """
-        Set speed an angle as one call
-        :return:
-        """
+        """Set speed and target angle as one call."""
         speed, angle = speed_angle
         self.set_speed(speed)
         self.set_angle(angle)
 
-    def get_angle(self) -> int:
-        """
-        Return value of current angle
-        :return: int value of current angle
-        """
+    def get_angle(self) -> float:
+        """Return estimated current position."""
         with self._lock:
-            return self.current_angle
-
-    def s_curve_move(self) -> None:
-        """
-        Calculate S curves and send small steps to the servo to move,
-        while remaining thread-safe and responsive to new commands.
-        """
-        # grab everything we need under the lock, then release
-        with self._lock:
-            target = self.angle
-            current = self.current_angle
-            speed_dps = self.speed_settings[self.speed]
-        distance = abs(target - current)
-        if distance == 0 or speed_dps <= 0:
-            return
-        # total time to move (seconds)
-        full_time = distance / speed_dps
-        steps = 100
-        dt = full_time / steps
-        for i in range(steps + 1):
-            # check for an updated command
-            with self._lock:
-                if self.angle != target:
-                    self.logger.debug(
-                        f"{self.location}: "
-                        f"new target {self.angle} detected, aborting S‑curve at step {i}"
-                    )
-                    return
-                base_current = current
-                base_target  = target
-
-            # simple cosine S-curve
-            t = i / steps
-            if t < 0.5:
-                t = 2 * t * t
-            else:
-                t = -1 + (4 - 2 * t) * t
-            new_angle = base_current + (base_target - base_current) * t
-            # apply the step
-            with self._lock:
-                self.servo.angle = new_angle
-                self.current_angle = new_angle
-            sleep(dt)
-        # final snap to exactly the target
-        with self._lock:
-            self.servo.angle = self.angle
-            self.current_angle = self.angle
-
-        self.logger.debug(
-            f"{self.location}: "
-            f"completed S‑curve {distance:.1f}° in {full_time:.3f}s "
-            f"(@ {speed_dps:.1f}°/s)"
-        )
+            return self.position
 
     def get_moving_status(self) -> bool:
-        """
-        Return boolean if we are moving
-        :return: boolean
-        """
+        """Return whether servo is currently in motion."""
         with self._lock:
             return self.moving
-
-    def move(self) -> None:
-        """
-        Move the robot
-        :return:
-        """
-        with self._lock:
-            angle = self.angle
-            current_angle = self.current_angle
-            first_boot = self.first_boot
-        self.send_status()
-
-        if first_boot:
-            with self._lock:
-                self.servo.angle = angle
-                self.moving = True
-            sleep(self.calculate_move_time(angle))
-            with self._lock:
-                self.current_angle = angle
-                self.moving = False
-                self.first_boot = False
-                self.logger.debug(f"Set {self.location} angle to {self.current_angle}")
-        else:
-            if angle != current_angle:
-                self.logger.debug(f"New angle {angle} does not equal current angle {current_angle}")
-                with self._lock:
-                    self.moving = True
-                self.s_curve_move()
-                self.logger.debug(f"Moved to {angle}")
-                with self._lock:
-                    self.moving = False
-        # settle after the move
-        self.send_status()
-        sleep(0.2)
 
 
 class LedShoulders(MQTTClient):

@@ -1,8 +1,9 @@
 from json import loads as json_loads
 from threading import Thread
-from time import time
+from time import time, sleep
 from datetime import datetime
 from typing import List, Dict, Any, Tuple, Optional
+import traceback
 
 # 3rd party
 import cv2
@@ -38,9 +39,10 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.RTSPClient import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
-from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums
+from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums, TraceEnums
 from glados_modules.MqttConsumerModules import ServoLocation
 from glados_modules.VisionTracker import MotionTrack
+from glados_modules.TraceLog import TraceLog
 
 
 class GLaDOSServerException(Exception):
@@ -128,6 +130,11 @@ class MLDetect(Thread, MQTTClient):
 
         self.rtsp = RTSPServer(self.cam_configs)
 
+        # Pipeline tracing
+        self.tracer = TraceLog()
+        self._frame_times: Dict[str, float] = {}  # per-camera FPS tracking
+        self._frame_counts: Dict[str, int] = {}
+
     def __translate_results(self, results: List[Any]) -> Dict[str, Any]:
         """
         Convert YOLO detection/tracking results into a dictionary.
@@ -183,26 +190,46 @@ class MLDetect(Thread, MQTTClient):
         # Run the tracker for this camera
         image_get = RtspConsumer(location=camera_key,
                                  uri=self.cam_configs[camera_key][CameraEnum.MSG_RTSP_URI.value])
+        skip_counter = 0
+        consecutive_errors = 0
+        MAX_BACKOFF = 30  # seconds
         while True:
             try:
                 image_dict = image_get.get_frame()
-                # check if we are moving
+                # During movement, process every 3rd frame instead of skipping entirely.
+                # This keeps the world-angle estimate warm on the tracking side.
                 if camera_key == CameraEnum.CAMERA_HEAD.value:
-                    # camera head thread, don't process image if we are moving to reduce noise
                     if self.servos.check_movement() is True:
-                        continue
+                        skip_counter += 1
+                        if skip_counter % 3 != 0:
+                            continue
+                    else:
+                        skip_counter = 0
 
                 self.logger.debug(f"Processing image from {camera_key}")
+                # Generate trace ID for this frame
+                trace_id = TraceLog.new_id()
+                ts_vision = time()
                 # Process the image and track objects
                 sight = self.__process_image(image_dict, d_model, p_model)
+                # Stamp trace ID and vision timestamp on results
+                sight[TraceEnums.TRACE_ID.value] = trace_id
+                sight[TraceEnums.TS_VISION.value] = ts_vision
                 results = CameraMessageBuilder.send_results(camera_key, sight)
                 self.send_command(results, self.cmd_topic, qos=0)
-
-            except Exception as e:
-                self.logger.error(f"Error in tracker for camera {camera_key}: {e}")
+                # Start trace record
+                self.tracer.start_trace(trace_id, camera=camera_key, ts_vision=ts_vision)
+                consecutive_errors = 0  # reset on success
 
             except KeyboardInterrupt:
                 break
+            except Exception:
+                consecutive_errors += 1
+                backoff = min(MAX_BACKOFF, 0.5 * (2 ** min(consecutive_errors, 6)))
+                self.logger.error(f"Error in tracker for {camera_key} "
+                                  f"(attempt {consecutive_errors}, backoff {backoff:.1f}s):\n"
+                                  f"{traceback.format_exc()}")
+                sleep(backoff)
 
     def start_tracking_threads(self) -> None:
         """
@@ -287,12 +314,42 @@ class MLDetect(Thread, MQTTClient):
             # we have a model, must be head camera, run model and draw points
             key_points, scores = p_model(image)
             # TODO read key point threshold from enum or config file
-            a_image = draw_skeleton(a_image, key_points, scores, kpt_thr=0.5)
+            a_image = draw_skeleton(a_image, key_points, scores,
+                                    kpt_thr=VisionResultsEnum.KEYPOINT_DRAW_THRESHOLD.value)
             # assign results to bounding boxes
             t_results = self.assign_key_points_to_response(t_results, key_points, scores)
 
+        # Draw debug overlay with tracking state (top-right panel)
+        if hasattr(self, 'motion_tracking') and self.motion_tracking.debug_overlay_enabled:
+            overlay = self.motion_tracking._debug_overlay
+            lines = [
+                f"State: {overlay.get('state', '?')}",
+                f"World: LR={overlay.get('world_lr', 0):.1f} UD={overlay.get('world_ud', 0):.1f}",
+                f"H tgt: LR={overlay.get('head_lr', 0):.0f} UD={overlay.get('head_ud', 0):.0f}",
+                f"B tgt: LR={overlay.get('body_lr', 0):.0f} UD={overlay.get('body_ud', 0):.0f}",
+                f"H est: LR={overlay.get('est_head_lr', 0):.0f} UD={overlay.get('est_head_ud', 0):.0f}",
+                f"B est: LR={overlay.get('est_body_lr', 0):.0f} UD={overlay.get('est_body_ud', 0):.0f}",
+            ]
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.5
+            thickness = 1
+            color = (255, 255, 255)
+            line_height = 18
+            # Semi-transparent background
+            panel_w = 280
+            panel_h = len(lines) * line_height + 10
+            x_start = a_image.shape[1] - panel_w - 10
+            y_start = 10
+            sub_img = a_image[y_start:y_start+panel_h, x_start:x_start+panel_w]
+            if sub_img.size > 0:
+                dark = (sub_img * 0.3).astype(sub_img.dtype)
+                a_image[y_start:y_start+panel_h, x_start:x_start+panel_w] = dark
+            for i, line in enumerate(lines):
+                y = y_start + 15 + i * line_height
+                cv2.putText(a_image, line, (x_start + 5, y), font, font_scale, color, thickness)
+
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
-        self.rtsp.send_data(image_dict["camera"], a_image)
+        self.rtsp.send_data(image_dict[CameraEnum.MSG_LOCATION_KEY.value], a_image)
         return t_results
 
     @staticmethod
@@ -319,10 +376,11 @@ class MLDetect(Thread, MQTTClient):
             # Loop through each keypoint, using enumerate to track the index
             for index, ((x, y), score) in enumerate(zip(cords, scores)):
                 keypoint = {
-                    "x": float(x),
-                    "y": float(y),
-                    "confidence": float(score),
-                    "location": VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[index]
+                    VisionResultsEnum.KEYPOINT_X.value: float(x),
+                    VisionResultsEnum.KEYPOINT_Y.value: float(y),
+                    VisionResultsEnum.KEYPOINT_CONFIDENCE.value: float(score),
+                    VisionResultsEnum.KEYPOINT_LOCATION.value:
+                        VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[index]
                 }
                 person_data.append(keypoint)
             merged_data.append(person_data)
@@ -350,13 +408,26 @@ class MLDetect(Thread, MQTTClient):
         # Merge the key points and scores into a list of dictionaries
         merged_key_points = MLDetect.merge_key_points_to_dict(cords_list, scores_list)
 
+        # Enum shortcuts
+        person_key = VisionResultsEnum.VISION_RESULTS_PERSON_KEY.value
+        objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+        box_key = VisionResultsEnum.VISION_RESULTS_BOX_KEY.value
+        pose_key = VisionResultsEnum.VISION_RESULTS_POSE_KEY.value
+        kp_x = VisionResultsEnum.KEYPOINT_X.value
+        kp_y = VisionResultsEnum.KEYPOINT_Y.value
+        kp_loc = VisionResultsEnum.KEYPOINT_LOCATION.value
+        bx1 = VisionResultsEnum.BOX_X1.value
+        by1 = VisionResultsEnum.BOX_Y1.value
+        bx2 = VisionResultsEnum.BOX_X2.value
+        by2 = VisionResultsEnum.BOX_Y2.value
+
         # Iterate over the response dictionary to find matching objects
         count = 0
-        for person_data in response.get('person', {}).get('objects', []):
+        for person_data in response.get(person_key, {}).get(objects_key, []):
             # Get the bounding box coordinates
-            box = person_data.get('box', {})
-            x1, y1 = box.get('x1', 0), box.get('y1', 0)
-            x2, y2 = box.get('x2', 0), box.get('y2', 0)
+            box = person_data.get(box_key, {})
+            x1, y1 = box.get(bx1, 0), box.get(by1, 0)
+            x2, y2 = box.get(bx2, 0), box.get(by2, 0)
 
             # Filter key points that fit inside the bounding box based on the given threshold
             filtered_key_points = []
@@ -367,7 +438,7 @@ class MLDetect(Thread, MQTTClient):
 
                 # Count the number of key points inside the bounding box
                 points_in_box = sum(
-                    1 for kp in key_points if x1 <= kp['x'] <= x2 and y1 <= kp['y'] <= y2
+                    1 for kp in key_points if x1 <= kp[kp_x] <= x2 and y1 <= kp[kp_y] <= y2
                 )
                 # If the percentage of points inside the box meets or exceeds the threshold, assign them.
                 if (points_in_box / total_points) >= percentage_threshold:
@@ -377,8 +448,8 @@ class MLDetect(Thread, MQTTClient):
 
             # Assign the filtered key points to the person data if any were found
             if filtered_key_points:
-                pose_dict = {kp["location"]: kp for kp in filtered_key_points}
-                response['person']['objects'][count]['pose'] = pose_dict
+                pose_dict = {kp[kp_loc]: kp for kp in filtered_key_points}
+                response[person_key][objects_key][count][pose_key] = pose_dict
             count += 1
 
         return response

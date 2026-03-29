@@ -77,6 +77,17 @@ class LEDHead(Enum):
     ARGS_KEY_DELAY = "delay"
 
 
+class LCDEnums(Enum):
+    """Enums for LCD display commands."""
+    MSG_LOCATION_KEY = "lcd"
+    MSG_COMMAND_KEY = "cmd"
+    COMMAND_SET_BREATH = "set_breath"
+    COMMAND_GET_BREATH = "get_breath"
+    COMMAND_STARTUP = "startup"
+    OPTIONS_KEY = "options"
+    RESPONSE_KEY = "response"
+
+
 class STTEnums(Enum):
     """
     Enums for the Speech to text engine
@@ -151,11 +162,30 @@ class MQTTEnums(Enum):
     STT_RESULTS_MQTT_TOPIC = "sst/results"
     VISION_RESULTS_MQTT_TOPIC = "vision/camera_response"
     BODY_LED_CONTROL_MQTT_TOPIC = "body/led"
+    LCD_CONTROL_MQTT_TOPIC = "body/lcd"
+    LCD_STATUS_MQTT_TOPIC = "status"
     IMU_STATUS_TOPIC = "body/imu/status"
     TOF_STATUS_TOPIC = "body/tof/status"
     MOX_STATUS_TOPIC = "body/mox/status"
     SYSTEM_INTENSITY_TOPIC = "intensity"
     TH_STATUS_TOPIC = "body/th/status"
+    SYSTEM_HEALTH_TOPIC = "system/health"
+    SYSTEM_LOG_LEVEL_TOPIC = "system/log_level"
+
+
+class DashboardEnums(Enum):
+    CONFIG_HEAD = "DASHBOARD"
+    DASHBOARD_PORT = "dashboard_port"
+    DEFAULT_PORT = 8080
+
+
+class TraceEnums(Enum):
+    """Keys used in pipeline trace messages."""
+    TRACE_ID = "trace_id"
+    TS_VISION = "ts_vision"
+    TS_TRACK_START = "ts_track_start"
+    TS_TRACK_END = "ts_track_end"
+    TS_SERVO_RX = "ts_servo_rx"
 
 
 class VisionResultsEnum(Enum):
@@ -178,6 +208,20 @@ class VisionResultsEnum(Enum):
     VISION_RESULTS_CONFIDENCE_KEY = "confidence"
     VISION_RESULTS_TS_KEY = "ts"
     VISION_RESULTS_BOX_KEY = "box"
+    VISION_RESULTS_PERSON_KEY = "person"
+    VISION_RESULTS_POSE_KEY = "pose"
+    # Bounding box coordinate keys
+    BOX_X1 = "x1"
+    BOX_Y1 = "y1"
+    BOX_X2 = "x2"
+    BOX_Y2 = "y2"
+    # Keypoint coordinate keys
+    KEYPOINT_X = "x"
+    KEYPOINT_Y = "y"
+    KEYPOINT_CONFIDENCE = "confidence"
+    KEYPOINT_LOCATION = "location"
+    # Keypoint confidence threshold for drawing
+    KEYPOINT_DRAW_THRESHOLD = 0.5
     # Key used for class name in YOLO results
     YOLO_CLASS_NAME_KEY = "name"
 
@@ -367,8 +411,10 @@ class ServoEnum(Enum):
     MSG_LOCATION_KEY = "servo"
     MSG_COMMAND_KEY = "cmd"
     MSG_COMMAND_MOVE = "move"
+    MSG_COMMAND_MOVE_ALL = "move_all"
     MSG_COMMAND_STATUS = "status"
     MSG_RESULTS = "results"
+    MSG_TARGETS = "targets"
     MSG_ANGLE = "angle"
     MSG_SPEED = "speed"
     MSG_MAX = "max"
@@ -376,6 +422,7 @@ class ServoEnum(Enum):
     MSG_MIDDLE = "middle"
     MSG_CURRENT_ANGLE = "current"
     MSG_LAST_ANGLE = "last"
+    MSG_VELOCITY = "velocity"
     MSG_LOCATION = "location"
     MSG_MOVING = "moving"
     MSG_AXIS = "axis"
@@ -383,6 +430,103 @@ class ServoEnum(Enum):
     Y_AXIS = "y"
     MQTT_COMMAND_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}"
     MQTT_STATUS_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/{MSG_COMMAND_STATUS}"
+    # Head servo locations for spring-damper type selection
+    HEAD_SERVO_LOCATIONS = (LOCATION_HEAD_UP_DOWN, LOCATION_HEAD_LEFT_RIGHT)
+    BODY_SERVO_LOCATIONS = (LOCATION_BODY_UP_DOWN, LOCATION_BODY_LEFT_RIGHT)
+
+
+class MotionProfile(Enum):
+    """Spring-damper motion parameters for organic servo movement.
+
+    Each speed level (1-5) maps to (omega, zeta) where:
+    - omega: natural frequency (rad/s) - controls response speed
+    - zeta: damping ratio - <1.0 gives organic overshoot, 1.0 is critically damped
+    """
+    # Head servos: fast response, slight overshoot for organic feel
+    HEAD_PARAMS = {
+        1: (4.0, 0.95),    # Calm: slow, nearly critically damped
+        2: (6.0, 0.90),    # Neutral: moderate, minimal overshoot
+        3: (8.0, 0.85),    # Attentive: quick, slight overshoot
+        4: (11.0, 0.78),   # Angry: snappy, visible overshoot
+        5: (14.0, 0.70),   # Frustrated: very fast, pronounced overshoot
+    }
+    # Body servos: slow follow, minimal overshoot
+    BODY_PARAMS = {
+        1: (1.5, 1.0),     # Calm: very slow, critically damped
+        2: (2.0, 1.0),     # Neutral: slow, critically damped
+        3: (2.5, 1.0),     # Attentive: moderate, critically damped
+        4: (3.5, 0.95),    # Angry: faster, nearly critically damped
+        5: (4.5, 0.90),    # Frustrated: fast follow, tiny overshoot
+    }
+    # Physics loop timing
+    PHYSICS_DT = 0.02              # 50Hz update rate (seconds)
+    STATUS_SEND_INTERVAL = 10      # send MQTT status every N ticks (~5Hz)
+    # Movement detection thresholds (for self.moving flag)
+    MOVING_VELOCITY_THRESHOLD = 0.1     # deg/s
+    MOVING_POSITION_THRESHOLD = 0.5     # degrees
+    # Default speed level for tracking
+    DEFAULT_TRACKING_SPEED = 3
+    # Idle drift speed level
+    IDLE_DRIFT_SPEED = 1
+    # Piecewise interpolation: head_UD angle -> body_UD angle
+    # Empirically calibrated from physical robot
+    HEAD_UD_TO_BODY_UD_TABLE = [
+        (64, 30), (66, 40), (68, 50), (70, 60), (72, 70), (79, 80), (83, 90),
+        (92, 100), (97, 110), (104, 120), (114, 130), (121, 140), (126, 150)
+    ]
+    # World-space tracking parameters
+    WORLD_SMOOTH_ALPHA = 0.7           # EMA factor for world-space angle smoothing
+    IDLE_DRIFT_INTERVAL = 0.5          # seconds between idle drift target sends
+    IDLE_TIMEOUT = 5.0                 # seconds without target before idle drift starts
+    DEFAULT_SERVO_CENTER = 90.0        # fallback center angle
+    # Camera mounting offsets (degrees from body center)
+    CAMERA_LEFT_MOUNTING_OFFSET = -55.0
+    CAMERA_RIGHT_MOUNTING_OFFSET = 55.0
+
+
+class KinematicsEnums(Enum):
+    """URDF-derived kinematic parameters for the GLaDOS robot arm.
+
+    Joint axes are unit vectors from the URDF, defined in the parent link frame.
+    Offsets are translation vectors in mm from parent joint to child joint.
+    Chain order: base -> body_LR -> body_UD -> head_LR -> head_UD -> camera
+
+    Sign multipliers convert servo-degree direction to URDF rotation direction.
+    A value of 1.0 means increasing servo degrees = positive rotation about the
+    URDF axis. A value of -1.0 means they are opposite. These must be calibrated
+    on the physical robot.
+    """
+    # Joint rotation axes (unit vectors in parent link frame)
+    AXIS_BODY_LR = (0.0, 1.0, 0.0)
+    AXIS_BODY_UD = (-0.59, 0.03, -0.81)
+    AXIS_HEAD_LR = (-0.67, 0.54, 0.51)
+    AXIS_HEAD_UD = (0.58, -0.05, 0.82)
+
+    # Joint-to-joint translation offsets in mm (parent -> child)
+    OFFSET_BODY_LR_TO_BODY_UD = (8.55, -192.95, -9.44)
+    OFFSET_BODY_UD_TO_HEAD_LR = (-84.61, 6.10, 57.19)
+    OFFSET_HEAD_LR_TO_HEAD_UD = (-51.14, -36.57, 47.84)
+
+    # Camera optical axis in the head_UD link frame (unit vector pointing "forward")
+    # Initial assumption -- must be calibrated on real hardware
+    CAMERA_OPTICAL_AXIS_LOCAL = (0.0, 0.0, 1.0)
+
+    # Per-joint sign multipliers (servo degrees -> URDF rotation direction)
+    # Must be calibrated on real hardware: command +10 deg, observe direction
+    SIGN_BODY_LR = 1.0
+    SIGN_BODY_UD = 1.0
+    SIGN_HEAD_LR = 1.0
+    SIGN_HEAD_UD = 1.0
+
+    # Joint ordering (matches ServoEnum.LOCATION_* values)
+    JOINT_ORDER = ("body_left_right", "body_up_down",
+                   "head_left_right", "head_up_down")
+
+    # IK solver parameters
+    IK_MAX_ITERATIONS = 10
+    IK_TOLERANCE_DEG = 0.1
+    IK_DAMPING_LAMBDA = 0.01
+    IK_FINITE_DIFF_EPS = 1e-4
 
 
 class CameraEnum(Enum):

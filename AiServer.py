@@ -7,7 +7,9 @@ from os import path
 # glados imports
 from glados_modules.MachineVision import MLDetect, GLaDOSServerException
 from glados_modules.WhisperXSpeech2Text import AudioServerRX, LocalSTTtx
-from glados_modules.GladosEnums import STTEnums, SystemEnums
+from glados_modules.GladosEnums import STTEnums, SystemEnums, DashboardEnums
+from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.WebDashboard import WebDashboard
 from gladosTTS import engine as glados_voice
 
 if __name__ == "__main__":
@@ -39,5 +41,27 @@ if __name__ == "__main__":
     lstt_tx = LocalSTTtx(mqtt_b)
     stt_audio_rx = AudioServerRX(audio_b, callback=lstt_tx.process_audio)
     stt_audio_rx.start()
+    # Start health monitoring
+    health = HealthMonitor(broker=mqtt_b, system_name="ai_server")
+    health.register("MLDetect", mv)
+    health.register("AudioRX", stt_audio_rx)
+    health.start()
+    # Start web dashboard (GPU: direct frame buffer from MLDetect's RTSP server)
+    # Build feeds dict from camera configs
+    ai_feeds = {}
+    for cam_name in mv.cam_configs.keys():
+        label = cam_name.replace("camera_", "").replace("_", " ").title()
+        ai_feeds[f"{label} (Annotated)"] = f"/{cam_name}"
+    dash_port = int(config_p.get(DashboardEnums.CONFIG_HEAD.value,
+                                  DashboardEnums.DASHBOARD_PORT.value,
+                                  fallback=DashboardEnums.DEFAULT_PORT.value))
+    dashboard = WebDashboard(
+        system_name="ai_server",
+        health_monitor=health,
+        rtsp_server=mv.rtsp,  # direct access to annotated frames
+        feeds=ai_feeds,
+        port=dash_port
+    )
+    dashboard.start()
     # start the text to speech engine
     glados_voice.main()

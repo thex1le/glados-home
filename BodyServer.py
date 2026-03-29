@@ -12,7 +12,9 @@ from adafruit_servokit import ServoKit
 # glados imports
 from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD
 from glados_modules.CameraModule import GLaDOSServerException, Camera
-from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums
+from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums
+from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.WebDashboard import WebDashboard
 
 
 if __name__ == "__main__":
@@ -82,5 +84,27 @@ if __name__ == "__main__":
     head_camera = Camera(configfile=config_p, location=cefh[CameraEnum.CAMERA_HEAD_FACTORY.value],
                          rtspport=int(cefh[CameraEnum.CAMERA_HEAD_PORT.value]))
     head_camera.start()
+    # Start health monitoring
+    health = HealthMonitor(broker=mqtt_connect, system_name="body_server")
+    health.register("body_LR", body_LR)
+    health.register("body_UD", body_UD)
+    health.register("head_LR", head_LR)
+    health.register("head_UD", head_UD)
+    health.register("lcd", glados_right_lcd)
+    health.register("camera", head_camera)
+    health.start()
+    # Start web dashboard (Pi4: consumes RTSP since Camera is a separate process)
+    head_cam_factory = cefh[CameraEnum.CAMERA_HEAD_FACTORY.value]
+    head_cam_rtsp_port = cefh[CameraEnum.CAMERA_HEAD_PORT.value]
+    dash_port = int(config_p.get(DashboardEnums.CONFIG_HEAD.value,
+                                  DashboardEnums.DASHBOARD_PORT.value,
+                                  fallback=DashboardEnums.DEFAULT_PORT.value))
+    dashboard = WebDashboard(
+        system_name="body_server",
+        health_monitor=health,
+        feed_uris={"Head Camera (Raw)": f"rtsp://localhost:{head_cam_rtsp_port}/{head_cam_factory}"},
+        port=dash_port
+    )
+    dashboard.start()
     while True:
         sleep(1)
