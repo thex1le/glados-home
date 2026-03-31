@@ -67,10 +67,32 @@ def parse_csv(raw: str) -> list:
 
 
 def get_servo_config(config: ConfigParser) -> dict:
-    """Build servo min/max/center from config file."""
-    head_vals = parse_csv(config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.HEAD_MIN_MAX_CENTER.value))
-    neck_vals = parse_csv(config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.NECK_MIN_MAX_CENTER.value))
-    default_vals = parse_csv(config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.DEFAULT_MAX_MIN_CENTER.value))
+    """Build servo min/max/center and board assignment from config file."""
+    sech = config[ServoEnum.CONFIG_HEAD.value]
+    head_vals = parse_csv(sech.get(ServoEnum.HEAD_MIN_MAX_CENTER.value))
+    neck_vals = parse_csv(sech.get(ServoEnum.NECK_MIN_MAX_CENTER.value))
+    default_vals = parse_csv(sech.get(ServoEnum.DEFAULT_MAX_MIN_CENTER.value))
+
+    # Parse board addresses
+    pca_addrs = [a.strip() for a in sech.get(
+        ServoEnum.PCA9685_ADDRESSES.value, ServoEnum.PCA9685_DEFAULT_ADDRESSES.value).split(',')]
+
+    # Parse per-servo board,channel assignments
+    board_channel_keys = {
+        ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: (ServoEnum.BODY_LR_BOARD_CHANNEL.value, "0,0"),
+        ServoEnum.LOCATION_BODY_UP_DOWN.value: (ServoEnum.BODY_UD_BOARD_CHANNEL.value, "0,1"),
+        ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value: (ServoEnum.HEAD_LR_BOARD_CHANNEL.value, "0,2"),
+        ServoEnum.LOCATION_HEAD_UP_DOWN.value: (ServoEnum.HEAD_UD_BOARD_CHANNEL.value, "0,3"),
+    }
+
+    def get_board_info(servo_name: str) -> dict:
+        key, fallback = board_channel_keys[servo_name]
+        raw = sech.get(key, fallback)
+        parts = raw.split(',')
+        board_idx = int(parts[0])
+        channel = int(parts[1])
+        addr = pca_addrs[board_idx] if board_idx < len(pca_addrs) else "0x40"
+        return {"board": board_idx, "channel": channel, "address": addr}
 
     body_lr = ServoEnum.LOCATION_BODY_LEFT_RIGHT.value
     body_ud = ServoEnum.LOCATION_BODY_UP_DOWN.value
@@ -78,10 +100,14 @@ def get_servo_config(config: ConfigParser) -> dict:
     head_ud = ServoEnum.LOCATION_HEAD_UP_DOWN.value
 
     return {
-        body_lr: {"max": float(default_vals[0]), "min": float(default_vals[1]), "center": float(default_vals[2])},
-        body_ud: {"max": float(neck_vals[0]), "min": float(neck_vals[1]), "center": float(neck_vals[2])},
-        head_lr: {"max": float(head_vals[0]), "min": float(head_vals[1]), "center": float(head_vals[2])},
-        head_ud: {"max": float(head_vals[0]), "min": float(head_vals[1]), "center": float(head_vals[2])},
+        body_lr: {"max": float(default_vals[0]), "min": float(default_vals[1]), "center": float(default_vals[2]),
+                  **get_board_info(body_lr)},
+        body_ud: {"max": float(neck_vals[0]), "min": float(neck_vals[1]), "center": float(neck_vals[2]),
+                  **get_board_info(body_ud)},
+        head_lr: {"max": float(head_vals[0]), "min": float(head_vals[1]), "center": float(head_vals[2]),
+                  **get_board_info(head_lr)},
+        head_ud: {"max": float(head_vals[0]), "min": float(head_vals[1]), "center": float(head_vals[2]),
+                  **get_board_info(head_ud)},
     }
 
 
@@ -118,6 +144,7 @@ def run_servo_test(client: mqtt.Client, name: str, cfg: dict, speed: int, hold: 
     label = SERVO_LABELS.get(name, name)
     print(f"\n{'=' * 60}")
     print(f"Testing: {label}")
+    print(f"  Board: {cfg['board']} (address {cfg['address']})  Channel: {cfg['channel']}")
     print(f"  Range: {cfg['min']:.0f} -> {cfg['center']:.0f} -> {cfg['max']:.0f}")
     print(f"  Speed: {speed}  Hold: {hold}s")
     print(f"{'=' * 60}")
@@ -181,7 +208,12 @@ def main() -> None:
     client.loop_start()
     print(f"Connected to MQTT broker at {broker_ip}:{broker_port}")
 
-    print(f"\nTesting {len(servos_to_test)} servo(s): {', '.join(servos_to_test)}")
+    print(f"\nTesting {len(servos_to_test)} servo(s):")
+    for name in servos_to_test:
+        cfg = servo_config[name]
+        label = SERVO_LABELS.get(name, name)
+        print(f"  {label}  ->  board {cfg['board']} ({cfg['address']}) ch {cfg['channel']}  "
+              f"range [{cfg['min']:.0f}-{cfg['max']:.0f}]")
     print(f"Speed: {speed}  Hold: {args.hold}s per position")
 
     try:
