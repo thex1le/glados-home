@@ -1,5 +1,8 @@
+# builtin
 import random
 import time
+import signal
+import os
 from os import path
 import argparse
 import sys
@@ -83,6 +86,14 @@ if __name__ == "__main__":
         port=dash_port
     )
     dashboard.start()
+
+    def shutdown_handler(signum, frame):
+        print("\nShutting down GLaDOS...")
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
     while True:
         prompt = gstt.get_text()
         if prompt is not None:

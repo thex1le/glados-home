@@ -1,4 +1,6 @@
-#built in
+# builtin
+import signal
+import os
 from argparse import ArgumentParser
 from configparser import ConfigParser
 import sys
@@ -67,5 +69,15 @@ if __name__ == "__main__":
         port=dash_port
     )
     dashboard.start()
-    # start the text to speech engine
+    # Handle Ctrl+C cleanly -- force exit since daemon threads and GStreamer
+    # don't respond to gentle shutdown requests
+    def shutdown_handler(signum, frame):
+        print("\nShutting down AiServer...")
+        # os._exit bypasses Python cleanup which can hang on GStreamer/MQTT threads
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
+    # start the text to speech engine (blocks in Flask's server loop)
     glados_voice.main()

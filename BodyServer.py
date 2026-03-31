@@ -1,4 +1,6 @@
 # builtin
+import signal
+import os
 from time import sleep
 from argparse import ArgumentParser
 from configparser import ConfigParser
@@ -125,5 +127,13 @@ if __name__ == "__main__":
         port=dash_port
     )
     dashboard.start()
+
+    def shutdown_handler(signum, frame):
+        print("\nShutting down BodyServer...")
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
     while True:
         sleep(1)
