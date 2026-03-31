@@ -10,6 +10,10 @@ from glados_modules.WhisperXSpeech2Text import AudioServerRX, LocalSTTtx
 from glados_modules.GladosEnums import STTEnums, SystemEnums, DashboardEnums
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.WebDashboard import WebDashboard
+
+# gladosTTS is an external repo cloned into the project -- its internal imports
+# use bare "from utils.tools import ..." so it needs its own dir on sys.path
+sys.path.insert(0, path.join(path.dirname(path.abspath(__file__)), 'gladosTTS'))
 from gladosTTS import engine as glados_voice
 
 if __name__ == "__main__":

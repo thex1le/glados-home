@@ -16,6 +16,9 @@ PyGObject                        # GStreamer RTSP server bindings
 # Web dashboard
 flask
 
+# GLaDOS TTS engine (github.com/thex1le/glados-tts)
+scipy                            # wav file I/O for TTS output
+
 # AI / ML - Object detection
 ultralytics                      # YOLOv8
 
