@@ -18,6 +18,7 @@ flask
 
 # GLaDOS TTS engine (github.com/thex1le/glados-tts)
 scipy                            # wav file I/O for TTS output
+phonemizer                       # text-to-phoneme conversion (needs espeak-ng system package)
 
 # AI / ML - Object detection
 ultralytics                      # YOLOv8

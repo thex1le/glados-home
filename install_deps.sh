@@ -55,6 +55,7 @@ case "$SYSTEM" in
             mosquitto
             mosquitto-clients
             ffmpeg
+            espeak-ng
         )
         PIP_REQUIREMENTS="requirements_gpu.txt"
         ;;
