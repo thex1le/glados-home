@@ -1,23 +1,21 @@
-"""Servo range-of-motion test via MQTT.
+"""Servo range-of-motion test.
 
 Moves each servo through min -> center -> max -> center, one at a time.
-Prints which servo is being tested and its current target.
+Supports two modes:
+  - MQTT mode (default): sends commands to BodyServer via MQTT
+  - Direct mode (--direct): drives servos over I2C on the local Pi, no BodyServer needed
 
 Usage:
-    # Test all servos
+    # MQTT mode - run from GPU server while BodyServer is running on Pi4
     python3 Tests/servo_test.py -config glog.conf
+    python3 Tests/servo_test.py -config glog.conf --servo 0 2
 
-    # Test a single servo
-    python3 Tests/servo_test.py -config glog.conf --servo body_left_right
+    # Direct mode - run on Pi4, no BodyServer needed
+    python3 Tests/servo_test.py -config glog.conf --direct
+    python3 Tests/servo_test.py -config glog.conf --direct --servo 1
 
-    # Test multiple servos
-    python3 Tests/servo_test.py -config glog.conf --servo body_left_right head_up_down
-
-    # Faster or slower movement (speed 1-5, default 2)
-    python3 Tests/servo_test.py -config glog.conf --speed 1
-
-    # Custom hold time at each position (seconds, default 2)
-    python3 Tests/servo_test.py -config glog.conf --hold 3
+    # Options
+    python3 Tests/servo_test.py -config glog.conf --speed 1 --hold 3
 
 Servo numbers:
     0 = body_left_right (GS3508MG)
@@ -33,9 +31,6 @@ import os
 import time
 from configparser import ConfigParser
 from json import dumps
-
-# 3rd party
-import paho.mqtt.client as mqtt
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -59,6 +54,14 @@ SERVO_LABELS = {
 
 # Map channel numbers to servo names
 SERVO_BY_NUMBER = {str(i): name for i, name in enumerate(ALL_SERVOS)}
+
+# Pulse width ranges per motor type (from glog.conf)
+PULSE_KEYS = {
+    ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: ServoEnum.SERVO_GS3508MG_PULSE.value,
+    ServoEnum.LOCATION_BODY_UP_DOWN.value: ServoEnum.SERVO_MG92B_PULSE.value,
+    ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value: ServoEnum.SERVO_MG92B_PULSE.value,
+    ServoEnum.LOCATION_HEAD_UP_DOWN.value: ServoEnum.SERVO_MG90D_PULSE.value,
+}
 
 
 def parse_csv(raw: str) -> list:
@@ -94,6 +97,12 @@ def get_servo_config(config: ConfigParser) -> dict:
         addr = pca_addrs[board_idx] if board_idx < len(pca_addrs) else "0x40"
         return {"board": board_idx, "channel": channel, "address": addr}
 
+    # Parse pulse widths for direct mode
+    pulse_ranges = {}
+    for servo_name, pulse_key in PULSE_KEYS.items():
+        pulse_vals = parse_csv(sech.get(pulse_key, "2665,610"))
+        pulse_ranges[servo_name] = (int(pulse_vals[0]), int(pulse_vals[1]))
+
     body_lr = ServoEnum.LOCATION_BODY_LEFT_RIGHT.value
     body_ud = ServoEnum.LOCATION_BODY_UP_DOWN.value
     head_lr = ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value
@@ -101,17 +110,19 @@ def get_servo_config(config: ConfigParser) -> dict:
 
     return {
         body_lr: {"max": float(default_vals[0]), "min": float(default_vals[1]), "center": float(default_vals[2]),
-                  **get_board_info(body_lr)},
+                  "pulse": pulse_ranges[body_lr], **get_board_info(body_lr)},
         body_ud: {"max": float(neck_vals[0]), "min": float(neck_vals[1]), "center": float(neck_vals[2]),
-                  **get_board_info(body_ud)},
+                  "pulse": pulse_ranges[body_ud], **get_board_info(body_ud)},
         head_lr: {"max": float(head_vals[0]), "min": float(head_vals[1]), "center": float(head_vals[2]),
-                  **get_board_info(head_lr)},
+                  "pulse": pulse_ranges[head_lr], **get_board_info(head_lr)},
         head_ud: {"max": float(head_vals[0]), "min": float(head_vals[1]), "center": float(head_vals[2]),
-                  **get_board_info(head_ud)},
+                  "pulse": pulse_ranges[head_ud], **get_board_info(head_ud)},
     }
 
 
-def send_move(client: mqtt.Client, servo_name: str, angle: float, speed: int) -> None:
+# --- MQTT mode functions ---
+
+def mqtt_send_move(client, servo_name: str, angle: float, speed: int) -> None:
     """Send a single servo move command via MQTT."""
     msg = {
         ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_MOVE.value,
@@ -123,8 +134,8 @@ def send_move(client: mqtt.Client, servo_name: str, angle: float, speed: int) ->
     client.publish(ServoEnum.MQTT_COMMAND_TOPIC.value, dumps(msg))
 
 
-def center_all(client: mqtt.Client, servo_config: dict, speed: int) -> None:
-    """Send all servos to their center position."""
+def mqtt_center_all(client, servo_config: dict, speed: int) -> None:
+    """Send all servos to their center position via MQTT."""
     targets = {}
     for name, cfg in servo_config.items():
         targets[name] = {
@@ -139,14 +150,62 @@ def center_all(client: mqtt.Client, servo_config: dict, speed: int) -> None:
     client.publish(ServoEnum.MQTT_COMMAND_TOPIC.value, dumps(msg))
 
 
-def run_servo_test(client: mqtt.Client, name: str, cfg: dict, speed: int, hold: float) -> None:
+# --- Direct mode functions ---
+
+def direct_init_kits(servo_config: dict) -> dict:
+    """Create ServoKit instances for each unique board address."""
+    from adafruit_servokit import ServoKit
+
+    # Collect unique addresses
+    addresses = {}
+    for name, cfg in servo_config.items():
+        addr = int(cfg["address"], 0)
+        if addr not in addresses:
+            addresses[addr] = None
+
+    # Create a ServoKit for each
+    kits = {}
+    for addr in addresses:
+        print(f"  Initializing PCA9685 board at {hex(addr)}")
+        kits[addr] = ServoKit(channels=16, address=addr)
+
+    # Set pulse width ranges for each servo
+    for name, cfg in servo_config.items():
+        addr = int(cfg["address"], 0)
+        channel = cfg["channel"]
+        pulse_max, pulse_min = cfg["pulse"]
+        kits[addr].servo[channel].set_pulse_width_range(min_pulse=pulse_min, max_pulse=pulse_max)
+        print(f"  {SERVO_LABELS.get(name, name)}  ->  {hex(addr)} ch {channel}  "
+              f"pulse {pulse_min}-{pulse_max}us")
+
+    return kits
+
+
+def direct_move(kits: dict, servo_name: str, cfg: dict, angle: float) -> None:
+    """Move a servo directly via I2C."""
+    addr = int(cfg["address"], 0)
+    channel = cfg["channel"]
+    clamped = max(cfg["min"], min(cfg["max"], angle))
+    kits[addr].servo[channel].angle = clamped
+
+
+def direct_center_all(kits: dict, servo_config: dict) -> None:
+    """Center all servos directly via I2C."""
+    for name, cfg in servo_config.items():
+        direct_move(kits, name, cfg, cfg["center"])
+
+
+# --- Shared test runner ---
+
+def run_servo_test(move_fn, name: str, cfg: dict, hold: float) -> None:
     """Run a single servo through its range: min -> center -> max -> center."""
     label = SERVO_LABELS.get(name, name)
     print(f"\n{'=' * 60}")
     print(f"Testing: {label}")
     print(f"  Board: {cfg['board']} (address {cfg['address']})  Channel: {cfg['channel']}")
     print(f"  Range: {cfg['min']:.0f} -> {cfg['center']:.0f} -> {cfg['max']:.0f}")
-    print(f"  Speed: {speed}  Hold: {hold}s")
+    print(f"  Pulse: {cfg['pulse'][1]}-{cfg['pulse'][0]}us")
+    print(f"  Hold: {hold}s")
     print(f"{'=' * 60}")
 
     steps = [
@@ -158,88 +217,132 @@ def run_servo_test(client: mqtt.Client, name: str, cfg: dict, speed: int, hold: 
     ]
 
     for desc, angle in steps:
-        print(f"  -> Moving to {desc}: {angle:.0f}°", end="", flush=True)
-        send_move(client, name, angle, speed)
+        print(f"  -> Moving to {desc}: {angle:.0f}\u00b0", end="", flush=True)
+        move_fn(name, angle)
         time.sleep(hold)
-        print(" ✓")
+        print(" done")
+
+
+def resolve_servos(args_servo: list) -> list:
+    """Resolve servo selection from CLI args (numbers or names)."""
+    if not args_servo:
+        return list(ALL_SERVOS)
+    servos = []
+    for s in args_servo:
+        if s in SERVO_BY_NUMBER:
+            servos.append(SERVO_BY_NUMBER[s])
+        elif s in ALL_SERVOS:
+            servos.append(s)
+        else:
+            print(f"ERROR: Unknown servo '{s}'")
+            print(f"Use numbers 0-3 or names: {', '.join(ALL_SERVOS)}")
+            sys.exit(1)
+    return servos
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Test servo range of motion via MQTT",
+        description="Test servo range of motion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Available servos: " + ", ".join(ALL_SERVOS),
+        epilog="Servos: 0=body_LR  1=body_UD  2=head_LR  3=head_UD",
     )
     parser.add_argument("-config", required=True, help="Path to glog.conf")
     parser.add_argument("--servo", nargs="+", default=None,
                         help="Servo(s) to test by number (0-3) or name (default: all)")
     parser.add_argument("--speed", type=int, default=2,
-                        help="Movement speed 1-5 (default: 2)")
+                        help="Movement speed 1-5, MQTT mode only (default: 2)")
     parser.add_argument("--hold", type=float, default=2.0,
                         help="Seconds to hold each position (default: 2)")
+    parser.add_argument("--direct", action="store_true",
+                        help="Direct I2C mode -- drive servos locally, no MQTT/BodyServer needed")
     args = parser.parse_args()
 
     config = ConfigParser()
     config.read(args.config)
-    broker_ip = config.get(SystemEnums.CONFIG_HEAD_MQTT.value, SystemEnums.MQTT_SERVER_IP.value)
-    broker_port = int(config.get(SystemEnums.CONFIG_HEAD_MQTT.value, SystemEnums.MQTT_PORT.value))
     servo_config = get_servo_config(config)
-
-    # Resolve servo selection (accept numbers or names)
-    if args.servo:
-        servos_to_test = []
-        for s in args.servo:
-            if s in SERVO_BY_NUMBER:
-                servos_to_test.append(SERVO_BY_NUMBER[s])
-            elif s in ALL_SERVOS:
-                servos_to_test.append(s)
-            else:
-                print(f"ERROR: Unknown servo '{s}'")
-                print(f"Use numbers 0-3 or names: {', '.join(ALL_SERVOS)}")
-                sys.exit(1)
-    else:
-        servos_to_test = ALL_SERVOS
-
+    servos_to_test = resolve_servos(args.servo)
     speed = max(1, min(5, args.speed))
 
-    # Connect to MQTT
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.connect(broker_ip, broker_port)
-    client.loop_start()
-    print(f"Connected to MQTT broker at {broker_ip}:{broker_port}")
-
-    print(f"\nTesting {len(servos_to_test)} servo(s):")
+    # Print servo summary
+    mode = "DIRECT (I2C)" if args.direct else "MQTT"
+    print(f"\nMode: {mode}")
+    print(f"Testing {len(servos_to_test)} servo(s):")
     for name in servos_to_test:
         cfg = servo_config[name]
         label = SERVO_LABELS.get(name, name)
         print(f"  {label}  ->  board {cfg['board']} ({cfg['address']}) ch {cfg['channel']}  "
-              f"range [{cfg['min']:.0f}-{cfg['max']:.0f}]")
-    print(f"Speed: {speed}  Hold: {args.hold}s per position")
+              f"range [{cfg['min']:.0f}-{cfg['max']:.0f}]  pulse {cfg['pulse'][1]}-{cfg['pulse'][0]}us")
+    print(f"Hold: {args.hold}s per position")
 
-    try:
-        # Center all first
-        print("\nCentering all servos...")
-        center_all(client, servo_config, speed)
-        time.sleep(2.0)
+    if args.direct:
+        # Direct I2C mode
+        print("\nInitializing I2C boards...")
+        kits = direct_init_kits(servo_config)
 
-        # Test each selected servo
-        for name in servos_to_test:
-            run_servo_test(client, name, servo_config[name], speed, args.hold)
+        def move_fn(name, angle):
+            direct_move(kits, name, servo_config[name], angle)
 
-        # Return to center
-        print("\nReturning all servos to center...")
-        center_all(client, servo_config, speed)
-        time.sleep(1.0)
-        print("\nDone.")
+        def center_fn():
+            direct_center_all(kits, servo_config)
 
-    except KeyboardInterrupt:
-        print("\n\nInterrupted -- centering all servos...")
-        center_all(client, servo_config, speed)
-        time.sleep(1.0)
-        print("Stopped.")
+        try:
+            print("\nCentering all servos...")
+            center_fn()
+            time.sleep(1.0)
 
-    client.loop_stop()
-    client.disconnect()
+            for name in servos_to_test:
+                run_servo_test(move_fn, name, servo_config[name], args.hold)
+
+            print("\nReturning all servos to center...")
+            center_fn()
+            time.sleep(1.0)
+            print("\nDone.")
+
+        except KeyboardInterrupt:
+            print("\n\nInterrupted -- centering all servos...")
+            center_fn()
+            time.sleep(1.0)
+            print("Stopped.")
+
+    else:
+        # MQTT mode
+        import paho.mqtt.client as mqtt
+        broker_ip = config.get(SystemEnums.CONFIG_HEAD_MQTT.value, SystemEnums.MQTT_SERVER_IP.value)
+        broker_port = int(config.get(SystemEnums.CONFIG_HEAD_MQTT.value, SystemEnums.MQTT_PORT.value))
+
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        client.connect(broker_ip, broker_port)
+        client.loop_start()
+        print(f"\nConnected to MQTT broker at {broker_ip}:{broker_port}")
+        print(f"Speed: {speed}")
+
+        def move_fn(name, angle):
+            mqtt_send_move(client, name, angle, speed)
+
+        def center_fn():
+            mqtt_center_all(client, servo_config, speed)
+
+        try:
+            print("\nCentering all servos...")
+            center_fn()
+            time.sleep(2.0)
+
+            for name in servos_to_test:
+                run_servo_test(move_fn, name, servo_config[name], args.hold)
+
+            print("\nReturning all servos to center...")
+            center_fn()
+            time.sleep(1.0)
+            print("\nDone.")
+
+        except KeyboardInterrupt:
+            print("\n\nInterrupted -- centering all servos...")
+            center_fn()
+            time.sleep(1.0)
+            print("Stopped.")
+
+        client.loop_stop()
+        client.disconnect()
 
 
 if __name__ == "__main__":
