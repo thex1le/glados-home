@@ -16,7 +16,7 @@ from glados_modules.WebDashboard import WebDashboard
 # gladosTTS is an external repo cloned into the project -- its internal imports
 # use bare "from utils.tools import ..." so it needs its own dir on sys.path
 sys.path.insert(0, path.join(path.dirname(path.abspath(__file__)), 'gladosTTS'))
-from gladosTTS import engine as glados_voice
+from glados_tts import engine as glados_voice
 
 if __name__ == "__main__":
     parser = ArgumentParser(description='Evil Home AI Senses Server')
