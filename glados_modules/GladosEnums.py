@@ -391,6 +391,15 @@ class ServoEnum(Enum):
     SERVO_M995R_PULSE = "mg995r_pulse"
     SERVO_GS3508MG_PULSE = "gs3508mg_pulse"
     SERVO_GS3508MG_SPEED = "gs3508mg_speed"
+    # PCA9685 board addresses (comma-separated, e.g. "0x40,0x41" for two boards)
+    PCA9685_ADDRESSES = "pca9685_addresses"
+    PCA9685_DEFAULT_ADDRESSES = "0x40"
+    # Per-servo board assignment: "board_index,channel" (e.g. "0,0" = board 0 channel 0)
+    BODY_LR_BOARD_CHANNEL = "body_left_right_board_channel"
+    BODY_UD_BOARD_CHANNEL = "body_up_down_board_channel"
+    HEAD_LR_BOARD_CHANNEL = "head_left_right_board_channel"
+    HEAD_UD_BOARD_CHANNEL = "head_up_down_board_channel"
+    LED_HEAD_BOARD_CHANNEL = "led_head_board_channel"
     LOCATION_HEAD_UP_DOWN = "head_up_down"
     LOCATION_HEAD_LEFT_RIGHT = "head_left_right"
     LOCATION_BODY_UP_DOWN = "body_up_down"

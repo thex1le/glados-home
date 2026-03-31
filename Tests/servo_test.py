@@ -113,7 +113,7 @@ def center_all(client: mqtt.Client, servo_config: dict, speed: int) -> None:
     client.publish(ServoEnum.MQTT_COMMAND_TOPIC.value, dumps(msg))
 
 
-def test_servo(client: mqtt.Client, name: str, cfg: dict, speed: int, hold: float) -> None:
+def run_servo_test(client: mqtt.Client, name: str, cfg: dict, speed: int, hold: float) -> None:
     """Run a single servo through its range: min -> center -> max -> center."""
     label = SERVO_LABELS.get(name, name)
     print(f"\n{'=' * 60}")
@@ -192,7 +192,7 @@ def main() -> None:
 
         # Test each selected servo
         for name in servos_to_test:
-            test_servo(client, name, servo_config[name], speed, args.hold)
+            run_servo_test(client, name, servo_config[name], speed, args.hold)
 
         # Return to center
         print("\nReturning all servos to center...")

@@ -917,11 +917,11 @@ class DumbLEDController(Thread):
     """
     LED Controller for pca9685
     """
-    def __init__(self, channel: int, duty_cycle: int = 100) -> None:
+    def __init__(self, channel: int, duty_cycle: int = 100, pca_address: int = 0x40) -> None:
         Thread.__init__(self)
         # TODO add a logger and mqtt here
         self.daemon = True
-        self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
+        self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA), address=pca_address)
         self.led = self.hat.channels[channel]
         self.led.duty_cycle = duty_cycle
         self.current_brightness = duty_cycle
@@ -980,7 +980,7 @@ class DumbLEDController(Thread):
 
 
 class LedHead(MQTTClient):
-    def __init__(self, broker: NamedTuple) -> None:
+    def __init__(self, broker: NamedTuple, pca_address: int = 0x40, pwm_channel: int = 4) -> None:
         self.__name__ = "Head_LED_Controller"
         # TODO do we need to remove the logger here or in mqtt object?
         # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
@@ -988,8 +988,8 @@ class LedHead(MQTTClient):
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
         self.swap = LedHelper.rgb2grb_swap
-        self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA))
-        self.pwm_led = self.hat.channels[4]
+        self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA), address=pca_address)
+        self.pwm_led = self.hat.channels[pwm_channel]
         self.hat.frequency = 60
         self.pwm_led.duty_cycle = 250
         self.pwm_ani = PWMLedAnimations(self.pwm_led)

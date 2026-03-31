@@ -57,18 +57,37 @@ if __name__ == "__main__":
     default_angle = max_min_center_tuple(int(default[0]), int(default[1]), int(default[2]))
     head_angle = max_min_center_tuple(int(head_min_max[0]), int(head_min_max[1]), int(head_min_max[2]))
     neck_angle = max_min_center_tuple(int(neck_min_max[0]), int(neck_min_max[1]), int(neck_min_max[2]))
-    kit = ServoKit(channels=16)
-    led_head = LedHead(broker=mqtt_connect)
+    # Initialize PCA9685 boards (supports multiple boards at different I2C addresses)
+    pca_addrs = [int(a.strip(), 0) for a in sech.get(
+        ServoEnum.PCA9685_ADDRESSES.value, ServoEnum.PCA9685_DEFAULT_ADDRESSES.value).split(',')]
+    kits = [ServoKit(channels=16, address=addr) for addr in pca_addrs]
+
+    def get_servo(board_channel_key, fallback_board=0, fallback_channel=0):
+        """Get a servo object from board,channel config string."""
+        raw = sech.get(board_channel_key, f"{fallback_board},{fallback_channel}")
+        parts = raw.split(',')
+        board_idx, channel = int(parts[0]), int(parts[1])
+        return kits[board_idx].servo[channel], pca_addrs[board_idx]
+
+    body_lr_servo, _ = get_servo(ServoEnum.BODY_LR_BOARD_CHANNEL.value, 0, 0)
+    body_ud_servo, _ = get_servo(ServoEnum.BODY_UD_BOARD_CHANNEL.value, 0, 1)
+    head_lr_servo, _ = get_servo(ServoEnum.HEAD_LR_BOARD_CHANNEL.value, 0, 2)
+    head_ud_servo, _ = get_servo(ServoEnum.HEAD_UD_BOARD_CHANNEL.value, 0, 3)
+    led_raw = sech.get(ServoEnum.LED_HEAD_BOARD_CHANNEL.value, "0,4").split(',')
+    led_pca_addr = pca_addrs[int(led_raw[0])]
+    led_pwm_channel = int(led_raw[1])
+
+    led_head = LedHead(broker=mqtt_connect, pca_address=led_pca_addr, pwm_channel=led_pwm_channel)
     body_LR = Gservo(location=ServoEnum.LOCATION_BODY_LEFT_RIGHT.value,
-                     servo=kit.servo[0], axis='x', servo_range=default_angle,
+                     servo=body_lr_servo, axis='x', servo_range=default_angle,
                      broker=mqtt_connect, servo_speed=gs3508mg_speed, pulse_max_min=gs3508_pulse)
-    body_UD = Gservo(location=ServoEnum.LOCATION_BODY_UP_DOWN.value, servo=kit.servo[1],
+    body_UD = Gservo(location=ServoEnum.LOCATION_BODY_UP_DOWN.value, servo=body_ud_servo,
                      axis='y', servo_range=default_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
-    head_LR = Gservo(location=ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, servo=kit.servo[2],
+    head_LR = Gservo(location=ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value, servo=head_lr_servo,
                      axis='x', servo_range=neck_angle,
                      broker=mqtt_connect, pulse_max_min=mg92b_pulse, servo_speed=mg92d_speed)
-    head_UD = Gservo(location=ServoEnum.LOCATION_HEAD_UP_DOWN.value, servo=kit.servo[3],
+    head_UD = Gservo(location=ServoEnum.LOCATION_HEAD_UP_DOWN.value, servo=head_ud_servo,
                      axis='y', servo_range=head_angle,
                      broker=mqtt_connect, pulse_max_min=mg90d_pulse, servo_speed=mg90d_speed)
     body_LR.start()
