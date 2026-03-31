@@ -20,6 +20,7 @@ flask
 scipy                            # wav file I/O for TTS output
 phonemizer                       # text-to-phoneme conversion (needs espeak-ng system package)
 inflect                          # number-to-words conversion for TTS
+unidecode                        # Unicode-to-ASCII transliteration for TTS
 
 # AI / ML - Object detection
 ultralytics                      # YOLOv8
