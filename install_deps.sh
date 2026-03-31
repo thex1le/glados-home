@@ -51,6 +51,8 @@ case "$SYSTEM" in
     gpu)
         APT_PACKAGES=(
             "${COMMON_APT[@]}"
+            mosquitto
+            mosquitto-clients
             ffmpeg
         )
         PIP_REQUIREMENTS="requirements_gpu.txt"
@@ -115,6 +117,22 @@ pip install -r "$PIP_REQUIREMENTS"
 echo ""
 echo "--- Installing test dependencies ---"
 pip install pytest flexmock
+
+# --- MQTT broker setup (GPU server only) ---
+if [ "$SYSTEM" = "gpu" ]; then
+    echo ""
+    echo "--- Configuring MQTT broker (mosquitto) ---"
+    # Allow connections from Pi4/Pi5 on the network (mosquitto 2.x defaults to localhost only)
+    if [ ! -f /etc/mosquitto/conf.d/glados.conf ]; then
+        echo -e "listener 1883\nallow_anonymous true" | sudo tee /etc/mosquitto/conf.d/glados.conf > /dev/null
+        echo "Created /etc/mosquitto/conf.d/glados.conf (listen on all interfaces, port 1883)"
+    else
+        echo "MQTT config /etc/mosquitto/conf.d/glados.conf already exists, skipping"
+    fi
+    sudo systemctl enable mosquitto
+    sudo systemctl restart mosquitto
+    echo "Mosquitto broker enabled and started"
+fi
 
 echo ""
 echo "=== Done. Run 'python -m pytest Tests/ -v' to verify. ==="

@@ -233,17 +233,22 @@ class TestInverseKinematics:
         assert verify_pitch == pytest.approx(target_pitch, abs=1.0)
 
     def test_ik_head_different_body_same_world_target(self):
-        """Head IK should compensate for different body positions to hit same target."""
+        """Head IK should compensate for different body positions to hit same target.
+
+        Uses moderate body offsets so head joints stay within reachable range.
+        With highly coupled diagonal axes, extreme body offsets can push the
+        head joints to their limits, preventing exact convergence.
+        """
         kin = _make_kin()
-        target_yaw, target_pitch = 5.0, -2.0
+        target_yaw, target_pitch = 2.0, 0.0
 
         body_a = {
-            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 80.0,
-            ServoEnum.LOCATION_BODY_UP_DOWN.value: 90.0,
+            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 85.0,
+            ServoEnum.LOCATION_BODY_UP_DOWN.value: 92.0,
         }
         body_b = {
-            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 100.0,
-            ServoEnum.LOCATION_BODY_UP_DOWN.value: 90.0,
+            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 95.0,
+            ServoEnum.LOCATION_BODY_UP_DOWN.value: 92.0,
         }
 
         head_a = kin.inverse_kinematics_head(target_yaw, target_pitch, body_a)

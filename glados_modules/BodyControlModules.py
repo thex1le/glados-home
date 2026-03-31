@@ -498,12 +498,15 @@ class IMU(MQTTClient, Thread):
 
     imu_broker = MQTTClient.broker_tuple
 
+    CALIBRATION_FILE = "imu_calibration.json"
+
     def __init__(self, broker: Any) -> None:
         """Initializes the IMU object.
 
         This method sets up the thread as a daemon, initializes the I2C
         interface, and creates the sensor object. It also initializes the
-        MQTT client using the provided broker details.
+        MQTT client using the provided broker details. If a saved calibration
+        file exists, it is loaded to skip the manual calibration dance.
 
         Args:
             broker (Any): An object with 'ip' and 'port' attributes required
@@ -518,6 +521,57 @@ class IMU(MQTTClient, Thread):
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
         self.last_val = 0xFFFF
+        self._load_calibration()
+
+    def _load_calibration(self) -> None:
+        """Load saved calibration offsets from disk if available."""
+        import json
+        cal_path = self.CALIBRATION_FILE
+        if not path.exists(cal_path):
+            self.logger.info("No saved IMU calibration found, manual calibration needed")
+            return
+        try:
+            with open(cal_path, 'r') as f:
+                cal = json.load(f)
+            # Must switch to config mode to write offsets
+            import adafruit_bno055
+            self.sensor.mode = adafruit_bno055.CONFIG_MODE
+            sleep(0.025)
+            self.sensor.offsets_accelerometer = tuple(cal["accelerometer"])
+            self.sensor.offsets_magnetometer = tuple(cal["magnetometer"])
+            self.sensor.offsets_gyroscope = tuple(cal["gyroscope"])
+            self.sensor.mode = adafruit_bno055.NDOF_MODE
+            sleep(0.025)
+            self.logger.info(f"IMU calibration loaded from {cal_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to load IMU calibration: {e}")
+
+    def save_calibration(self) -> bool:
+        """Save current calibration offsets to disk for next boot.
+
+        Only saves if the sensor is fully calibrated (all status values == 3).
+
+        Returns:
+            True if calibration was saved, False if not fully calibrated.
+        """
+        import json
+        sys_cal, gyro_cal, accel_cal, mag_cal = self.sensor.calibration_status
+        if not all(v == 3 for v in (sys_cal, gyro_cal, accel_cal, mag_cal)):
+            self.logger.warning(
+                f"IMU not fully calibrated (sys={sys_cal} gyro={gyro_cal} "
+                f"accel={accel_cal} mag={mag_cal}), skipping save"
+            )
+            return False
+        cal = {
+            "accelerometer": list(self.sensor.offsets_accelerometer),
+            "magnetometer": list(self.sensor.offsets_magnetometer),
+            "gyroscope": list(self.sensor.offsets_gyroscope),
+        }
+        cal_path = self.CALIBRATION_FILE
+        with open(cal_path, 'w') as f:
+            json.dump(cal, f, indent=2)
+        self.logger.info(f"IMU calibration saved to {cal_path}")
+        return True
 
     def temperature(self) -> int:
         """Get the corrected temperature value from the sensor.
@@ -570,11 +624,17 @@ class IMU(MQTTClient, Thread):
         This method continuously retrieves sensor data, builds a status
         message using the IMUMessageBuilder, and sends the command to the
         designated MQTT topic. The loop runs approximately 10 times per second.
+        Auto-saves calibration once fully calibrated.
         """
         self.logger.info("IMU Sensor polling started")
+        calibration_saved = path.exists(self.CALIBRATION_FILE)
         while True:
             status = IMUMessageBuilder.send_imu_status_message(self.get_sensor())
             self.send_command(topic=MQTTEnums.IMU_STATUS_TOPIC.value, command=status)
+            # Auto-save calibration once all sensors reach status 3
+            if not calibration_saved:
+                if self.save_calibration():
+                    calibration_saved = True
             sleep(0.1)
 
 

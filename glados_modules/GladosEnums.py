@@ -497,15 +497,17 @@ class KinematicsEnums(Enum):
     on the physical robot.
     """
     # Joint rotation axes (unit vectors in parent link frame)
+    # Source: UDRF_description/urdf/UDRF.xacro
     AXIS_BODY_LR = (0.0, 1.0, 0.0)
-    AXIS_BODY_UD = (-0.59, 0.03, -0.81)
-    AXIS_HEAD_LR = (-0.67, 0.54, 0.51)
-    AXIS_HEAD_UD = (0.58, -0.05, 0.82)
+    AXIS_BODY_UD = (-0.590388, 0.028881, -0.806602)
+    AXIS_HEAD_LR = (-0.670409, 0.538936, 0.509999)
+    AXIS_HEAD_UD = (0.513853, -0.158613, 0.843088)
 
     # Joint-to-joint translation offsets in mm (parent -> child)
-    OFFSET_BODY_LR_TO_BODY_UD = (8.55, -192.95, -9.44)
-    OFFSET_BODY_UD_TO_HEAD_LR = (-84.61, 6.10, 57.19)
-    OFFSET_HEAD_LR_TO_HEAD_UD = (-51.14, -36.57, 47.84)
+    # Source: UDRF_description/urdf/UDRF.xacro joint origin xyz (meters * 1000)
+    OFFSET_BODY_LR_TO_BODY_UD = (8.552, -192.946, -9.436)
+    OFFSET_BODY_UD_TO_HEAD_LR = (-84.274, 5.831, 56.934)
+    OFFSET_HEAD_LR_TO_HEAD_UD = (-64.709, -34.328, 27.644)
 
     # Camera optical axis in the head_UD link frame (unit vector pointing "forward")
     # Initial assumption -- must be calibrated on real hardware
