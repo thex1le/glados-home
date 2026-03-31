@@ -1289,8 +1289,8 @@ if __name__ == "__main__":
     head_angle = Angle_tuple(173, 6, 83)
     neck_angle = Angle_tuple(120, 52, 92)
     default_angle = Angle_tuple(180, 0, 90)
-    kit = ServoKit(channels=16)
-    led_head = LedHead(broker=mqtt_connect)
+    kit = ServoKit(channels=16, address=0x40)
+    led_head = LedHead(broker=mqtt_connect, pca_address=0x40)
     right_lcd = GladosLCD(broker=mqtt_connect, location="right_lcd")
     body_LR = Gservo(location='body_left_right', servo=kit.servo[0], axis='x', servo_range=default_angle,
                      broker=mqtt_connect)

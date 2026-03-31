@@ -1,9 +1,16 @@
 from adafruit_servokit import ServoKit
+import argparse
 import time
-kit = ServoKit(channels=16)
-# Specify the servo channel you are calibrating
-#servo_channel = 15  # Change this to the correct channel
-servo_channel = 3 # Change this to the correct channel
+
+parser = argparse.ArgumentParser(description="Servo pulse width calibration")
+parser.add_argument("--address", type=lambda x: int(x, 0), default=0x40,
+                    help="PCA9685 I2C address (default: 0x40, e.g. 0xA0 for second board)")
+parser.add_argument("--channel", type=int, default=3, help="Servo channel (default: 3)")
+args = parser.parse_args()
+
+kit = ServoKit(channels=16, address=args.address)
+servo_channel = args.channel
+print(f"Board address: {hex(args.address)}  Channel: {servo_channel}")
 
 # Set the pulse width range
 # These values might need to be adjusted based on your servo's specifications
