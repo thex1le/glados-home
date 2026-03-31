@@ -123,10 +123,13 @@ def run_calibration(config_path: str) -> None:
     broker_ip = config.get(SystemEnums.CONFIG_HEAD_MQTT.value, SystemEnums.MQTT_SERVER_IP.value)
     broker_port = int(config.get(SystemEnums.CONFIG_HEAD_MQTT.value, SystemEnums.MQTT_PORT.value))
 
-    # Parse servo ranges from config
-    head_vals = config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.HEAD_MIN_MAX_CENTER.value).split(',')
-    neck_vals = config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.NECK_MIN_MAX_CENTER.value).split(',')
-    default_vals = config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.DEFAULT_MAX_MIN_CENTER.value).split(',')
+    # Parse servo ranges from config (strip inline comments like "92# rads/s")
+    def parse_csv(raw: str) -> list:
+        return [v.split('#')[0].strip() for v in raw.split(',')]
+
+    head_vals = parse_csv(config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.HEAD_MIN_MAX_CENTER.value))
+    neck_vals = parse_csv(config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.NECK_MIN_MAX_CENTER.value))
+    default_vals = parse_csv(config.get(ServoEnum.CONFIG_HEAD.value, ServoEnum.DEFAULT_MAX_MIN_CENTER.value))
 
     body_lr = ServoEnum.LOCATION_BODY_LEFT_RIGHT.value
     body_ud = ServoEnum.LOCATION_BODY_UP_DOWN.value
