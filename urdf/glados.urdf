@@ -1,0 +1,157 @@
+<?xml version="1.0" ?>
+<!-- GLaDOS robot URDF - Source: UDRF_description (Onshape export, simplified meshes)
+     Kinematic chain: base_link -> Body_LR -> body_UD -> head_lr -> head_ud -> head
+     Joint axes are non-orthogonal (diagonal). See KinematicsEnums in GladosEnums.py.
+     Mesh files are not included - add STL files to urdf/meshes/ for Isaac Sim import. -->
+<robot name="glados">
+
+<material name="silver">
+  <color rgba="0.700 0.700 0.700 1.000"/>
+</material>
+
+<!-- ==================== Links ==================== -->
+
+<link name="base_link">
+  <inertial>
+    <origin xyz="0.004159517939246431 0.011802392143923575 -0.0020882107453148646" rpy="0 0 0"/>
+    <mass value="5.264328751336795"/>
+    <inertia ixx="0.034961" iyy="0.025159" izz="0.036071" ixy="0.00022" iyz="3.1e-05" ixz="0.000999"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="MainBodyRotate_1">
+  <inertial>
+    <origin xyz="0.02532885357036625 -0.10996104693795461 -0.02233482080484554" rpy="0 0 0"/>
+    <mass value="3.8198089819245955"/>
+    <inertia ixx="0.00908" iyy="0.004888" izz="0.009579" ixy="-0.000206" iyz="-0.000283" ixz="0.001314"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.003226 0.099 0.001918" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/MainBodyRotate_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.003226 0.099 0.001918" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/MainBodyRotate_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="GladosArm_1">
+  <inertial>
+    <origin xyz="-0.040061360736023996 -0.030895583748800082 0.023686550901081578" rpy="0 0 0"/>
+    <mass value="1.3186271891423775"/>
+    <inertia ixx="0.001138" iyy="0.00157" izz="0.001385" ixy="9.6e-05" iyz="-7.5e-05" ixz="0.000361"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.011778 0.291946 0.011354" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/GladosArm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.011778 0.291946 0.011354" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/GladosArm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="GlaDOS_Rotation_V1.1_1_1">
+  <inertial>
+    <origin xyz="-0.009020219422657086 -0.02068704819835404 0.0009222755469217581" rpy="0 0 0"/>
+    <mass value="0.42398646743650825"/>
+    <inertia ixx="0.000295" iyy="0.000302" izz="0.000292" ixy="-3.5e-05" iyz="2.2e-05" ixz="-1.4e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.072496 0.286115 -0.04558" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/GlaDOS_Rotation_V1.1_1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.072496 0.286115 -0.04558" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/GlaDOS_Rotation_V1.1_1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="Glados_Head_1">
+  <inertial>
+    <origin xyz="0.0007619387670610434 0.007914563490634796 0.015685850289471073" rpy="0 0 0"/>
+    <mass value="0.44064012322589374"/>
+    <inertia ixx="0.000298" iyy="0.000211" izz="0.000343" ixy="-6.9e-05" iyz="1.7e-05" ixz="2.4e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.137205 0.320443 -0.073224" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/Glados_Head_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.137205 0.320443 -0.073224" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/Glados_Head_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<!-- ==================== Joints ==================== -->
+
+<!-- Body left/right: pure Y-axis rotation at the base -->
+<joint name="Body_LR" type="revolute">
+  <origin xyz="0.003226 -0.099 -0.001918" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="MainBodyRotate_1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+  <limit lower="-1.570796" upper="1.570796" effort="100" velocity="100"/>
+</joint>
+
+<!-- Body up/down: diagonal axis -->
+<joint name="body_UD" type="revolute">
+  <origin xyz="0.008552 -0.192946 -0.009436" rpy="0 0 0"/>
+  <parent link="MainBodyRotate_1"/>
+  <child link="GladosArm_1"/>
+  <axis xyz="-0.590388 0.028881 -0.806602"/>
+  <limit lower="0.0" upper="0.872665" effort="100" velocity="100"/>
+</joint>
+
+<!-- Head left/right: diagonal axis (all 3 planes) -->
+<joint name="head_lr" type="revolute">
+  <origin xyz="-0.084274 0.005831 0.056934" rpy="0 0 0"/>
+  <parent link="GladosArm_1"/>
+  <child link="GlaDOS_Rotation_V1.1_1_1"/>
+  <axis xyz="-0.670409 0.538936 0.509999"/>
+  <limit lower="-0.593412" upper="0.593412" effort="100" velocity="100"/>
+</joint>
+
+<!-- Head up/down: diagonal axis -->
+<joint name="head_ud" type="revolute">
+  <origin xyz="-0.064709 -0.034328 0.027644" rpy="0 0 0"/>
+  <parent link="GlaDOS_Rotation_V1.1_1_1"/>
+  <child link="Glados_Head_1"/>
+  <axis xyz="0.513853 -0.158613 0.843088"/>
+  <limit lower="-0.20944" upper="1.22173" effort="100" velocity="100"/>
+</joint>
+
+</robot>
