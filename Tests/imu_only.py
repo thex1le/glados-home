@@ -9,10 +9,14 @@ Usage:
 
 # builtin
 import argparse
-import signal
+import sys
+import os
 from configparser import ConfigParser
 from collections import namedtuple
 from time import sleep
+
+# Add project root to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # glados imports
 from glados_modules.BodyControlModules import IMU
