@@ -16,20 +16,27 @@ class GLaDOSServerException(Exception):
     pass
 
 
-class Camera(Process, MQTTClient):
+class Camera(Process):
+    """Camera process that captures frames and serves them via RTSP.
+
+    Extends Process (not Thread) because Picamera2 and GStreamer hold kernel
+    resources that don't survive fork(). All hardware init happens in run()
+    after the fork, not in __init__.
+
+    MQTT is initialized in run() for the same reason -- socket connections
+    created before fork() become stale in the child process.
     """
-    Updated Camera class that uses RTSP streaming (via RtspSystem/RTSPServer)
-    instead of raw TCP sockets.
-    """
+
     def __init__(self, configfile, location, rtspport: int = 8554) -> None:
         Process.__init__(self)
-        # Initialize MQTTClient
-        broker = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
-        port = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value]
-        cam_conf = configfile[CameraEnum.CONFIG_HEAD.value]
-        MQTTClient.__init__(self, broker, port)
+        self.daemon = True
         self.location = location
         self.__name__ = f"{self.__class__.__name__}_{location}"
+
+        # Store config as plain data (no hardware handles, no sockets)
+        cam_conf = configfile[CameraEnum.CONFIG_HEAD.value]
+        self._broker_ip = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_SERVER_IP.value]
+        self._broker_port = configfile[SystemEnums.CONFIG_HEAD_MQTT.value][SystemEnums.MQTT_PORT.value]
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {
                 CameraEnum.MSG_RESOLUTION.value: tuple(cam_conf[CameraEnum.CAMERA_HEAD_RESOLUTION.value].split(',')),
@@ -44,50 +51,66 @@ class Camera(Process, MQTTClient):
                 CameraEnum.MSG_FPS.value: int(cam_conf[CameraEnum.CAMERA_RIGHT_FPS.value]),
                 CameraEnum.MSG_CAMERA_NUMBER.value: int(cam_conf[self.location])},
         }
-        self.logger = setup_logger(name=self.__name__)
-        self.config = configfile
-        self.rtsp_server = None
-        # Camera config
         self.fps = self.cam_configs[self.location][CameraEnum.MSG_FPS.value]
         x_y = self.cam_configs[self.location][CameraEnum.MSG_RESOLUTION.value]
         self.cam_res_x = int(x_y[0])
         self.cam_res_y = int(x_y[1])
-        self.camera_num = self.config[CameraEnum.CONFIG_HEAD.value][self.location]
-        # Prepare RTSP settings
-        # We'll create a single factory path, e.g. f"/{self.location}"
         self.factory_path = f"/{self.location}"
         self.rtsp_port = rtspport
-        # MQTT status
-        status = CameraMessageBuilder.send_status(self.location, f"Camera RAW {self.location} Started")
-        self.send_command(status, CameraEnum.MQTT_STATUS_TOPIC.value)
-        # For capturing frames
-        self.cap = None  # Will be assigned in run()
+        self.cap = None
         self.stop_flag = False
+        self.rtsp_server = None
+        self.logger = setup_logger(name=self.__name__)
 
     def run(self):
+        """Entry point for the camera process (runs after fork).
+
+        All hardware init happens here: MQTT connection, RTSP server,
+        Picamera2. Includes automatic camera restart on failure.
         """
-        Entry point for the camera process. We:
-          1. Initialize the RTSP server
-          2. Configure/start the camera
-          3. Loop grabbing frames -> send to RTSP server
-        """
+        # MQTT must be initialized after fork -- parent's socket is stale
+        self._mqtt = MQTTClient(self._broker_ip, self._broker_port)
+        status = CameraMessageBuilder.send_status(self.location, f"Camera RAW {self.location} Started")
+        self._mqtt.send_command(status, CameraEnum.MQTT_STATUS_TOPIC.value)
+
         self.logger.debug(f"Starting Camera process for {self.location}")
         self.logger.debug("Initializing RTSP Server...")
         self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port)
+
+        consecutive_failures = 0
+        max_failures = 50
+
         self.__init_camera()
         self.logger.debug("Starting main camera loop...")
+
         while not self.stop_flag:
-            frame = self.__capture_frame()
-            if frame is None:
-                self.logger.warning("No frame captured; retrying...")
+            try:
+                frame = self.__capture_frame()
+                if frame is None:
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_failures:
+                        self.logger.warning(f"{consecutive_failures} consecutive capture failures, restarting camera...")
+                        self.__restart_camera()
+                        consecutive_failures = 0
+                    else:
+                        sleep(0.1)
+                    continue
+                consecutive_failures = 0
+                self.rtsp_server.send_data(self.factory_path, frame)
+                sleep(0.01)
+            except Exception as e:
+                self.logger.error(f"Camera loop error: {e}")
+                consecutive_failures += 1
+                if consecutive_failures >= max_failures:
+                    self.logger.warning("Too many errors, restarting camera...")
+                    self.__restart_camera()
+                    consecutive_failures = 0
                 sleep(0.1)
-                continue
-            # Send the frame to RTSP server
-            self.rtsp_server.send_data(self.factory_path, frame)
-            sleep(0.01)  # minimal sleep to prevent CPU hogging
+
         self.logger.debug("Camera loop exiting; cleaning up...")
-        self.cap.stop()
-        self.cap.close()
+        if self.cap:
+            self.cap.stop()
+            self.cap.close()
 
     def stop_camera(self):
         self.logger.debug("Stop camera called.")
@@ -110,6 +133,24 @@ class Camera(Process, MQTTClient):
         self.cap.configure(video_config)
         # Start the camera. We'll capture frames via self.cap.capture_array.
         self.cap.start()
+
+    def __restart_camera(self):
+        """Tear down and reinitialize the camera after failures."""
+        self.logger.info(f"Restarting camera {self.location}...")
+        try:
+            if self.cap:
+                self.cap.stop()
+                self.cap.close()
+        except Exception as e:
+            self.logger.error(f"Error stopping camera during restart: {e}")
+        self.cap = None
+        sleep(2.0)
+        try:
+            self.__init_camera()
+            self.logger.info(f"Camera {self.location} restarted successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to restart camera: {e}")
+            sleep(5.0)
 
     def __capture_frame(self):
         """
