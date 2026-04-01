@@ -242,26 +242,51 @@ class RTSPFrameGrabber:
         self._thread = Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
 
+    def _safe_release(self, cap) -> None:
+        """Release VideoCapture and force GStreamer pipeline to NULL state."""
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
+            # Give GStreamer time to tear down before creating a new pipeline
+            time.sleep(0.5)
+
     def _capture_loop(self) -> None:
         cap = None
+        backoff = 2.0
+        max_backoff = 30.0
         while self._running:
             try:
                 if cap is None or not cap.isOpened():
-                    cap = cv2.VideoCapture(self.uri)
+                    # Use GStreamer pipeline explicitly for proper lifecycle control
+                    gst_uri = (f"rtspsrc location={self.uri} latency=200 ! "
+                               f"rtpjpegdepay ! jpegdec ! videoconvert ! appsink")
+                    cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                     if not cap.isOpened():
-                        time.sleep(2)
+                        # Fall back to default backend
+                        cap = cv2.VideoCapture(self.uri)
+                    if not cap.isOpened():
+                        self._safe_release(cap)
+                        cap = None
+                        time.sleep(backoff)
+                        backoff = min(backoff * 1.5, max_backoff)
                         continue
+                    backoff = 2.0  # reset on successful connect
                 ret, frame = cap.read()
                 if ret:
                     with self.lock:
                         self.frame = frame
                         self.frame_time = time.time()
                 else:
-                    cap.release()
+                    self._safe_release(cap)
                     cap = None
                     time.sleep(1)
             except Exception:
-                time.sleep(2)
+                self._safe_release(cap)
+                cap = None
+                time.sleep(backoff)
+                backoff = min(backoff * 1.5, max_backoff)
 
     def get_frame(self):
         with self.lock:
