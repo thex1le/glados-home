@@ -19,6 +19,14 @@ sys.path.insert(0, path.join(path.dirname(path.abspath(__file__)), 'gladosTTS'))
 from glados_tts import engine as glados_voice
 
 if __name__ == "__main__":
+    # Handle Ctrl+C cleanly -- set up early so it works during model loading
+    def shutdown_handler(signum, frame):
+        print("\nShutting down AiServer...")
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
     parser = ArgumentParser(description='Evil Home AI Senses Server')
     parser.add_argument('-config', type=str, default=1, dest='conf', nargs=1, help='Config File')
     try:
@@ -69,15 +77,5 @@ if __name__ == "__main__":
         port=dash_port
     )
     dashboard.start()
-    # Handle Ctrl+C cleanly -- force exit since daemon threads and GStreamer
-    # don't respond to gentle shutdown requests
-    def shutdown_handler(signum, frame):
-        print("\nShutting down AiServer...")
-        # os._exit bypasses Python cleanup which can hang on GStreamer/MQTT threads
-        os._exit(0)
-
-    signal.signal(signal.SIGINT, shutdown_handler)
-    signal.signal(signal.SIGTERM, shutdown_handler)
-
     # start the text to speech engine (blocks in Flask's server loop)
     glados_voice.main()
