@@ -289,75 +289,124 @@ def run_calibration(backend, middles: dict, mins: dict, maxs: dict) -> None:
     euler = backend.get_euler()
     print(f"  Euler: ({euler[0]:.1f}, {euler[1]:.1f}, {euler[2]:.1f})  [{backend.get_calibration_status()}]")
 
-    # --- Phase 2: Accel calibration (tilt to different orientations) ---
-    print("\n--- Phase 2: Accel calibration (tilting through positions) ---")
+    # Helper to check if fully calibrated early
+    def is_fully_calibrated() -> bool:
+        return all(v == 3 for v in backend.get_calibration_status_values())
+
+    def print_position(desc: str, idx: int, total: int) -> None:
+        """Move to position, hold, and print status."""
+        euler = backend.get_euler()
+        print(f"    Euler: ({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  [{backend.get_calibration_status()}]")
+
+    # --- Phase 2: Accel calibration (hold still in 6 distinct orientations) ---
+    # BNO055 needs the sensor held motionless in different gravity orientations
+    # for ~6s each to build its accel offset map
+    print("\n--- Phase 2: Accel calibration (holding still in distinct orientations) ---")
+    print("  Each position holds for 6s. BNO055 accel needs stillness to calibrate.\n")
+
+    accel_hold_time = 6.0
+    accel_settle_time = 3.0  # wait for servo motion to stop before holding still
 
     tilt_positions = [
-        ("Center",            middles),
-        ("Body UD min",       {**middles, body_ud: mins[body_ud] + 5}),
-        ("Body UD max",       {**middles, body_ud: maxs[body_ud] - 5}),
-        ("Head UD min",       {**middles, head_ud: mins[head_ud] + 10}),
-        ("Head UD max",       {**middles, head_ud: maxs[head_ud] - 10}),
-        ("Both UD low",       {**middles, body_ud: mins[body_ud] + 5, head_ud: mins[head_ud] + 10}),
-        ("Both UD high",      {**middles, body_ud: maxs[body_ud] - 5, head_ud: maxs[head_ud] - 10}),
-        ("Head LR + UD low",  {**middles, head_lr: mins[head_lr] + 10, head_ud: mins[head_ud] + 10}),
-        ("Head LR + UD high", {**middles, head_lr: maxs[head_lr] - 10, head_ud: maxs[head_ud] - 10}),
+        ("Center",              middles),
+        ("Body UD min",         {**middles, body_ud: mins[body_ud] + 5}),
+        ("Body UD max",         {**middles, body_ud: maxs[body_ud] - 5}),
+        ("Head UD min",         {**middles, head_ud: mins[head_ud] + 10}),
+        ("Head UD max",         {**middles, head_ud: maxs[head_ud] - 10}),
+        ("Both UD low",         {**middles, body_ud: mins[body_ud] + 5, head_ud: mins[head_ud] + 10}),
+        ("Both UD high",        {**middles, body_ud: maxs[body_ud] - 5, head_ud: maxs[head_ud] - 10}),
+        ("Head LR left + UD low",  {**middles, head_lr: mins[head_lr] + 10, head_ud: mins[head_ud] + 10}),
+        ("Head LR right + UD high", {**middles, head_lr: maxs[head_lr] - 10, head_ud: maxs[head_ud] - 10}),
     ]
 
     for i, (desc, angles) in enumerate(tilt_positions):
         print(f"  Position {i + 1}/{len(tilt_positions)}: {desc}")
         backend.move_all(angles, speed=2)
-        time.sleep(3.0)
-        euler = backend.get_euler()
-        print(f"    Euler: ({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  [{backend.get_calibration_status()}]")
+        time.sleep(accel_settle_time)
+        # Hold still for accel calibration
+        print(f"    Holding still {accel_hold_time:.0f}s...", end="", flush=True)
+        time.sleep(accel_hold_time)
+        print(" done")
+        print_position(desc, i, len(tilt_positions))
+        if is_fully_calibrated():
+            print("\n  ** All sensors fully calibrated -- skipping remaining accel positions **")
+            break
 
     backend.move_all(middles, speed=2)
     time.sleep(2.0)
 
-    # --- Phase 3: Magnetometer calibration (rotate body LR through full range) ---
-    print("\n--- Phase 3: Magnetometer calibration (rotating body LR) ---")
-    print("  Sweeping body left-right through full range...")
+    # --- Phase 3: Magnetometer calibration (LR sweeps at multiple UD angles) ---
+    # BNO055 mag needs rotation through many headings. Sweeping LR at different
+    # UD tilts gives figure-8 style coverage without needing a 6-axis gimbal.
+    print("\n--- Phase 3: Magnetometer calibration (LR sweeps at multiple tilt angles) ---")
 
     lr_min = mins[body_lr] + 10
     lr_max = maxs[body_lr] - 10
     lr_steps = 12
     step_size = (lr_max - lr_min) / lr_steps
+    sweep_dwell = 2.5  # seconds per step -- mag needs time at each heading
 
-    for i in range(lr_steps + 1):
-        angle = lr_min + i * step_size
-        backend.move_all({**middles, body_lr: angle}, speed=3)
-        time.sleep(1.5)
-        euler = backend.get_euler()
-        bar = "#" * (i + 1) + "." * (lr_steps - i)
-        print(f"    [{bar}] LR={angle:5.1f}  euler=({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  "
-              f"[{backend.get_calibration_status()}]")
+    # Sweep at three different UD tilts for better sphere coverage
+    ud_mid = middles[body_ud]
+    ud_low = mins[body_ud] + 5
+    ud_high = maxs[body_ud] - 5
 
-    print("  Sweeping back...")
-    for i in range(lr_steps, -1, -1):
-        angle = lr_min + i * step_size
-        backend.move_all({**middles, body_lr: angle}, speed=3)
-        time.sleep(1.0)
+    sweep_tilts = [
+        ("level",    ud_mid),
+        ("tilt down", ud_low),
+        ("tilt up",  ud_high),
+    ]
+
+    for tilt_desc, ud_angle in sweep_tilts:
+        if is_fully_calibrated():
+            print(f"\n  ** All sensors fully calibrated -- skipping remaining mag sweeps **")
+            break
+
+        print(f"\n  Sweep ({tilt_desc}, body_ud={ud_angle:.0f}):")
+        # Sweep forward
+        for i in range(lr_steps + 1):
+            angle = lr_min + i * step_size
+            backend.move_all({**middles, body_lr: angle, body_ud: ud_angle}, speed=3)
+            time.sleep(sweep_dwell)
+            euler = backend.get_euler()
+            bar = "#" * (i + 1) + "." * (lr_steps - i)
+            print(f"    [{bar}] LR={angle:5.1f}  euler=({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  "
+                  f"[{backend.get_calibration_status()}]")
+
+        # Sweep back (slightly faster, still giving mag time)
+        print(f"  Sweeping back ({tilt_desc})...")
+        for i in range(lr_steps, -1, -1):
+            angle = lr_min + i * step_size
+            backend.move_all({**middles, body_lr: angle, body_ud: ud_angle}, speed=3)
+            time.sleep(1.5)
 
     backend.move_all(middles, speed=2)
     time.sleep(2.0)
 
-    # --- Phase 4: Combined movements ---
+    # --- Phase 4: Combined movements for any remaining calibration ---
     print("\n--- Phase 4: Combined movements for final calibration ---")
 
     combo_positions = [
-        ("LR left + UD low",    {**middles, body_lr: lr_min, body_ud: mins[body_ud] + 5}),
-        ("LR right + UD high",  {**middles, body_lr: lr_max, body_ud: maxs[body_ud] - 5}),
-        ("LR left + head tilt", {**middles, body_lr: lr_min, head_ud: maxs[head_ud] - 10}),
-        ("LR right + head tilt", {**middles, body_lr: lr_max, head_ud: mins[head_ud] + 10}),
-        ("All middle",          middles),
+        ("LR left + UD low",       {**middles, body_lr: lr_min, body_ud: mins[body_ud] + 5}),
+        ("LR right + UD high",     {**middles, body_lr: lr_max, body_ud: maxs[body_ud] - 5}),
+        ("LR left + head tilt up", {**middles, body_lr: lr_min, head_ud: maxs[head_ud] - 10}),
+        ("LR right + head tilt dn", {**middles, body_lr: lr_max, head_ud: mins[head_ud] + 10}),
+        ("LR mid + both UD low",   {**middles, body_ud: mins[body_ud] + 5, head_ud: mins[head_ud] + 10}),
+        ("LR mid + both UD high",  {**middles, body_ud: maxs[body_ud] - 5, head_ud: maxs[head_ud] - 10}),
+        ("All middle",             middles),
     ]
 
     for i, (desc, angles) in enumerate(combo_positions):
+        if is_fully_calibrated():
+            print(f"  ** All sensors fully calibrated -- skipping remaining positions **")
+            break
         print(f"  Position {i + 1}/{len(combo_positions)}: {desc}")
         backend.move_all(angles, speed=2)
-        time.sleep(3.0)
-        euler = backend.get_euler()
-        print(f"    Euler: ({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  [{backend.get_calibration_status()}]")
+        time.sleep(accel_settle_time)
+        print(f"    Holding still {accel_hold_time:.0f}s...", end="", flush=True)
+        time.sleep(accel_hold_time)
+        print(" done")
+        print_position(desc, i, len(combo_positions))
 
     # --- Done ---
     print("\n--- Calibration sequence complete ---")
@@ -365,19 +414,30 @@ def run_calibration(backend, middles: dict, mins: dict, maxs: dict) -> None:
     time.sleep(2.0)
 
     euler = backend.get_euler()
-    live = backend.is_euler_live()
+    cal = backend.get_calibration_status_values()
+    cal_str = backend.get_calibration_status()
 
-    print(f"\nFinal euler: ({euler[0]:.1f}, {euler[1]:.1f}, {euler[2]:.1f})  [{backend.get_calibration_status()}]")
+    print(f"\nFinal euler: ({euler[0]:.1f}, {euler[1]:.1f}, {euler[2]:.1f})  [{cal_str}]")
 
-    if live:
-        print("IMU is producing euler data.")
+    if all(v == 3 for v in cal):
+        print("FULLY CALIBRATED. Offsets will be saved by the IMU class on Pi5.")
         backend.save_calibration()
+    elif any(v < 3 for v in cal):
+        not_done = []
+        labels = ["sys", "gyro", "accel", "mag"]
+        for label, v in zip(labels, cal):
+            if v < 3:
+                not_done.append(f"{label}={v}/3")
+        print(f"\nNot fully calibrated: {', '.join(not_done)}")
+        print("The IMU class will auto-save once all reach 3/3.")
+        print("Things to try:")
+        print("  - Run this script again (BNO055 calibration persists across runs)")
+        print("  - Leave imu_only.py running -- natural movement may finish calibration")
+        print("  - Power cycle the IMU and try again")
     else:
         print("\nWARNING: Euler angles are still zero.")
-        print("The BNO055 may need more movement variety. Things to try:")
-        print("  - Run this script again (calibration persists across runs)")
-        print("  - Power cycle the IMU and try again")
         print("  - Check BNO055 I2C connection")
+        print("  - Power cycle the IMU and try again")
 
 
 def main() -> None:
