@@ -56,6 +56,8 @@ case "$SYSTEM" in
             mosquitto-clients
             ffmpeg
             espeak-ng
+            libgstreamer1.0-dev
+            libgstreamer-plugins-base1.0-dev
         )
         PIP_REQUIREMENTS="requirements_gpu.txt"
         ;;
@@ -114,6 +116,13 @@ if [ "$SYSTEM" = "gpu" ]; then
 fi
 
 pip install -r "$PIP_REQUIREMENTS"
+
+# --- Rebuild OpenCV with GStreamer support (GPU server) ---
+if [ "$SYSTEM" = "gpu" ]; then
+    echo ""
+    echo "--- Rebuilding OpenCV with GStreamer support ---"
+    pip install --no-binary opencv-python opencv-python
+fi
 
 # --- Dev/test dependencies (all systems) ---
 echo ""
