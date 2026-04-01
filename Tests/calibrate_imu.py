@@ -335,49 +335,88 @@ def run_calibration(backend, middles: dict, mins: dict, maxs: dict) -> None:
     backend.move_all(middles, speed=2)
     time.sleep(2.0)
 
-    # --- Phase 3: Magnetometer calibration (LR sweeps at multiple UD angles) ---
-    # BNO055 mag needs rotation through many headings. Sweeping LR at different
-    # UD tilts gives figure-8 style coverage without needing a 6-axis gimbal.
-    print("\n--- Phase 3: Magnetometer calibration (LR sweeps at multiple tilt angles) ---")
+    # --- Phase 3: Magnetometer calibration (multi-axis sweeps) ---
+    # BNO055 mag needs the sensor rotated through many orientations to map
+    # the hard-iron offset sphere. Single-axis LR sweeps don't give enough
+    # coverage because the IMU chip only sees one rotation plane.
+    # Strategy: sweep body LR while simultaneously varying head UD and head LR
+    # so the IMU tilts through multiple axes at each yaw heading.
+    print("\n--- Phase 3: Magnetometer calibration (multi-axis sweeps) ---")
+    print("  Body sweeps LR while head varies UD + LR for 3-axis coverage.\n")
 
     lr_min = mins[body_lr] + 10
     lr_max = maxs[body_lr] - 10
     lr_steps = 12
     step_size = (lr_max - lr_min) / lr_steps
-    sweep_dwell = 2.5  # seconds per step -- mag needs time at each heading
+    sweep_dwell = 2.5  # seconds per step
 
-    # Sweep at three different UD tilts for better sphere coverage
-    ud_mid = middles[body_ud]
-    ud_low = mins[body_ud] + 5
-    ud_high = maxs[body_ud] - 5
+    # Head UD and LR ranges for variation during sweep
+    h_ud_min = mins[head_ud] + 10
+    h_ud_max = maxs[head_ud] - 10
+    h_ud_mid = middles[head_ud]
+    h_lr_min = mins[head_lr] + 10
+    h_lr_max = maxs[head_lr] - 10
+    h_lr_mid = middles[head_lr]
 
-    sweep_tilts = [
-        ("level",    ud_mid),
-        ("tilt down", ud_low),
-        ("tilt up",  ud_high),
+    import math
+
+    # Each sweep definition: body_ud angle + head variation pattern
+    # Head UD/LR oscillate sinusoidally through the sweep so the IMU
+    # traces a different tilt at every yaw step
+    sweep_configs = [
+        ("level + head wobble",     middles[body_ud], True),
+        ("tilt down + head wobble", mins[body_ud] + 5, True),
+        ("tilt up + head wobble",   maxs[body_ud] - 5, True),
     ]
 
-    for tilt_desc, ud_angle in sweep_tilts:
+    for sweep_idx, (tilt_desc, b_ud_angle, vary_head) in enumerate(sweep_configs):
         if is_fully_calibrated():
-            print(f"\n  ** All sensors fully calibrated -- skipping remaining mag sweeps **")
+            print(f"  ** All sensors fully calibrated -- skipping remaining mag sweeps **")
             break
 
-        print(f"\n  Sweep ({tilt_desc}, body_ud={ud_angle:.0f}):")
-        # Sweep forward
+        print(f"  Sweep {sweep_idx + 1}/{len(sweep_configs)} ({tilt_desc}, body_ud={b_ud_angle:.0f}):")
+
+        # Forward sweep
         for i in range(lr_steps + 1):
-            angle = lr_min + i * step_size
-            backend.move_all({**middles, body_lr: angle, body_ud: ud_angle}, speed=3)
+            b_lr_angle = lr_min + i * step_size
+            # Oscillate head through its range as body rotates
+            # Use different phase offsets for UD vs LR to maximize coverage
+            t = i / lr_steps  # 0.0 to 1.0
+            h_ud = h_ud_mid + (h_ud_max - h_ud_mid) * math.sin(t * 2 * math.pi)
+            h_lr = h_lr_mid + (h_lr_max - h_lr_mid) * math.sin(t * 2 * math.pi + math.pi / 2)
+            # Clamp to safe range
+            h_ud = max(h_ud_min, min(h_ud_max, h_ud))
+            h_lr = max(h_lr_min, min(h_lr_max, h_lr))
+
+            backend.move_all({
+                body_lr: b_lr_angle,
+                body_ud: b_ud_angle,
+                head_lr: h_lr,
+                head_ud: h_ud,
+            }, speed=3)
             time.sleep(sweep_dwell)
             euler = backend.get_euler()
             bar = "#" * (i + 1) + "." * (lr_steps - i)
-            print(f"    [{bar}] LR={angle:5.1f}  euler=({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  "
+            print(f"    [{bar}] LR={b_lr_angle:5.1f} hUD={h_ud:5.1f} hLR={h_lr:5.1f}  "
+                  f"euler=({euler[0]:6.1f}, {euler[1]:5.1f}, {euler[2]:5.1f})  "
                   f"[{backend.get_calibration_status()}]")
 
-        # Sweep back (slightly faster, still giving mag time)
+        # Reverse sweep with opposite head phase for new orientations
         print(f"  Sweeping back ({tilt_desc})...")
         for i in range(lr_steps, -1, -1):
-            angle = lr_min + i * step_size
-            backend.move_all({**middles, body_lr: angle, body_ud: ud_angle}, speed=3)
+            b_lr_angle = lr_min + i * step_size
+            t = i / lr_steps
+            h_ud = h_ud_mid + (h_ud_max - h_ud_mid) * math.cos(t * 2 * math.pi)
+            h_lr = h_lr_mid + (h_lr_max - h_lr_mid) * math.cos(t * 2 * math.pi + math.pi / 2)
+            h_ud = max(h_ud_min, min(h_ud_max, h_ud))
+            h_lr = max(h_lr_min, min(h_lr_max, h_lr))
+
+            backend.move_all({
+                body_lr: b_lr_angle,
+                body_ud: b_ud_angle,
+                head_lr: h_lr,
+                head_ud: h_ud,
+            }, speed=3)
             time.sleep(1.5)
 
     backend.move_all(middles, speed=2)
