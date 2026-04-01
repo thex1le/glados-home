@@ -76,9 +76,13 @@ DASHBOARD_HTML = """
         .thread-name { color: #ccc; }
         .error-count { color: #ff6600; font-size: 0.8em; margin-left: 8px; }
         .peer-section { margin-top: 12px; }
-        .peer-card { background: #1a1a1a; padding: 8px; border-radius: 4px; margin: 4px 0; }
+        .peer-card { background: #1a1a1a; padding: 8px; border-radius: 4px; margin: 6px 0; border-left: 3px solid #333; }
+        .peer-card.healthy { border-left-color: #00ff44; }
+        .peer-card.unhealthy { border-left-color: #ff0044; }
+        .peer-card.stale { border-left-color: #ff6600; }
         .peer-name { color: #ff9a00; font-weight: bold; }
         .peer-info { color: #888; font-size: 0.8em; }
+        .peer-threads { margin-top: 4px; }
         .no-feed { width: 100%; height: 300px; background: #000; display: flex;
                    align-items: center; justify-content: center; color: #333;
                    font-size: 1.2em; border-radius: 4px; }
@@ -156,21 +160,30 @@ DASHBOARD_HTML = """
                 }
                 tDiv.innerHTML = html || '<div style="color:#555">No threads registered</div>';
 
-                // Peers
+                // Peers -- full thread detail view
                 const pDiv = document.getElementById('peers');
                 let phtml = '';
                 const peers = d.peers || {};
                 for (const [host, info] of Object.entries(peers)) {
                     const age = Math.round(Date.now()/1000 - (info.ts || 0));
-                    const cls = age < 15 ? 'alive' : 'dead';
-                    const threadCount = Object.keys(info.threads || {}).length;
-                    const deadCount = Object.values(info.threads || {}).filter(t => !t.alive).length;
-                    const threadStr = deadCount > 0 ? threadCount-deadCount+'/'+threadCount+' alive' : threadCount+' threads';
-                    phtml += '<div class="peer-card"><span class="peer-name">' + host + '</span>'
+                    const peerThreads = info.threads || {};
+                    const deadCount = Object.values(peerThreads).filter(t => !t.alive).length;
+                    const cardCls = age > 15 ? 'stale' : deadCount > 0 ? 'unhealthy' : 'healthy';
+                    const mqttStr = info.mqtt_connected ? '<span class="alive">MQTT OK</span>' : '<span class="dead">MQTT DOWN</span>';
+                    phtml += '<div class="peer-card ' + cardCls + '">'
+                           + '<span class="peer-name">' + host + '</span>'
                            + ' <span class="peer-info">(' + (info.system||'?') + ')</span>'
-                           + '<div class="peer-info">' + threadStr
+                           + '<div class="peer-info">' + mqttStr
                            + ' &bull; uptime ' + formatUptime(info.uptime_s || 0)
-                           + ' &bull; <span class="'+cls+'">' + age + 's ago</span></div></div>';
+                           + ' &bull; <span class="' + (age < 15 ? 'alive' : 'dead') + '">' + age + 's ago</span></div>'
+                           + '<div class="peer-threads">';
+                    for (const [tname, tinfo] of Object.entries(peerThreads)) {
+                        const tcls = tinfo.alive ? 'alive' : 'dead';
+                        const terr = tinfo.errors > 0 ? '<span class="error-count">(' + tinfo.errors + ' errors)</span>' : '';
+                        phtml += '<div class="thread-row"><span class="thread-name">' + tname + '</span>'
+                               + '<span class="' + tcls + '">' + (tinfo.alive ? 'ALIVE' : 'DEAD') + '</span>' + terr + '</div>';
+                    }
+                    phtml += '</div></div>';
                 }
                 pDiv.innerHTML = phtml || '<div style="color:#555">No peers detected</div>';
             } catch(e) {
