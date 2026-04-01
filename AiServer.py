@@ -1,6 +1,7 @@
 # builtin
 import signal
 import os
+import time
 from argparse import ArgumentParser
 from configparser import ConfigParser
 import sys
@@ -97,5 +98,40 @@ if __name__ == "__main__":
         port=dash_port
     )
     dashboard.start()
-    # start the text to speech engine (blocks in Flask's server loop)
-    glados_voice.main()
+    # Start the TTS HTTP server. The glados_tts engine loads models at import
+    # time and exposes glados_tts() but its Flask server is inside __main__.
+    # We recreate the server here so it runs in-process.
+    from flask import Flask as TtsFlask, request as tts_request, send_file as tts_send_file
+    import urllib.parse
+    import base64
+    import shutil
+
+    tts_app = TtsFlask("glados_tts_server")
+    TTS_PORT = 8124
+
+    @tts_app.route('/synthesize/', defaults={'text': ''})
+    @tts_app.route('/synthesize/<path:text>')
+    def tts_synthesize(text):
+        if not text:
+            return 'No input'
+        line = urllib.parse.unquote(tts_request.url[tts_request.url.find('synthesize/') + 11:])
+        line = base64.b64decode(line).decode('utf8')
+        filename = f"GLaDOS-tts-{line.replace(' ', '-').replace('!', '').replace(',', '')}.wav"
+        filename = filename.replace("°c", "degrees celcius")
+        cached = os.path.join(os.getcwd(), 'audio', filename)
+        if os.path.isfile(cached):
+            os.utime(cached, None)
+            return tts_send_file(cached)
+        key = str(time.time())[7:]
+        if glados_voice.glados_tts(line, key):
+            tempfile = os.path.join(os.getcwd(), 'audio', f'GLaDOS-tts-temp-output-{key}.wav')
+            if len(line) < 200:
+                shutil.move(tempfile, cached)
+                return tts_send_file(cached)
+            else:
+                return tts_send_file(tempfile)
+        return 'TTS Engine Failed'
+
+    import logging as _tts_logging
+    _tts_logging.getLogger('werkzeug').setLevel(_tts_logging.WARNING)
+    tts_app.run(host="0.0.0.0", port=TTS_PORT)
