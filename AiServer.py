@@ -9,7 +9,7 @@ from os import path
 # glados imports
 from glados_modules.MachineVision import MLDetect, GLaDOSServerException
 from glados_modules.WhisperXSpeech2Text import AudioServerRX, LocalSTTtx
-from glados_modules.GladosEnums import STTEnums, SystemEnums, DashboardEnums
+from glados_modules.GladosEnums import STTEnums, SystemEnums, DashboardEnums, CameraEnum
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.WebDashboard import WebDashboard
 
