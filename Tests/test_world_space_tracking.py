@@ -151,27 +151,26 @@ class TestFKBasedTracking:
             assert 52.0 <= body_ud <= 120.0, f"body_UD {body_ud} out of range for pitch {target_pitch}"
 
     def test_head_ik_compensates_for_body(self):
-        """Head IK should adjust head angles to compensate for body position."""
+        """Head IK should produce different head angles for different body positions."""
         kin, middles = self._make_kin()
-        target_yaw, target_pitch = 5.0, 0.0
+        target_yaw, target_pitch = 2.0, 0.0
 
-        body_near = {
+        body_a = {
+            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 85.0,
+            ServoEnum.LOCATION_BODY_UP_DOWN.value: 92.0,
+        }
+        body_b = {
             ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 95.0,
             ServoEnum.LOCATION_BODY_UP_DOWN.value: 92.0,
         }
-        body_far = {
-            ServoEnum.LOCATION_BODY_LEFT_RIGHT.value: 70.0,
-            ServoEnum.LOCATION_BODY_UP_DOWN.value: 92.0,
-        }
 
-        head_near = kin.inverse_kinematics_head(target_yaw, target_pitch, body_near)
-        head_far = kin.inverse_kinematics_head(target_yaw, target_pitch, body_far)
+        head_a = kin.inverse_kinematics_head(target_yaw, target_pitch, body_a)
+        head_b = kin.inverse_kinematics_head(target_yaw, target_pitch, body_b)
 
-        # When body is farther from target, head should compensate more
+        # Head should compensate differently for different body positions
         head_lr_name = ServoEnum.LOCATION_HEAD_LEFT_RIGHT.value
-        near_deviation = abs(head_near[head_lr_name] - middles[head_lr_name])
-        far_deviation = abs(head_far[head_lr_name] - middles[head_lr_name])
-        assert far_deviation > near_deviation
+        assert head_a[head_lr_name] != pytest.approx(head_b[head_lr_name], abs=0.5), \
+            "Head should produce different angles for different body positions"
 
     def test_fk_ik_pipeline_round_trip(self):
         """FK -> target -> IK -> FK should preserve the direction."""

@@ -524,7 +524,8 @@ class KinematicsEnums(Enum):
 
     # Per-joint sign multipliers (servo degrees -> URDF rotation direction)
     # Must be calibrated on real hardware: command +10 deg, observe direction
-    SIGN_BODY_LR = 1.0
+    # Body LR is inverted due to 2-gear system between servo and body
+    SIGN_BODY_LR = -1.0
     SIGN_BODY_UD = 1.0
     SIGN_HEAD_LR = 1.0
     SIGN_HEAD_UD = 1.0
