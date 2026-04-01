@@ -157,7 +157,7 @@ class MLDetect(Thread, MQTTClient):
             if y_class is None:
                 continue
             self.logger.debug(f"Translating {y_class} with type {type(y_class)}")
-            y_class_data = json_loads(y_class.tojson())
+            y_class_data = json_loads(y_class.to_json())
             for cname in y_class_data:
                 class_name = cname.get(name_key)
                 if not class_name:
