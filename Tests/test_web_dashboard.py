@@ -25,6 +25,8 @@ def _make_dashboard():
     dash.feeds = {}
     dash.feed_uris = {}
     dash._all_feeds = {}
+    dash._feed_pairs = []
+    dash._unpaired_feeds = {}
     dash._grabbers = {}
     dash.port = 8080
     dash.logger = MagicMock()
