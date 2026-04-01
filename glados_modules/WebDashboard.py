@@ -236,6 +236,7 @@ class RTSPFrameGrabber:
     def __init__(self, uri: str) -> None:
         self.uri = uri
         self.frame = None
+        self.frame_time: float = 0.0
         self.lock = Lock()
         self._running = True
         self._thread = Thread(target=self._capture_loop, daemon=True)
@@ -254,6 +255,7 @@ class RTSPFrameGrabber:
                 if ret:
                     with self.lock:
                         self.frame = frame
+                        self.frame_time = time.time()
                 else:
                     cap.release()
                     cap = None
@@ -263,7 +265,7 @@ class RTSPFrameGrabber:
 
     def get_frame(self):
         with self.lock:
-            return self.frame
+            return self.frame, self.frame_time
 
     def stop(self) -> None:
         self._running = False
@@ -379,36 +381,77 @@ class WebDashboard(Thread):
 
         return app
 
+    STALE_FRAME_TIMEOUT = 5.0  # seconds before showing "No Signal" overlay
+
     def _get_frame(self, feed_key: str):
-        """Get the latest frame for a feed, from either buffer or grabber."""
+        """Get the latest frame and timestamp for a feed.
+
+        Returns:
+            Tuple of (frame, timestamp) or (None, 0).
+        """
         if feed_key.startswith("buffer"):
-            # Direct buffer: strip prefix, read from RTSPServer
             path = feed_key[len("buffer"):]
             if self.rtsp_server and path in self.rtsp_server.factories:
                 rtsp_sys = self.rtsp_server.factories[path]
                 with rtsp_sys.data_lock:
-                    return rtsp_sys.data
+                    frame = rtsp_sys.data
+                    ts = getattr(rtsp_sys, 'data_time', time.time()) if frame is not None else 0
+                    return frame, ts
         elif feed_key.startswith("grabber:"):
-            # RTSP consumer: look up grabber by label
             label = feed_key[len("grabber:"):]
             if label in self._grabbers:
                 return self._grabbers[label].get_frame()
-        return None
+        return None, 0
+
+    def _make_no_signal_frame(self, width: int = 640, height: int = 480,
+                               message: str = "No Signal") -> np.ndarray:
+        """Generate a dark frame with a centered message."""
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        text_size = cv2.getTextSize(message, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 2)[0]
+        x = (width - text_size[0]) // 2
+        y = (height + text_size[1]) // 2
+        cv2.putText(frame, message, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
+                    1.2, (0, 0, 200), 2)
+        return frame
 
     def _generate_mjpeg(self, feed_key: str):
-        """Generator that yields JPEG frames as MJPEG stream."""
-        # Send a "No Feed" frame first in case connection is slow
-        blank = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(blank, "Connecting...", (190, 250), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2, (80, 80, 80), 2)
+        """Generator that yields JPEG frames as MJPEG stream.
+
+        Shows "Connecting..." initially, overlays "No Signal" if the frame
+        hasn't updated in STALE_FRAME_TIMEOUT seconds.
+        """
+        blank = self._make_no_signal_frame(message="Connecting...")
         _, jpeg = cv2.imencode('.jpg', blank)
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
 
         while True:
-            frame = self._get_frame(feed_key)
+            frame, frame_time = self._get_frame(feed_key)
+            now = time.time()
+
             if frame is not None:
+                stale = (now - frame_time) > self.STALE_FRAME_TIMEOUT if frame_time > 0 else False
+                if stale:
+                    # Overlay "No Signal" on the last frame so you can still see it
+                    frame = frame.copy()
+                    h, w = frame.shape[:2]
+                    # Semi-transparent dark bar
+                    overlay = frame.copy()
+                    cv2.rectangle(overlay, (0, h // 2 - 30), (w, h // 2 + 30), (0, 0, 0), -1)
+                    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+                    age = int(now - frame_time)
+                    msg = f"No Signal ({age}s)"
+                    text_size = cv2.getTextSize(msg, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
+                    x = (w - text_size[0]) // 2
+                    y = h // 2 + text_size[1] // 2
+                    cv2.putText(frame, msg, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.9, (0, 0, 255), 2)
                 _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+            else:
+                no_sig = self._make_no_signal_frame()
+                _, jpeg = cv2.imencode('.jpg', no_sig)
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
             # ~15 FPS for web stream
