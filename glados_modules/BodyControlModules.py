@@ -614,6 +614,7 @@ class IMU(MQTTClient, Thread):
             IMUEnums.LINEAR_KEY.value: self.sensor.linear_acceleration,
             IMUEnums.GRAVITY_KEY.value: self.sensor.gravity,
             IMUEnums.IMU_TIME_STAMP_KEY.value: time(),
+            IMUEnums.CALIBRATION_STATUS_KEY.value: self.sensor.calibration_status,
         }
         self.logger.debug(f"IMU Data: {sdata}")
         return sdata

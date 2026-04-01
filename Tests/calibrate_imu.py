@@ -143,6 +143,12 @@ class MQTTBackend:
             euler = self._imu_data.get(IMUEnums.EULER_KEY.value, (0, 0, 0))
             return tuple(euler) if euler else (0, 0, 0)
 
+    def get_calibration_status_values(self) -> tuple:
+        """Get BNO055 calibration status (sys, gyro, accel, mag), each 0-3."""
+        with self._lock:
+            cal = self._imu_data.get(IMUEnums.CALIBRATION_STATUS_KEY.value)
+            return tuple(cal) if cal else (0, 0, 0, 0)
+
     def is_euler_live(self) -> bool:
         euler = self.get_euler()
         return euler is not None and any(abs(v) > 0.1 for v in euler)
@@ -171,7 +177,12 @@ class MQTTBackend:
         return False
 
     def get_calibration_status(self) -> str:
-        return "LIVE" if self.is_euler_live() else "waiting..."
+        """Format calibration status as readable string with 0-3 values."""
+        cal = self.get_calibration_status_values()
+        labels = ["sys", "gyro", "accel", "mag"]
+        parts = [f"{l}={v}/3" for l, v in zip(labels, cal)]
+        fully_cal = all(v == 3 for v in cal)
+        return " ".join(parts) + (" FULLY CALIBRATED" if fully_cal else "")
 
     def save_calibration(self) -> None:
         print("  (Calibration auto-saves via IMU class on Pi5)")
@@ -223,6 +234,9 @@ class DirectBackend:
 
     def get_euler(self) -> tuple:
         return self._mqtt_imu.get_euler()
+
+    def get_calibration_status_values(self) -> tuple:
+        return self._mqtt_imu.get_calibration_status_values()
 
     def is_euler_live(self) -> bool:
         return self._mqtt_imu.is_euler_live()

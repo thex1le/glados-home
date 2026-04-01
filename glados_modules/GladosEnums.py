@@ -119,6 +119,7 @@ class IMUEnums(Enum):
     GRAVITY_KEY = "gravity"
     IMU_STATUS_KEY = "imu_status"
     IMU_TIME_STAMP_KEY = "time"
+    CALIBRATION_STATUS_KEY = "calibration_status"
     SENSOR_NAME = "IMU"
 
 
