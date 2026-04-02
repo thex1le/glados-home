@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from multiprocessing import Process
-from time import sleep
+from time import sleep, time
 
 # 3rd party import
 import cv2
@@ -91,9 +91,16 @@ class Camera(Process):
             self.__init_camera()
             self.logger.debug("Starting main camera loop...")
 
+            frame_count = 0
+            last_log_time = time()
+            LOG_INTERVAL = 10.0  # log stats every 10 seconds
+
             while not self.stop_flag:
                 try:
+                    t0 = time()
                     frame = self.__capture_frame()
+                    t_capture = time() - t0
+
                     if frame is None:
                         consecutive_failures += 1
                         if consecutive_failures >= max_failures:
@@ -104,7 +111,26 @@ class Camera(Process):
                             sleep(0.1)
                         continue
                     consecutive_failures = 0
+
+                    t1 = time()
                     self.rtsp_server.send_data(self.factory_path, frame)
+                    t_send = time() - t1
+
+                    # Flag if either call took suspiciously long
+                    if t_capture > 1.0:
+                        self.logger.warning(f"capture_array blocked for {t_capture:.2f}s")
+                    if t_send > 1.0:
+                        self.logger.warning(f"rtsp send_data blocked for {t_send:.2f}s")
+
+                    frame_count += 1
+                    now = time()
+                    if now - last_log_time >= LOG_INTERVAL:
+                        fps = frame_count / (now - last_log_time)
+                        self.logger.info(f"{self.location}: {fps:.1f} FPS, "
+                                         f"last capture={t_capture*1000:.0f}ms send={t_send*1000:.0f}ms")
+                        frame_count = 0
+                        last_log_time = now
+
                     sleep(0.01)
                 except Exception as e:
                     self.logger.error(f"Camera loop error: {e}")

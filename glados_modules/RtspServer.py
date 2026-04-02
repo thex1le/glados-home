@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from threading import Thread, Lock
+from time import time
 import gi
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
@@ -19,6 +20,8 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
+        self._last_push_time = 0
+        self._push_count = 0
         # TODO figure out how to do hardware encoding
         self.launch_string = 'appsrc name=source is-live=true block=false format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
@@ -45,9 +48,20 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         with self.data_lock:
             frame = self.data
         if frame is not None:
+            t0 = time()
             retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(frame.tobytes()))
+            push_time = time() - t0
+            if push_time > 1.0:
+                print(f"WARNING: push-buffer took {push_time:.2f}s")
             if retval != Gst.FlowReturn.OK:
-                print(retval)
+                print(f"push-buffer returned {retval}")
+            self._push_count += 1
+            now = time()
+            if now - self._last_push_time >= 10.0:
+                elapsed = now - self._last_push_time if self._last_push_time > 0 else 1
+                print(f"RTSP push: {self._push_count / elapsed:.1f} FPS")
+                self._push_count = 0
+                self._last_push_time = now
 
     def do_create_element(self, url):
         return Gst.parse_launch(self.launch_string)
