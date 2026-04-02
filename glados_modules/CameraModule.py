@@ -2,7 +2,7 @@
 import os
 import subprocess
 from multiprocessing import Process
-from threading import Thread, Event
+from threading import Thread
 from time import sleep, time
 
 # 3rd party import
@@ -100,7 +100,73 @@ class Camera(Process):
 
             frame_count = 0
             last_log_time = time()
+            last_successful_capture = time()
             LOG_INTERVAL = 10.0  # log stats every 10 seconds
+
+            # Single watchdog thread that detects capture hangs.
+            # Escalation: soft restart (stop/reinit picamera2) -> kernel
+            # module reset -> hard process exit for BodyServer to respawn.
+            self._watchdog_last_frame = time()
+            self._watchdog_restart_count = 0
+            MAX_SOFT_RESTARTS = 2  # try soft restart twice before escalating
+
+            def _watchdog():
+                while not self.stop_flag:
+                    sleep(1.0)
+                    stall_time = time() - self._watchdog_last_frame
+                    if stall_time <= CAPTURE_TIMEOUT:
+                        continue
+
+                    self._watchdog_restart_count += 1
+                    self.logger.warning(
+                        f"Watchdog: no frame for {stall_time:.1f}s "
+                        f"(restart attempt {self._watchdog_restart_count})")
+
+                    if self._watchdog_restart_count <= MAX_SOFT_RESTARTS:
+                        # Soft restart: tear down and reinit Picamera2
+                        self.logger.info("Watchdog: attempting soft camera restart...")
+                        try:
+                            if self.cap:
+                                self.cap.stop()
+                                self.cap.close()
+                        except Exception:
+                            pass
+                        self.cap = None
+                        sleep(2.0)
+                        try:
+                            self.__init_camera()
+                            self._watchdog_last_frame = time()
+                            self.logger.info("Watchdog: soft restart succeeded")
+                        except Exception as e:
+                            self.logger.error(f"Watchdog: soft restart failed: {e}")
+
+                    elif self._watchdog_restart_count == MAX_SOFT_RESTARTS + 1:
+                        # Kernel module reset + reinit
+                        self.logger.info("Watchdog: attempting kernel camera module reset...")
+                        try:
+                            if self.cap:
+                                self.cap.stop()
+                                self.cap.close()
+                        except Exception:
+                            pass
+                        self.cap = None
+                        self._reset_camera_kernel_module()
+                        sleep(3.0)
+                        try:
+                            self.__init_camera()
+                            self._watchdog_last_frame = time()
+                            self._watchdog_restart_count = 0
+                            self.logger.info("Watchdog: kernel reset + reinit succeeded")
+                        except Exception as e:
+                            self.logger.error(f"Watchdog: kernel reset failed: {e}")
+
+                    else:
+                        # All recovery attempts exhausted, hard exit
+                        self.logger.error("Watchdog: all restarts failed, forcing process exit")
+                        os._exit(1)
+
+            wd = Thread(target=_watchdog, daemon=True)
+            wd.start()
 
             while not self.stop_flag:
                 try:
@@ -114,10 +180,12 @@ class Camera(Process):
                             self.logger.warning(f"{consecutive_failures} consecutive capture failures, restarting camera...")
                             self.__restart_camera()
                             consecutive_failures = 0
+                            self._watchdog_last_frame = time()
                         else:
                             sleep(0.1)
                         continue
                     consecutive_failures = 0
+                    self._watchdog_last_frame = time()
 
                     t1 = time()
                     self.rtsp_server.send_data(self.factory_path, frame)
@@ -260,38 +328,20 @@ class Camera(Process):
                 continue
 
     def __capture_frame(self):
-        """Capture a single frame using PiCamera2 with a timeout.
+        """Capture a single frame using PiCamera2.
 
-        Uses a worker thread so that if capture_array hangs (stuck driver),
-        we detect it and can restart instead of blocking forever.
+        Detects hangs by checking if time since last successful capture
+        exceeds CAPTURE_TIMEOUT. The actual timeout detection and restart
+        is handled in the main loop.
         """
-        result = [None]
-        error = [None]
-        done = Event()
-
-        def _grab():
-            try:
-                result[0] = self.cap.capture_array("main")
-            except Exception as e:
-                error[0] = e
-            finally:
-                done.set()
-
-        t = Thread(target=_grab, daemon=True)
-        t.start()
-
-        if not done.wait(timeout=CAPTURE_TIMEOUT):
-            self.logger.error(f"capture_array timed out after {CAPTURE_TIMEOUT}s — camera driver likely stuck")
+        try:
+            frame = self.cap.capture_array("main")
+            if frame is not None and self._flip_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
+            return frame
+        except Exception as e:
+            self.logger.error(f"Failed to capture frame: {e}")
             return None
-
-        if error[0]:
-            self.logger.error(f"Failed to capture frame: {error[0]}")
-            return None
-
-        frame = result[0]
-        if frame is not None and self._flip_180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        return frame
 
 
 if __name__ == "__main__":

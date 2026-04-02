@@ -29,7 +29,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown_handler)
 
     parser = ArgumentParser(description='Evil Home AI Senses Server')
-    parser.add_argument('-config', type=str, default=1, dest='conf', nargs=1, help='Config File')
+    parser.add_argument('-confif g', type=str, default=1, dest='conf', nargs=1, help='Config File')
     try:
         args = parser.parse_args()
     except Exception:
