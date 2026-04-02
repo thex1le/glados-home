@@ -104,64 +104,42 @@ class Camera(Process):
             LOG_INTERVAL = 10.0  # log stats every 10 seconds
 
             # Single watchdog thread that detects capture hangs.
-            # Escalation: soft restart (stop/reinit picamera2) -> kernel
-            # module reset -> hard process exit for BodyServer to respawn.
+            # Escalation: kernel module reset -> hard process exit.
+            # cap.stop()/cap.close() can themselves hang when the driver is
+            # stuck, so we don't attempt soft cleanup — go straight to the
+            # kernel module reset which forces the driver to release.
             self._watchdog_last_frame = time()
-            self._watchdog_restart_count = 0
-            MAX_SOFT_RESTARTS = 2  # try soft restart twice before escalating
 
             def _watchdog():
+                attempts = 0
                 while not self.stop_flag:
                     sleep(1.0)
                     stall_time = time() - self._watchdog_last_frame
                     if stall_time <= CAPTURE_TIMEOUT:
+                        attempts = 0
                         continue
 
-                    self._watchdog_restart_count += 1
+                    attempts += 1
                     self.logger.warning(
                         f"Watchdog: no frame for {stall_time:.1f}s "
-                        f"(restart attempt {self._watchdog_restart_count})")
+                        f"(attempt {attempts})")
 
-                    if self._watchdog_restart_count <= MAX_SOFT_RESTARTS:
-                        # Soft restart: tear down and reinit Picamera2
-                        self.logger.info("Watchdog: attempting soft camera restart...")
-                        try:
-                            if self.cap:
-                                self.cap.stop()
-                                self.cap.close()
-                        except Exception:
-                            pass
-                        self.cap = None
-                        sleep(2.0)
-                        try:
-                            self.__init_camera()
-                            self._watchdog_last_frame = time()
-                            self.logger.info("Watchdog: soft restart succeeded")
-                        except Exception as e:
-                            self.logger.error(f"Watchdog: soft restart failed: {e}")
-
-                    elif self._watchdog_restart_count == MAX_SOFT_RESTARTS + 1:
-                        # Kernel module reset + reinit
-                        self.logger.info("Watchdog: attempting kernel camera module reset...")
-                        try:
-                            if self.cap:
-                                self.cap.stop()
-                                self.cap.close()
-                        except Exception:
-                            pass
-                        self.cap = None
+                    if attempts <= 2:
+                        # Kernel module reset — forces the driver to release
+                        # even if cap.stop() would hang
+                        self.logger.info("Watchdog: resetting kernel camera module...")
                         self._reset_camera_kernel_module()
                         sleep(3.0)
+                        # Reinit camera (old cap is dead, just overwrite it)
+                        self.cap = None
                         try:
                             self.__init_camera()
                             self._watchdog_last_frame = time()
-                            self._watchdog_restart_count = 0
-                            self.logger.info("Watchdog: kernel reset + reinit succeeded")
+                            self.logger.info("Watchdog: camera restarted after kernel reset")
                         except Exception as e:
-                            self.logger.error(f"Watchdog: kernel reset failed: {e}")
-
+                            self.logger.error(f"Watchdog: reinit failed: {e}")
                     else:
-                        # All recovery attempts exhausted, hard exit
+                        # Kernel reset didn't help, hard exit for respawn
                         self.logger.error("Watchdog: all restarts failed, forcing process exit")
                         os._exit(1)
 
