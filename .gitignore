@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Logs
+*.log
+Tests/logs/
+glados_modules/logs/
+
+# Runtime / recordings
+recordings/
+imu_calibration.json
+
+# Virtual environments
+glados_gpu/
+glados_python/
+
+# Config files with real IPs (template glog.conf is tracked)
+dont_commit_*.conf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# External repos (cloned into project, not tracked here)
+gladosTTS/
+glados_tts/
+glados-tts/
+
+# Extracted URDF zips
+glados_urdf_extracted/
+onshape_v3_extracted/
