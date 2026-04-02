@@ -18,44 +18,31 @@ TARGET_DIR="${HOME}"
 MODE="${1:-}"
 COUNT=0
 
-# Known legitimate files/dirs that could be 0 bytes -- skip these
-is_legitimate() {
-    local name="$1"
-    # Skip dotfiles, known directories, known scripts
-    case "$name" in
-        .*) return 0 ;;
-        *.py|*.sh|*.txt|*.conf|*.wav|*.json|*.yaml|*.yml|*.md) return 0 ;;
-        Bookshelf|Desktop|Documents|Downloads|Music|Pictures|Public|Templates|Videos) return 0 ;;
-        glados-home|neopixel|servohat|tftdisplay|scan_results|RtspServer) return 0 ;;
-    esac
-    return 1
-}
+# Approach: any 0-byte file whose name contains non-printable or high-byte
+# characters is junk. Real files have purely printable ASCII names.
+# This catches all the garbage filenames including ones starting with '.'
 
 while IFS= read -r -d '' file; do
-    name="$(basename "$file")"
-
-    # Only look at regular files (not dirs, symlinks, pipes, etc.)
+    # Only regular files
     [ -f "$file" ] || continue
 
     # Only 0-byte files
     [ ! -s "$file" ] || continue
 
-    # Skip legitimate files
-    if is_legitimate "$name"; then
+    name="$(basename "$file")"
+
+    # If the filename is 100% printable ASCII (space through tilde), keep it.
+    # This preserves .bashrc, .profile, audio.py, .sudo_as_admin_successful, etc.
+    if echo "$name" | LC_ALL=C grep -qP '^[\x20-\x7e]+$'; then
         continue
     fi
 
-    # These junk files are short names with non-printable or high-byte chars
-    # Skip anything that looks like a normal filename (all printable ASCII, > 10 chars)
-    if echo "$name" | grep -qP '^[\x20-\x7e]{10,}$'; then
-        continue
-    fi
-
+    # Filename contains non-ASCII or control characters — it's junk
     if [ "$MODE" = "--delete" ]; then
         rm -f -- "$file"
-        echo "Deleted: $name"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Deleted: $(ls -la -- "$file" 2>/dev/null || echo "$name")"
     else
-        echo "Would delete: $name"
+        echo "Would delete: $name ($(stat -c '%y' -- "$file" 2>/dev/null || echo 'unknown date'))"
     fi
     COUNT=$((COUNT + 1))
 done < <(find "$TARGET_DIR" -maxdepth 1 -type f -empty -print0 2>/dev/null)
@@ -64,7 +51,7 @@ if [ "$COUNT" -eq 0 ]; then
     echo "No junk files found."
 else
     if [ "$MODE" = "--delete" ]; then
-        echo "Deleted $COUNT junk files."
+        echo "Cleaned up $COUNT junk files."
     else
         echo "Found $COUNT junk files. Run with --delete to remove them."
     fi
