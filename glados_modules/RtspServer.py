@@ -19,8 +19,8 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
-        # TODO figur out how to do hardware encoding
-        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+        # TODO figure out how to do hardware encoding
+        self.launch_string = 'appsrc name=source is-live=true block=false format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
@@ -39,11 +39,15 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         loop.run()
 
     def on_need_data(self, src, length):
+        # Copy frame reference under lock, then push outside the lock.
+        # push-buffer can block if the encoder queue is full — holding
+        # data_lock during that would deadlock the camera capture loop.
         with self.data_lock:
-            if self.data is not None:
-                retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(self.data.tobytes()))
-                if retval != Gst.FlowReturn.OK:
-                    print(retval)
+            frame = self.data
+        if frame is not None:
+            retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(frame.tobytes()))
+            if retval != Gst.FlowReturn.OK:
+                print(retval)
 
     def do_create_element(self, url):
         return Gst.parse_launch(self.launch_string)
