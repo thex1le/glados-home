@@ -259,9 +259,10 @@ class RTSPFrameGrabber:
         while self._running:
             try:
                 if cap is None or not cap.isOpened():
-                    # Use GStreamer pipeline explicitly for proper lifecycle control
+                    # RTSP server uses x264enc + rtph264pay, so decode with H.264
                     gst_uri = (f"rtspsrc location={self.uri} latency=200 ! "
-                               f"rtpjpegdepay ! jpegdec ! videoconvert ! appsink")
+                               f"rtph264depay ! h264parse ! avdec_h264 ! "
+                               f"videoconvert ! appsink drop=true max-buffers=1 sync=false")
                     cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                     if not cap.isOpened():
                         # Fall back to default backend
