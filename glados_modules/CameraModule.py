@@ -299,18 +299,46 @@ class Camera(Process):
     def _reset_camera_kernel_module() -> None:
         """Attempt to reset the kernel camera module to free stuck devices.
 
-        Tries bcm2835-unicam (Pi4) and rp1-cfe (Pi5). Requires root.
+        Kills any processes holding /dev/video* and /dev/media*, then
+        unloads and reloads the camera kernel module. Requires root.
         """
-        # Try Pi4 module first, then Pi5
+        import logging
+        logger = logging.getLogger("CameraModuleReset")
+
+        # Step 1: Kill any processes holding camera device files
+        for dev_pattern in ["/dev/video*", "/dev/media*"]:
+            try:
+                result = subprocess.run(
+                    f"fuser -k {dev_pattern}",
+                    shell=True, capture_output=True, timeout=5)
+                if result.stdout:
+                    logger.info(f"Killed processes holding {dev_pattern}")
+            except Exception:
+                pass
+        sleep(1.0)
+
+        # Step 2: Unload and reload the camera kernel module
+        # Pi4 uses bcm2835_unicam, Pi5 uses rp1_cfe
         for module in ["bcm2835_unicam", "rp1_cfe"]:
             try:
-                subprocess.run(["modprobe", "-r", module],
-                               capture_output=True, timeout=5)
-                sleep(0.5)
-                subprocess.run(["modprobe", module],
-                               capture_output=True, timeout=5)
-                return
-            except Exception:
+                r_remove = subprocess.run(
+                    ["modprobe", "-r", module],
+                    capture_output=True, timeout=5, text=True)
+                if r_remove.returncode == 0:
+                    logger.info(f"Unloaded kernel module {module}")
+                    sleep(0.5)
+                    r_load = subprocess.run(
+                        ["modprobe", module],
+                        capture_output=True, timeout=5, text=True)
+                    if r_load.returncode == 0:
+                        logger.info(f"Reloaded kernel module {module}")
+                    else:
+                        logger.error(f"Failed to reload {module}: {r_load.stderr}")
+                    return
+                else:
+                    logger.warning(f"Could not unload {module}: {r_remove.stderr.strip()}")
+            except Exception as e:
+                logger.warning(f"Module reset failed for {module}: {e}")
                 continue
 
     def __capture_frame(self):
