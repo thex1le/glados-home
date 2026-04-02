@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+import os
+import subprocess
 from multiprocessing import Process
+from threading import Thread, Event
 from time import sleep, time
 
 # 3rd party import
@@ -11,6 +14,10 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
 from glados_modules.GladosEnums import CameraEnum, SystemEnums
 from glados_modules.RtspServer import RTSPServer
+
+# Timeout for capture_array — if Picamera2 blocks longer than this,
+# the camera driver is assumed stuck
+CAPTURE_TIMEOUT = 5.0
 
 
 class GLaDOSServerException(Exception):
@@ -224,21 +231,67 @@ class Camera(Process):
             self.logger.info(f"Camera {self.location} restarted successfully")
         except Exception as e:
             self.logger.error(f"Failed to restart camera: {e}")
-            sleep(5.0)
+            self.logger.info("Attempting kernel camera module reset...")
+            self._reset_camera_kernel_module()
+            sleep(3.0)
+            try:
+                self.__init_camera()
+                self.logger.info(f"Camera {self.location} restarted after kernel reset")
+            except Exception as e2:
+                self.logger.error(f"Camera restart failed even after kernel reset: {e2}")
+                sleep(5.0)
+
+    @staticmethod
+    def _reset_camera_kernel_module() -> None:
+        """Attempt to reset the kernel camera module to free stuck devices.
+
+        Tries bcm2835-unicam (Pi4) and rp1-cfe (Pi5). Requires root.
+        """
+        # Try Pi4 module first, then Pi5
+        for module in ["bcm2835_unicam", "rp1_cfe"]:
+            try:
+                subprocess.run(["modprobe", "-r", module],
+                               capture_output=True, timeout=5)
+                sleep(0.5)
+                subprocess.run(["modprobe", module],
+                               capture_output=True, timeout=5)
+                return
+            except Exception:
+                continue
 
     def __capture_frame(self):
+        """Capture a single frame using PiCamera2 with a timeout.
+
+        Uses a worker thread so that if capture_array hangs (stuck driver),
+        we detect it and can restart instead of blocking forever.
         """
-        Capture a single frame in BGR format using PiCamera2.
-        """
-        rtn = None
-        try:
-            frame = self.cap.capture_array("main")
-            if self._flip_180:
-                frame = cv2.rotate(frame, cv2.ROTATE_180)
-            rtn = frame
-        except Exception as e:
-            self.logger.error(f"Failed to capture frame: {e}")
-        return rtn
+        result = [None]
+        error = [None]
+        done = Event()
+
+        def _grab():
+            try:
+                result[0] = self.cap.capture_array("main")
+            except Exception as e:
+                error[0] = e
+            finally:
+                done.set()
+
+        t = Thread(target=_grab, daemon=True)
+        t.start()
+
+        if not done.wait(timeout=CAPTURE_TIMEOUT):
+            self.logger.error(f"capture_array timed out after {CAPTURE_TIMEOUT}s — camera driver likely stuck")
+            return None
+
+        if error[0]:
+            self.logger.error(f"Failed to capture frame: {error[0]}")
+            return None
+
+        frame = result[0]
+        if frame is not None and self._flip_180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        return frame
 
 
 if __name__ == "__main__":
