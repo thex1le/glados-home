@@ -230,7 +230,8 @@ class Camera(Process):
             A new Camera instance ready to start().
         """
         new_cam = Camera.__new__(Camera)
-        # Copy all config state from the dead process (set in __init__, safe to reuse)
+        # Process.__init__ must be called first to set up internal state
+        Process.__init__(new_cam)
         new_cam.daemon = True
         new_cam.location = self.location
         new_cam.__name__ = self.__name__
@@ -247,8 +248,6 @@ class Camera(Process):
         new_cam.rtsp_server = None
         new_cam._flip_180 = self._flip_180
         new_cam.logger = self.logger
-        Process.__init__(new_cam)
-        new_cam.daemon = True
         return new_cam
 
     def __init_camera(self):
