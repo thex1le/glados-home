@@ -71,6 +71,9 @@ class Camera(Process):
 
         All hardware init happens here: MQTT connection, RTSP server,
         Picamera2. Includes automatic camera restart on failure.
+
+        Wrapped in try/finally so Picamera2 always releases the camera
+        device on crash — prevents "Device or resource busy" on respawn.
         """
         # MQTT must be initialized after fork -- parent's socket is stale
         self._mqtt = MQTTClient(self._broker_ip, self._broker_port)
@@ -84,41 +87,82 @@ class Camera(Process):
         consecutive_failures = 0
         max_failures = 50
 
-        self.__init_camera()
-        self.logger.debug("Starting main camera loop...")
+        try:
+            self.__init_camera()
+            self.logger.debug("Starting main camera loop...")
 
-        while not self.stop_flag:
-            try:
-                frame = self.__capture_frame()
-                if frame is None:
+            while not self.stop_flag:
+                try:
+                    frame = self.__capture_frame()
+                    if frame is None:
+                        consecutive_failures += 1
+                        if consecutive_failures >= max_failures:
+                            self.logger.warning(f"{consecutive_failures} consecutive capture failures, restarting camera...")
+                            self.__restart_camera()
+                            consecutive_failures = 0
+                        else:
+                            sleep(0.1)
+                        continue
+                    consecutive_failures = 0
+                    self.rtsp_server.send_data(self.factory_path, frame)
+                    sleep(0.01)
+                except Exception as e:
+                    self.logger.error(f"Camera loop error: {e}")
                     consecutive_failures += 1
                     if consecutive_failures >= max_failures:
-                        self.logger.warning(f"{consecutive_failures} consecutive capture failures, restarting camera...")
+                        self.logger.warning("Too many errors, restarting camera...")
                         self.__restart_camera()
                         consecutive_failures = 0
-                    else:
-                        sleep(0.1)
-                    continue
-                consecutive_failures = 0
-                self.rtsp_server.send_data(self.factory_path, frame)
-                sleep(0.01)
-            except Exception as e:
-                self.logger.error(f"Camera loop error: {e}")
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    self.logger.warning("Too many errors, restarting camera...")
-                    self.__restart_camera()
-                    consecutive_failures = 0
-                sleep(0.1)
+                    sleep(0.1)
+        finally:
+            self.logger.info(f"Camera {self.location} releasing hardware...")
+            self._release_camera()
 
-        self.logger.debug("Camera loop exiting; cleaning up...")
+    def _release_camera(self) -> None:
+        """Release Picamera2 resources so the device is freed for respawn."""
         if self.cap:
-            self.cap.stop()
-            self.cap.close()
+            try:
+                self.cap.stop()
+            except Exception:
+                pass
+            try:
+                self.cap.close()
+            except Exception:
+                pass
+            self.cap = None
+            self.logger.info(f"Camera {self.location} released")
 
     def stop_camera(self):
         self.logger.debug("Stop camera called.")
         self.stop_flag = True
+
+    def respawn(self) -> 'Camera':
+        """Create a new Camera process with the same config after this one dies.
+
+        Returns:
+            A new Camera instance ready to start().
+        """
+        new_cam = Camera.__new__(Camera)
+        # Copy all config state from the dead process (set in __init__, safe to reuse)
+        new_cam.daemon = True
+        new_cam.location = self.location
+        new_cam.__name__ = self.__name__
+        new_cam._broker_ip = self._broker_ip
+        new_cam._broker_port = self._broker_port
+        new_cam.cam_configs = self.cam_configs
+        new_cam.fps = self.fps
+        new_cam.cam_res_x = self.cam_res_x
+        new_cam.cam_res_y = self.cam_res_y
+        new_cam.factory_path = self.factory_path
+        new_cam.rtsp_port = self.rtsp_port
+        new_cam.cap = None
+        new_cam.stop_flag = False
+        new_cam.rtsp_server = None
+        new_cam._flip_180 = self._flip_180
+        new_cam.logger = self.logger
+        Process.__init__(new_cam)
+        new_cam.daemon = True
+        return new_cam
 
     def __init_camera(self):
         """
