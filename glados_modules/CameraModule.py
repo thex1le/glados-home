@@ -95,7 +95,15 @@ class Camera(Process):
         max_failures = 50
 
         try:
-            self.__init_camera()
+            try:
+                self.__init_camera()
+            except RuntimeError:
+                # Camera device likely stuck from a previous crash.
+                # Reset the kernel module and retry.
+                self.logger.warning("Camera init failed — resetting kernel module and retrying...")
+                self._reset_camera_kernel_module()
+                sleep(3.0)
+                self.__init_camera()
             self.logger.debug("Starting main camera loop...")
 
             frame_count = 0
