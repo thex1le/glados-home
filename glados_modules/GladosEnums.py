@@ -520,8 +520,8 @@ class KinematicsEnums(Enum):
     OFFSET_HEAD_LR_TO_HEAD_UD = (-64.709, -34.328, 27.644)
 
     # Camera optical axis in the head_UD link frame (unit vector pointing "forward")
-    # Initial assumption -- must be calibrated on real hardware
-    CAMERA_OPTICAL_AXIS_LOCAL = (0.0, 0.0, 1.0)
+    # Camera is 35.5mm from head_UD pivot, angled down 22.483 degrees from centerline
+    CAMERA_OPTICAL_AXIS_LOCAL = (0.0, -0.382409, 0.923993)
 
     # Per-joint sign multipliers (servo degrees -> URDF rotation direction)
     # Must be calibrated on real hardware: command +10 deg, observe direction
@@ -580,6 +580,9 @@ class CameraEnum(Enum):
     CAMERA_HEAD_RTSP_IP = f"{CAMERA_HEAD}_rtsp_ip"
     CAMERA_RIGHT_RTSP_IP = f"{CAMERA_RIGHT}_rtsp_ip"
     CAMERA_LEFT_RTSP_IP = f"{CAMERA_LEFT}_rtsp_ip"
+    CAMERA_HEAD_FLIP = f"{CAMERA_HEAD}_flip"
+    CAMERA_LEFT_FLIP = f"{CAMERA_LEFT}_flip"
+    CAMERA_RIGHT_FLIP = f"{CAMERA_RIGHT}_flip"
     CAMERA_HEAD_FOV_X = 54
     CAMERA_HEAD_FOV_Y = 41
     CAMERA_RIGHT_FOV = 160

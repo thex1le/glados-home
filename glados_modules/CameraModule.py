@@ -3,6 +3,7 @@ from multiprocessing import Process
 from time import sleep
 
 # 3rd party import
+import cv2
 from picamera2 import Picamera2, MappedArray, Preview
 
 # glados imports
@@ -60,6 +61,9 @@ class Camera(Process):
         self.cap = None
         self.stop_flag = False
         self.rtsp_server = None
+        # Per-camera 180 degree flip (for upside-down mounted cameras)
+        flip_key = f"{self.location}_flip"
+        self._flip_180 = cam_conf.get(flip_key, "False").strip().lower() == "true"
         self.logger = setup_logger(name=self.__name__)
 
     def run(self):
@@ -159,6 +163,8 @@ class Camera(Process):
         rtn = None
         try:
             frame = self.cap.capture_array("main")
+            if self._flip_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             rtn = frame
         except Exception as e:
             self.logger.error(f"Failed to capture frame: {e}")
