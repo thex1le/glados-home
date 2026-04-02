@@ -15,21 +15,19 @@ class RtspConsumerError(Exception):
 
 
 class RtspConsumer:
-    def __init__(self, uri: str, location: str, reconnect_delay: int = 5, max_retries: int = 25) -> None:
-        """
-        Initializes the RtspConsumer.
+    def __init__(self, uri: str, location: str, reconnect_delay: int = 5) -> None:
+        """Initializes the RtspConsumer.
 
-        :param uri: The RTSP URI of the stream.
-        :param location: The location identifier for the consumer.
-        :param reconnect_delay: Seconds to wait before attempting to reconnect.
-        :param max_retries: Maximum number of retries before giving up.
+        Args:
+            uri: The RTSP URI of the stream.
+            location: The location identifier for the consumer.
+            reconnect_delay: Seconds to wait before attempting to reconnect.
         """
         self.rtsp_uri = uri
         self.location = location
         self.__name__ = f"{self.location}_rtsp_consumer"
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.reconnect_delay = reconnect_delay
-        self.max_retries = max_retries
         self.cap: Optional[cv2.VideoCapture] = None
         self.connect()
 
@@ -49,25 +47,20 @@ class RtspConsumer:
         attempt = 0
         while True:
             try:
-                self.logger.info(f"Attempting to connect to RTSP stream at {self.rtsp_uri} (Attempt {attempt + 1})...")
+                attempt += 1
+                self.logger.info(f"Connecting to RTSP stream at {self.rtsp_uri} (attempt {attempt})...")
                 self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
                 if self.cap.isOpened():
                     self.logger.info(f"Successfully connected to RTSP stream {self.rtsp_uri}.")
-                    break
+                    return
                 else:
-                    self.logger.error(
-                        f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay} seconds...")
-                    self.logger.warning("Does opencv have gstreamer support?")
+                    self.logger.warning(
+                        f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay}s...")
                     self.cap.release()
                     self.cap = None
             except Exception as e:
                 self.logger.error(f"Exception occurred while connecting: {e}")
 
-            attempt += 1
-            if 0 < self.max_retries <= attempt:
-                msg = f"Exceeded maximum connection attempts ({self.max_retries}). Giving up."
-                self.logger.error(msg)
-                raise RtspConsumerError(msg)
             sleep(self.reconnect_delay)
 
     def get_frame(self) -> Dict[str, Optional[any]]:
@@ -90,22 +83,15 @@ class RtspConsumer:
             )
         }
 
-        retries = 0
         while True:
             ret, frame = self.cap.read()
             if ret and frame is not None:
                 image_dict[CameraEnum.MSG_RAW_IMAGE.value] = frame
                 return image_dict
             else:
-                self.logger.warning(
-                    f"Failed to retrieve frame (Attempt {retries + 1}/{self.max_retries}). Reconnecting...")
+                self.logger.warning(f"Failed to retrieve frame. Reconnecting...")
                 self.cap.release()
                 self.cap = None
-                retries += 1
-                if 0 < self.max_retries <= retries:
-                    msg = f"Failed to retrieve frame after {retries} attempts. Raising error."
-                    self.logger.error(msg)
-                    raise RtspConsumerError(msg)
                 sleep(self.reconnect_delay)
                 self.connect()
 
