@@ -28,6 +28,11 @@ ultralytics                      # YOLOv8
 # AI / ML - Pose estimation
 rtmlib                           # RTMLib whole-body pose (133 keypoints)
 
+# AI / ML - Face recognition + emotion detection
+insightface>=0.7.3               # Face detection + ArcFace embedding
+onnxruntime-gpu                  # GPU-accelerated ONNX inference for InsightFace
+hsemotion                        # Facial emotion classification (7 emotions)
+
 # AI / ML - Speech to text
 whisperx                         # WhisperX audio transcription
 ffmpeg-python

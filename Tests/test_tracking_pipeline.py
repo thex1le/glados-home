@@ -60,6 +60,27 @@ def _make_motion_track():
     mt._fusion = CameraFusionState()
     mt._last_tracked_world_lr = None
     mt._last_tracked_bbox_height = None
+    mt._last_tracked_face_id = None
+    mt._last_known_positions = {}
+
+    # Behavior state machine
+    from glados_modules.GladosEnums import BehaviorEnums
+    from math import pi
+    mt._behavior_state = BehaviorEnums.STATE_ACTIVE.value
+    mt._idle_start_time = 0.0
+    mt._drowsy_start_time = 0.0
+    mt._breathing_freq = MotionProfile.BREATHING_FREQ.value * 2 * pi
+    mt._breathing_amplitude = MotionProfile.BREATHING_AMPLITUDE.value
+
+    # Feature toggles (all enabled for tests)
+    mt._enable_movement = True
+    mt._enable_predictive = True
+    mt._enable_confirmation = True
+    mt._enable_blending = True
+    mt._enable_glances = True
+    mt._enable_breathing = True
+    mt._enable_sleep = True
+
     mt._lock = __import__('threading').Lock()
     mt.client = MagicMock()
     mt.send_command = MagicMock()

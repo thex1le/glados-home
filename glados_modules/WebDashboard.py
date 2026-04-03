@@ -248,7 +248,7 @@ class RTSPFrameGrabber:
             try:
                 cap.release()
             except Exception:
-                pass
+                pass  # Expected during teardown — GStreamer may already be NULL
             # Give GStreamer time to tear down before creating a new pipeline
             time.sleep(0.5)
 

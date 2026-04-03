@@ -54,7 +54,7 @@ if __name__ == "__main__":
         print("TTS unavailable at startup — continuing without greeting")
     gstt = GladosSTT(configp, gl)
     gstt.start()
-    local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
+    local_commands = gl.get_local_commands()
     left_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_FACTORY.value]
     right_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_FACTORY.value]
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
@@ -108,8 +108,7 @@ if __name__ == "__main__":
         prompt = gstt.get_text()
         if prompt is not None:
             cmd_bool = False
-            # check for local commands
-            # TODO load commands from config?
+            # check for local commands (registered in GLaDOSLocal.get_local_commands)
             for cmd in local_commands:
                 cmd_bool = cmd(user_prompt=prompt)
                 if cmd_bool is True:
@@ -118,6 +117,10 @@ if __name__ == "__main__":
             if cmd_bool is True:
                 # skip the rest on the while loop
                 continue
+            # Track interaction frequency for pestering detection
+            gl.register_interaction()
+            # Check for compliments (calms mood)
+            gl.detect_compliment(prompt)
             gladosgpt = GladosGPT(configp, prompt)
             gladosgpt.add_prompt(gl.get_seen_prompt())
             gladosgpt.start()

@@ -1,4 +1,5 @@
 import random
+from math import sin, pi
 from time import sleep, time
 from typing import Any, List, Optional, Tuple, Union
 
@@ -134,6 +135,41 @@ class NeoPixelAnimations:
             self.pixels.show()
             intense += intensity_change
             sleep(st)
+
+    def speech_pulse(self, wait: float, color: Tuple[int, int, int],
+                     peak: float = 1.0) -> None:
+        """Pulse LED with a smooth bell curve over the word duration.
+
+        Brightness follows sin(pi * t / wait) — rises to peak at midpoint,
+        falls back to dim at the end. Produces natural-looking speech pulses
+        where short words flash and long words breathe.
+
+        Args:
+            wait: Duration of the pulse in seconds (word duration).
+            color: Base RGB color for the pulse.
+            peak: Maximum brightness (0.0-1.0). Defaults to 1.0.
+        """
+        self.pixels.auto_write = False
+        start_time = time()
+        min_bright = 0.05
+        steps = max(10, int(wait * 30))
+        step_dt = wait / steps
+
+        for i in range(steps):
+            elapsed = time() - start_time
+            if elapsed > wait:
+                break
+            t = elapsed / wait
+            brightness = min_bright + (peak - min_bright) * sin(pi * t)
+            for px in self.pixel_grid:
+                self.pixels[px] = LedHelper.adjust_brightness(color, brightness)
+            self.pixels.show()
+            sleep(step_dt)
+
+        # End dim
+        for px in self.pixel_grid:
+            self.pixels[px] = LedHelper.adjust_brightness(color, min_bright)
+        self.pixels.show()
 
     def disco(self, wait: Union[int, float] = 0.05, order: str = "RGB") -> None:
         """Run a continuous rainbow cycle animation until stop_disco is called.

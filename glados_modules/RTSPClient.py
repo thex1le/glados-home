@@ -114,7 +114,7 @@ class RtspConsumer:
 
 
 if __name__ == "__main__":
-    # stand allow debugging stub
+    # Standalone debugging: connect to an RTSP stream and display a frame
     import argparse
     import sys
 

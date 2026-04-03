@@ -21,6 +21,8 @@ glados_modules/logs/
 # Runtime / recordings
 recordings/
 imu_calibration.json
+face_database.json
+mood_state.json
 
 # Virtual environments
 glados_gpu/

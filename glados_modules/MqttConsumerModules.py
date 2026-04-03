@@ -306,6 +306,7 @@ class VisionTracker(MQTTClient):
         target: str,
         confidence: float,
         tracker_callback: Callable[[Dict[str, Any]], None],
+        side_confidence: float = 0.4,
     ) -> None:
         """Initialize a VisionTracker instance.
 
@@ -314,12 +315,12 @@ class VisionTracker(MQTTClient):
         variables for vision processing.
 
         Args:
-            broker (NamedTuple): A named tuple containing broker details with
+            broker: A named tuple containing broker details with
                 attributes 'ip' and 'port'.
-            target (str): The target object to track.
-            confidence (float): The minimum confidence threshold for tracking.
-            tracker_callback (Callable[[Dict[str, Any]], None]): A callback function
-                to handle tracking updates.
+            target: The target object to track.
+            confidence: The minimum confidence threshold for head camera tracking.
+            tracker_callback: A callback function to handle tracking updates.
+            side_confidence: Confidence threshold for side cameras (lower due to fisheye).
         """
         self.__name__ = self.__class__.__name__
         self.logger = setup_logger(
@@ -328,8 +329,7 @@ class VisionTracker(MQTTClient):
         self.target: str = target
         self.tracker_callback: Callable[[Dict[str, Any]], None] = tracker_callback
         self.confidence_score: float = confidence
-        # TODO: Get side confidence from config file
-        self.side_confidence_score: float = 0.4
+        self.side_confidence_score: float = side_confidence
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.main_camera: str = CameraEnum.CONFIG_HEAD.value
         self.left_camera: str = CameraEnum.CAMERA_LEFT.value

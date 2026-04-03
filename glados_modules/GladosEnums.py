@@ -32,8 +32,21 @@ class SystemEnums(Enum):
     BROKER_IP = 'ip'
     BROKER_PORT = 'port'
     BROKER = 'broker'
-    # SPEAKER_DELAY: int = 1.6686527729034424
-    SPEAKER_DELAY = 1.12
+    # Default speaker delay — configurable via [LOCALSPEAK] speaker_delay in glog.conf
+    SPEAKER_DELAY_DEFAULT = 1.12
+    # [LOCALSPEAK] config keys
+    LOCALSPEAK_PATH = "localpath"
+    LOCALSPEAK_GREETINGS = "greetings"
+    LOCALSPEAK_PROCESSING = "processing"
+    LOCALSPEAK_INSULTS = "insults"
+    LOCALSPEAK_QUESTIONS = "questions"
+    LOCALSPEAK_QRESPONSES = "qresponses"
+    LOCALSPEAK_CANCEL = "cancel"
+    LOCALSPEAK_FUCK = "fuck"
+    # [REACTIONS] config keys
+    CONFIG_HEAD_REACTIONS = "REACTIONS"
+    VISION_CONFIDENCE = "VisionConfidence"
+    SIDE_VISION_CONFIDENCE = "SideVisionConfidence"
 
 
 class LEDShoulders(Enum):
@@ -75,6 +88,7 @@ class LEDHead(Enum):
     MSG_COMMAND_START_DELAY = "start_delay"
     ARGS_KEY_TIME_DICT = "time_dict"
     ARGS_KEY_DELAY = "delay"
+    ARGS_KEY_COLOR = "color"
 
 
 class LCDEnums(Enum):
@@ -225,6 +239,14 @@ class VisionResultsEnum(Enum):
     KEYPOINT_DRAW_THRESHOLD = 0.5
     # Key used for class name in YOLO results
     YOLO_CLASS_NAME_KEY = "name"
+    # Face recognition keys
+    VISION_RESULTS_FACE_KEY = "face"
+    VISION_RESULTS_FACE_DETECTED_KEY = "detected"
+    VISION_RESULTS_FACE_ID_KEY = "face_id"
+    VISION_RESULTS_FACE_CONFIDENCE_KEY = "face_confidence"
+    VISION_RESULTS_FACE_BOX_KEY = "face_box"
+    VISION_RESULTS_EMOTION_KEY = "emotion"
+    VISION_RESULTS_EMOTION_SCORES_KEY = "emotion_scores"
 
     VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY = {
                 # COCO WholeBody keypoint mapping (133 Key points)
@@ -489,6 +511,8 @@ class MotionProfile(Enum):
     IDLE_DRIFT_INTERVAL = 0.5          # seconds between idle drift target sends
     IDLE_TIMEOUT = 5.0                 # seconds without target before idle drift starts
     DEFAULT_SERVO_CENTER = 90.0        # fallback center angle
+    BREATHING_AMPLITUDE = 0.3          # degrees of body_UD oscillation
+    BREATHING_FREQ = 0.2               # Hz (~12 breaths per minute)
     # Camera mounting offsets (degrees from body center)
     CAMERA_LEFT_MOUNTING_OFFSET = -55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = 55.0
@@ -508,6 +532,68 @@ class FusionEnums(Enum):
     PREDICTION_MIN_VELOCITY = 15.0     # degrees/sec minimum to trigger prediction
     PREDICTION_MAX_OFFSET = 15.0       # max degrees of pre-rotation
     PREDICTION_HISTORY_WINDOW = 1.0    # seconds of angle history for velocity estimate
+
+
+class FaceEnums(Enum):
+    """Face recognition and enrollment MQTT topics and parameters."""
+    MQTT_ENROLL_TOPIC = "system/face/enroll"
+    MQTT_STATUS_TOPIC = "system/face/status"
+    MSG_NAME_KEY = "name"
+    MSG_COMMAND_KEY = "cmd"
+    COMMAND_ENROLL = "enroll"
+    COMMAND_FORGET = "forget"
+    COMMAND_STATUS_ENROLLED = "enrolled"
+    COMMAND_STATUS_FAILED = "failed"
+    CONFIG_HEAD = "FACE"
+    FACE_DB_PATH = "face_database.json"
+    SIMILARITY_THRESHOLD = 0.4         # cosine similarity for ArcFace matching
+    MAX_EMBEDDINGS_PER_PERSON = 10     # keep N embeddings, average for matching
+    ENABLED = "enabled"                # toggle face recognition on/off
+    EMOTION_ENABLED = "emotion_enabled"  # toggle emotion detection separately
+
+
+class PersonalityEnums(Enum):
+    """Mood/anger system and behavior state configuration."""
+    CONFIG_HEAD = "PERSONALITY"
+    PERSIST_MOOD = "persist_mood"
+    ANGER_DECAY_RATE = "anger_decay_rate"
+    MAX_ANGER = "max_anger"
+    PESTERING_WINDOW = "pestering_window"
+    MOOD_STATE_FILE = "mood_state.json"
+    MQTT_MOOD_TOPIC = "system/mood"
+    # Anger escalation amounts
+    ANGER_PROFANITY = 3.0
+    ANGER_PESTERING = 1.0
+    ANGER_INTERRUPTED = 2.0
+    # Calm amounts
+    CALM_PERSON_LEFT = 2.0
+    CALM_COMPLIMENT = 1.0
+    # Feature toggles
+    MOOD_ENABLED = "mood_enabled"
+    BREATHING_ENABLED = "breathing_enabled"
+    SLEEP_ENABLED = "sleep_enabled"
+    COMMENTARY_ENABLED = "commentary_enabled"
+
+
+class FeatureToggles(Enum):
+    """Debug toggles for new tracking features. All in [FEATURES] config section."""
+    CONFIG_HEAD = "FEATURES"
+    MOVEMENT_ENABLED = "movement_enabled"
+    PREDICTIVE_ROTATION = "predictive_rotation"
+    PERIPHERAL_CONFIRMATION = "peripheral_confirmation"
+    HANDOFF_BLENDING = "handoff_blending"
+    MEMORY_GLANCES = "memory_glances"
+
+
+class BehaviorEnums(Enum):
+    """Behavior state machine states and timing."""
+    STATE_ACTIVE = "active"
+    STATE_IDLE = "idle"
+    STATE_DROWSY = "drowsy"
+    STATE_ASLEEP = "asleep"
+    IDLE_TO_DROWSY_TIMEOUT = 120.0   # seconds of idle before drowsy
+    DROWSY_TO_SLEEP_DURATION = 30.0  # seconds of drowsy before asleep
+    DROOP_ANGLE = 15.0               # degrees below center for sleep droop
 
 
 class KinematicsEnums(Enum):

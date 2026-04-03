@@ -98,7 +98,9 @@ class MQTTClient:
             self.logger.info(f"Log level changed to {level_str} (via MQTT)")
 
 
-# TODO flesh out message classes for easy update in one place
+# Message builder classes: each returns a dict ready for MQTT publish.
+# Add new builders here when adding new MQTT message types.
+# Pattern: static methods using enum values for all keys.
 class TargetMessageBuilder:
     @staticmethod
     def send_track_command_start(camera):

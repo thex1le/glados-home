@@ -75,10 +75,11 @@ class GladosLCD(Thread, MQTTClient):
             elif cmd == LCDEnums.COMMAND_GET_BREATH.value:
                 self.send_command({self.location: self.get_breath_options()},
                                   MQTTEnums.LCD_CONTROL_MQTT_TOPIC.value)
-            # commented out: startup via MQTT causes a deadlock
-            # elif cmd == LCDEnums.COMMAND_STARTUP.value:
-            #     self.stop()
-            #     self.__startup()
+            elif cmd == LCDEnums.COMMAND_STARTUP.value:
+                # Run in thread — __startup() calls breathe() which blocks,
+                # so it can't run in the MQTT callback thread
+                self.stop_breath()
+                Thread(target=self.__startup, daemon=True).start()
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
         self.breath_animation = breath_dict['animation']
@@ -375,7 +376,7 @@ class TOF(MQTTClient, Thread):
             readings.
         """
         while not self.vl53.data_ready:
-            pass
+            sleep(0.001)  # 1ms poll — prevents 100% CPU spin
         self.vl53.clear_interrupt()
         sdata: Dict[str, Any] = {
             TOFEnums.TOF_STATUS_KEY.value: self.vl53.distance,
@@ -920,8 +921,8 @@ class DumbLEDController(Thread):
     """
     def __init__(self, channel: int, duty_cycle: int = 100, pca_address: int = 0x40) -> None:
         Thread.__init__(self)
-        # TODO add a logger and mqtt here
         self.daemon = True
+        self.logger = setup_logger(name="DumbLEDController", console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.hat = adafruit_pca9685.PCA9685(busio.I2C(board.SCL, board.SDA), address=pca_address)
         self.led = self.hat.channels[channel]
         self.led.duty_cycle = duty_cycle
@@ -983,8 +984,10 @@ class DumbLEDController(Thread):
 class LedHead(MQTTClient):
     def __init__(self, broker: NamedTuple, pca_address: int = 0x40, pwm_channel: int = 4) -> None:
         self.__name__ = "Head_LED_Controller"
-        # TODO do we need to remove the logger here or in mqtt object?
-        # TODO split out LED control into its own module so i can reduce code to control the dot stars on the pi5?
+        # Logger is owned by this class — MQTTClient does not create one
+        # TODO: Extract NeoPixelAnimations + LedHelper into a standalone LedController
+        # module so Pi5 DotStar LEDs can reuse the same animation code without
+        # importing BodyControlModules (which pulls in hardware deps)
         self.logger = setup_logger(self.__name__, console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value)
         self.pixels = neopixel.NeoPixel(board.D18, 1, brightness=1, auto_write=True, pixel_order=neopixel.RGB)
         self.ani = NeoPixelAnimations(self.pixels, 1)
@@ -1017,10 +1020,11 @@ class LedHead(MQTTClient):
             if animation_key in self.animations.keys():
                 if animation_key == LEDHead.ANIMATION_SPEECH_EYE_KEY.value:
                     args = body.get(LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value, '')
-                    # TODO You left off switching this to **KWARGS and just passing the msg in
                     if args != '':
                         self.logger.debug("LED Head Animation Triggered with arguments")
-                        self.animations[animation_key](**args)
+                        # Run in separate thread so MQTT callback isn't blocked
+                        Thread(target=self.animations[animation_key],
+                               kwargs=args, daemon=True).start()
                 else:
                     self.logger.debug("LED Head Animation Triggered with no arguments")
                     self.animations[animation_key]()
@@ -1077,18 +1081,27 @@ class LedHead(MQTTClient):
         self.pixels.show()
 
     def speach_eye(self, **kwargs) -> None:
+        """Pulse eye LED in sync with speech word timing.
+
+        Accepts time_dict as a list of (word_duration, gap_to_next) tuples.
+        Also accepts an optional color tuple to pulse with mood-driven colors.
+        """
         self.logger.debug("Speech Eye Pulse Triggered")
         td = LEDHead.ARGS_KEY_TIME_DICT.value
         delay = LEDHead.ARGS_KEY_DELAY.value
+        color_key = LEDHead.ARGS_KEY_COLOR.value
         if {td, delay}.issubset(kwargs):
             ds = float(kwargs[delay])
+            pulse_color = tuple(kwargs.get(color_key, self.glados_eye))
             self.logger.debug(f"Sleeping for {ds} seconds for audio sync")
             sleep(ds)
-            for k in kwargs[td].keys():
-                # k is time duration of word & v is time of sleep till next word
-                self.ani.intensity(wait=float(k), color=self.glados_eye, intensity_change=0.002)
-                # fetch value and sleep that long
-                sleep(float(kwargs[td][k]))
+            time_entries = kwargs[td]
+            for entry in time_entries:
+                # entry is (word_duration, gap_to_next) tuple/list
+                word_duration = float(entry[0])
+                gap = float(entry[1])
+                self.ani.speech_pulse(wait=word_duration, color=pulse_color)
+                sleep(gap)
             self.normal_eye()
         else:
             self.logger.error(f"Missing either {td} or {delay} in {kwargs} arguments, speech eye animation failed")

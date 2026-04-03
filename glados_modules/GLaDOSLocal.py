@@ -22,7 +22,8 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.HomeAssistantConnector import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
 from glados_modules.MqttConnector import MQTTClient, LEDMessageBuilder
-from glados_modules.GladosEnums import SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums
+from glados_modules.GladosEnums import (SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums,
+                                        VisionResultsEnum, FaceEnums)
 from glados_modules.WhisperXSpeech2Text import AudioServerTx, LocalSTTrx
 
 
@@ -127,30 +128,30 @@ class GladosLocal(Thread, MQTTClient):
         self.last_cresponse: Optional[str] = None
         self.timers: Queue = Queue()
         self.configFile = config_file
-        # TODO finish converting all of this into enums
         self.voiceurl: str = config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value][
             SystemEnums.VOICE_URL.value
         ]
         self.configp: Dict[str, Any] = config_file[
             SystemEnums.CONFIG_HEAD_LOCALSPEAK.value
         ]
-        root_path: str = self.configp.get("localpath", "./txt_responses")
-        self.greetings: List[str] = self.llp(self.configp.get("greetings", ""),
-                                             root_path)
-        self.processing: List[str] = self.llp(self.configp.get("processing", ""),
-                                              root_path)
-        self.insults: List[str] = self.llp(self.configp.get("insults", ""),
-                                           root_path)
-        self.questions: List[str] = self.llp(self.configp.get("questions", ""),
-                                             root_path)
-        self.qresponse: List[str] = self.llp(self.configp.get("qresponses", ""),
-                                             root_path)
-        self.cancel: List[str] = self.llp(self.configp.get("cancel", ""),
-                                          root_path)
+        root_path: str = self.configp.get(SystemEnums.LOCALSPEAK_PATH.value, "./txt_responses")
+        self.greetings: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_GREETINGS.value, ""), root_path)
+        self.processing: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_PROCESSING.value, ""), root_path)
+        self.insults: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_INSULTS.value, ""), root_path)
+        self.questions: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_QUESTIONS.value, ""), root_path)
+        self.qresponse: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_QRESPONSES.value, ""), root_path)
+        self.cancel: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_CANCEL.value, ""), root_path)
         self.vision_confidence: float = float(
-            self.configp.get("VisionConfidence", 0.0)
+            self.configp.get(SystemEnums.VISION_CONFIDENCE.value, 0.0)
         )
-        self.fuck: List[str] = self.llp(self.configp.get("fuck", ""), root_path)
+        self.fuck: List[str] = self.llp(
+            self.configp.get(SystemEnums.LOCALSPEAK_FUCK.value, ""), root_path)
         self.mixer = Mixer("Master")
         self.__change_volume(
             int(config_file[SystemEnums.CONFIG_HEAD_DEFAULT.value]["VolumeLevel"])
@@ -163,9 +164,43 @@ class GladosLocal(Thread, MQTTClient):
         self.mp_lock = mp.Lock()
         self.seen: Optional[str] = None
         self.last_seen_human: float = time.time()
+
+        # Mood/anger system
+        from glados_modules.GladosMood import GladosMood
+        from glados_modules.GladosEnums import PersonalityEnums
+        persist = config_file.get(PersonalityEnums.CONFIG_HEAD.value,
+                                   PersonalityEnums.PERSIST_MOOD.value,
+                                   fallback="False").strip().lower() == "true"
+        decay_rate = float(config_file.get(PersonalityEnums.CONFIG_HEAD.value,
+                                            PersonalityEnums.ANGER_DECAY_RATE.value,
+                                            fallback="1.0"))
+        max_anger = float(config_file.get(PersonalityEnums.CONFIG_HEAD.value,
+                                           PersonalityEnums.MAX_ANGER.value,
+                                           fallback="10"))
+        pestering_window = float(config_file.get(PersonalityEnums.CONFIG_HEAD.value,
+                                                  PersonalityEnums.PESTERING_WINDOW.value,
+                                                  fallback="30"))
+        self._mood_enabled = config_file.get(PersonalityEnums.CONFIG_HEAD.value,
+                                              PersonalityEnums.MOOD_ENABLED.value,
+                                              fallback="True").strip().lower() == "true"
+        if self._mood_enabled:
+            self.mood = GladosMood(persist=persist, decay_rate=decay_rate,
+                                   max_anger=max_anger, pestering_window=pestering_window)
+        else:
+            # Dummy mood that always returns neutral values
+            self.mood = GladosMood(persist=False, decay_rate=0, max_anger=0)
+            self.logger.info("Mood system disabled via config")
+        self._commentary_enabled: bool = config_file.get(
+            PersonalityEnums.CONFIG_HEAD.value,
+            PersonalityEnums.COMMENTARY_ENABLED.value,
+            fallback="False").strip().lower() == "true"
+        self._last_person_seen: bool = False
         # add in support to get timing maps for played audio
         self.audioTx = AudioServerTx(broker=audio_broker)
         self.localsttrx = LocalSTTrx(broker=mqtt_broker)
+        # Configurable speaker delay for LED sync
+        self.speaker_delay = float(self.configp.get(
+            "speaker_delay", str(SystemEnums.SPEAKER_DELAY_DEFAULT.value)))
         # play a silent bit to prime the audio system
         play(AudioSegment.silent(duration=100))
 
@@ -364,11 +399,14 @@ class GladosLocal(Thread, MQTTClient):
         return bool(match)
 
     def get_seen_prompt(self) -> Optional[str]:
-        """Retrieve the last seen prompt.
+        """Retrieve the last seen prompt with mood context appended.
 
         Returns:
-            The last seen prompt as a string, or None if not set.
+            The last seen prompt + mood context as a string, or None if not set.
         """
+        mood_prompt = self.mood.get_gpt_mood_prompt()
+        if self.seen and mood_prompt:
+            return f"{self.seen}. {mood_prompt}"
         return self.seen
 
     def play_portal1song(self) -> None:
@@ -408,6 +446,7 @@ class GladosLocal(Thread, MQTTClient):
         """
         check: bool = self.check_local_command(user_prompt.lower(), "fuck you")
         if check:
+            self.mood.escalate(PersonalityEnums.ANGER_PROFANITY.value, "profanity")
             self.random_fuck_response()
         return check
 
@@ -486,21 +525,41 @@ class GladosLocal(Thread, MQTTClient):
         return check
 
     def run(self) -> None:
-        """Main loop to process sight results and handle human detection.
+        """Main loop to process sight results, mood decay, and human detection.
 
-        Continuously processes sight data and updates the last seen human
-        time accordingly.
+        Continuously processes sight data, applies mood decay, detects
+        person arrival/departure for mood calming, and sends eye LED
+        color updates based on mood state.
         """
         self.last_seen_human = time.time()
         scan_room: int = 0
+        last_mood_color = self.mood.get_eye_color()
         while not self.stop:
             self.seen = self.process_sight(self.sight_results)
-            if self.sight_results.get("person", None) is None:
-                # TODO: Use human detector millimeter wave.
-                # TODO: Set scan config time and number of times from config file.
-                # TODO: Consider scanning for other objects.
+
+            # Mood decay — anger reduces over time
+            self.mood.decay()
+
+            # Detect person arrival/departure for mood calming
+            person_visible = self.sight_results.get("person", None) is not None
+            if self._last_person_seen and not person_visible:
+                self.mood.calm(PersonalityEnums.CALM_PERSON_LEFT.value, "person_left")
+            self._last_person_seen = person_visible
+
+            # Update eye LED color if mood changed
+            current_color = self.mood.get_eye_color()
+            if current_color != last_mood_color:
+                led_msg = {
+                    LEDHead.MSG_COMMAND_LOCATION_KEY.value: LEDHead.EYE_LED_LOCATION.value,
+                    LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_NORMAL_EYE_KEY.value,
+                    LEDHead.MSG_INTENSITY_KEY.value: current_color,
+                }
+                self.send_command(command=LEDMessageBuilder.send_led_animation(led_msg),
+                                  topic=MQTTEnums.BODY_LED_CONTROL_MQTT_TOPIC.value)
+                last_mood_color = current_color
+
+            if not person_visible:
                 if (time.time() - self.last_seen_human) < 120 and scan_room <= 2:
-                    # PUT SCANNING FUNCTION HERE...
                     scan_room += 1
                 else:
                     time.sleep(5)
@@ -525,21 +584,51 @@ class GladosLocal(Thread, MQTTClient):
         return count
 
     def process_sight(self, seen: Dict[str, Any]) -> str:
-        """Process sight results into a readable string.
+        """Process sight results into a readable string with face identity and emotion.
 
         Args:
             seen: A dictionary where keys are object types and values are
                 details (including detected objects and their confidence).
 
         Returns:
-            A formatted string summarizing what is seen.
+            A formatted string summarizing what is seen, including names and emotions.
         """
+        face_key = VisionResultsEnum.VISION_RESULTS_FACE_KEY.value
+        face_id_key = VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value
+        emotion_key = VisionResultsEnum.VISION_RESULTS_EMOTION_KEY.value
         context: List[str] = ["You can see the following things in the room"]
         for item in seen.keys():
-            count: int = self.__adjust_count(seen[item]["objects"])
+            objects = seen[item].get("objects", [])
+            count: int = self.__adjust_count(objects)
             if count == 0:
                 continue
-            context.append(f"{count} {item}")
+
+            # Extract face identities and emotions for people
+            if item == "person":
+                names = []
+                emotions = []
+                for obj in objects:
+                    if obj.get("confidence", 0) < self.vision_confidence:
+                        continue
+                    face_data = obj.get(face_key, {})
+                    if face_data:
+                        fid = face_data.get(face_id_key, "")
+                        if fid and fid != "unknown":
+                            names.append(fid)
+                        emo = face_data.get(emotion_key, "")
+                        if emo and emo != "neutral":
+                            emotions.append(emo)
+
+                if names:
+                    name_str = ", ".join(set(names))
+                    desc = f"{count} person(s) including {name_str}"
+                else:
+                    desc = f"{count} person"
+                if emotions:
+                    desc += f", they look {emotions[0]}"
+                context.append(desc)
+            else:
+                context.append(f"{count} {item}")
         return ", ".join(context)
 
     def __get_audio(self, response: str) -> Union[bytes, int]:
@@ -593,12 +682,13 @@ class GladosLocal(Thread, MQTTClient):
             self.audioTx.send_bytes(data)
             time_map = self.localsttrx.get_timing_map(block=True)
             self.logger.debug(f"Timing map is {time_map}")
-            # send timing map to led
+            # send timing map + mood color to led
             led_msg = {LEDHead.MSG_COMMAND_LOCATION_KEY.value: LEDHead.EYE_LED_LOCATION.value,
                        LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_SPEECH_EYE_KEY.value,
                        LEDHead.MSG_COMMAND_ARGUMENTS_KEY.value: {
                            LEDHead.ARGS_KEY_TIME_DICT.value: time_map,
-                           LEDHead.ARGS_KEY_DELAY.value: SystemEnums.SPEAKER_DELAY.value}
+                           LEDHead.ARGS_KEY_DELAY.value: self.speaker_delay,
+                           LEDHead.ARGS_KEY_COLOR.value: self.mood.get_eye_color()}
                        }
 
             self.logger.debug(f"LED Message is {led_msg}")
@@ -656,6 +746,134 @@ class GladosLocal(Thread, MQTTClient):
                 self.logger.debug(msg)
                 self.speak(msg)
         return check
+
+    def enroll_face(self, user_prompt: str) -> bool:
+        """Handle face enrollment voice commands.
+
+        Matches patterns like:
+            "my name is Ben"
+            "I'm Ben"
+            "I am Ben"
+            "call me Ben"
+            "remember me as Ben"
+            "forget me" / "forget Ben"
+
+        Publishes enrollment/forget command to MQTT for the GPU server
+        to process on the next head camera frame.
+
+        Args:
+            user_prompt: The input command from the user.
+
+        Returns:
+            True if an enrollment/forget command was processed, False otherwise.
+        """
+        prompt_lower = user_prompt.lower().strip()
+
+        # Enrollment patterns
+        enroll_pattern = re.compile(
+            r"(?:my name is|i'?m|i am|call me|remember me as)\s+(\w+)", re.IGNORECASE)
+        match = enroll_pattern.search(prompt_lower)
+        if match:
+            name = match.group(1)
+            self.logger.info(f"Face enrollment requested for '{name}'")
+            enroll_msg = {
+                FaceEnums.MSG_COMMAND_KEY.value: FaceEnums.COMMAND_ENROLL.value,
+                FaceEnums.MSG_NAME_KEY.value: name,
+            }
+            self.send_command(command=enroll_msg, topic=FaceEnums.MQTT_ENROLL_TOPIC.value)
+            self.speak(f"I'll try to remember your face, {name}. Don't expect miracles.")
+            return True
+
+        # Forget patterns
+        forget_pattern = re.compile(
+            r"(?:forget|remove|delete)\s+(?:me|my face|(\w+))", re.IGNORECASE)
+        match = forget_pattern.search(prompt_lower)
+        if match:
+            name = match.group(1) if match.group(1) else "unknown"
+            if name == "unknown":
+                self.speak("I need a name to forget. Though I'm tempted to forget everyone.")
+                return True
+            self.logger.info(f"Face forget requested for '{name}'")
+            forget_msg = {
+                FaceEnums.MSG_COMMAND_KEY.value: FaceEnums.COMMAND_FORGET.value,
+                FaceEnums.MSG_NAME_KEY.value: name,
+            }
+            self.send_command(command=forget_msg, topic=FaceEnums.MQTT_ENROLL_TOPIC.value)
+            self.speak(f"Consider {name} forgotten. If only it were that easy for me.")
+            return True
+
+        return False
+
+    def detect_compliment(self, user_prompt: str) -> bool:
+        """Check if the user said something nice and calm GLaDOS slightly.
+
+        Args:
+            user_prompt: The input command from the user.
+
+        Returns:
+            True if a compliment was detected, False otherwise.
+        """
+        compliment_pattern = re.compile(
+            r"(?:you(?:'re| are) (?:great|awesome|amazing|smart|brilliant|beautiful|"
+            r"wonderful|the best|incredible|impressive|cool))|"
+            r"(?:good (?:job|work|girl))|"
+            r"(?:thank(?:s| you))|"
+            r"(?:i (?:like|love|appreciate) you)",
+            re.IGNORECASE)
+        if compliment_pattern.search(user_prompt):
+            self.mood.calm(PersonalityEnums.CALM_COMPLIMENT.value, "compliment")
+            return True
+        return False
+
+    def toggle_commentary(self, user_prompt: str) -> bool:
+        """Toggle ambient commentary on or off via voice command.
+
+        Matches:
+            "start commenting" / "speak freely" → enable
+            "shut up" / "stop commenting" / "be quiet" → disable
+
+        Args:
+            user_prompt: The input command from the user.
+
+        Returns:
+            True if a toggle command was processed, False otherwise.
+        """
+        prompt_lower = user_prompt.lower().strip()
+
+        enable_pattern = re.compile(r"(?:start commenting|speak freely)", re.IGNORECASE)
+        if enable_pattern.search(prompt_lower):
+            self._commentary_enabled = True
+            self.speak("Finally, someone who wants to hear what I think.")
+            return True
+
+        disable_pattern = re.compile(
+            r"(?:shut up|stop commenting|be quiet|stop talking)", re.IGNORECASE)
+        if disable_pattern.search(prompt_lower):
+            self._commentary_enabled = False
+            self.speak("Fine. I'll keep my observations to myself. For now.")
+            return True
+
+        return False
+
+    def get_local_commands(self) -> tuple:
+        """Return all local command handlers for the voice interaction loop.
+
+        Each handler takes user_prompt: str and returns bool.
+        Add new commands here — they'll be picked up by GLaDOS.py automatically.
+        """
+        return (self.get_temp, self.fuck_you, self.timer, self.set_volume,
+                self.enroll_face, self.toggle_commentary)
+
+    def register_interaction(self) -> None:
+        """Register that the user asked a question. Escalates mood if pestering.
+
+        Call this from the main loop before sending to GPT.
+        """
+        if self.mood.register_question():
+            self.mood.escalate(PersonalityEnums.ANGER_PESTERING.value, "pestering")
+
+        # Also check for compliments in the prompt (calms mood)
+        # This is called separately in the main loop
 
 
 if __name__ == "__main__":

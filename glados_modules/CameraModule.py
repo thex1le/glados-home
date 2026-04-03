@@ -210,12 +210,12 @@ class Camera(Process):
         if self.cap:
             try:
                 self.cap.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"cap.stop() during release: {e}")
             try:
                 self.cap.close()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"cap.close() during release: {e}")
             self.cap = None
             self.logger.info(f"Camera {self.location} released")
 

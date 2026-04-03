@@ -2,7 +2,7 @@ import time
 from typing import Dict, Callable, Tuple, NamedTuple, Any
 from json import loads
 from collections import namedtuple
-from math import sin, radians, tan, atan, degrees
+from math import sin, radians, tan, atan, degrees, pi
 
 # 3rd party imports
 from paho.mqtt.client import MQTTMessage
@@ -14,7 +14,8 @@ from glados_modules.MqttConsumerModules import ServoLocation, VisionTracker
 from glados_modules.GladosEnums import (CameraEnum, ServoEnum, SystemEnums,
                                         TrackingEnums, VisionResultsEnum, LoggingEnums,
                                         MotionProfile, TraceEnums, KinematicsEnums,
-                                        FusionEnums)
+                                        FusionEnums, BehaviorEnums, FeatureToggles,
+                                        PersonalityEnums)
 from glados_modules.RobotKinematics import RobotKinematics
 from glados_modules.MotionRecorder import MotionRecorder, build_frame_record
 from glados_modules.TraceLog import TraceLog
@@ -269,6 +270,7 @@ class MotionTrack(MQTTClient):
         target: str = "person",
         pose_target: str = VisionResultsEnum.VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY.value[0],
         confidence: float = 0.65,
+        config=None,
     ) -> None:
         self.__name__ = self.__class__.__name__
         self.location = self.__name__
@@ -342,6 +344,39 @@ class MotionTrack(MQTTClient):
         # Last tracked target state for multi-person selection
         self._last_tracked_world_lr: float = None
         self._last_tracked_bbox_height: float = None
+        self._last_tracked_face_id: str = None
+        # Last known positions for memory glances (face_id -> world_lr)
+        self._last_known_positions: Dict[str, float] = {}
+
+        # Feature toggles (read from config, default to True)
+        def _toggle(section: str, key: str, fallback: bool = True) -> bool:
+            if config is None:
+                return fallback
+            return config.get(section, key, fallback=str(fallback)).strip().lower() == "true"
+
+        self._enable_predictive = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                           FeatureToggles.PREDICTIVE_ROTATION.value)
+        self._enable_confirmation = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                             FeatureToggles.PERIPHERAL_CONFIRMATION.value)
+        self._enable_blending = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                         FeatureToggles.HANDOFF_BLENDING.value)
+        self._enable_glances = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                        FeatureToggles.MEMORY_GLANCES.value)
+        self._enable_breathing = _toggle(PersonalityEnums.CONFIG_HEAD.value,
+                                          PersonalityEnums.BREATHING_ENABLED.value)
+        self._enable_sleep = _toggle(PersonalityEnums.CONFIG_HEAD.value,
+                                      PersonalityEnums.SLEEP_ENABLED.value)
+        self._enable_movement = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                         FeatureToggles.MOVEMENT_ENABLED.value)
+
+        # Behavior state machine (active → idle → drowsy → asleep)
+        self._behavior_state: str = BehaviorEnums.STATE_ACTIVE.value
+        self._idle_start_time: float = 0.0
+        self._drowsy_start_time: float = 0.0
+
+        # Breathing parameters
+        self._breathing_freq: float = MotionProfile.BREATHING_FREQ.value * 2 * pi
+        self._breathing_amplitude: float = MotionProfile.BREATHING_AMPLITUDE.value
 
         # Motion recording (set to None to disable, or call enable_recording())
         self._recorder: MotionRecorder = None
@@ -512,6 +547,28 @@ class MotionTrack(MQTTClient):
         """Clamp a value to the servo's physical range."""
         return max(self._servo_mins[servo_name], min(self._servo_maxs[servo_name], value))
 
+    def _get_breathing_offset(self) -> float:
+        """Compute the current breathing oscillation offset for body_UD.
+
+        Returns a small sine wave offset (~0.3 degrees at 12 breaths/min).
+        Amplitude reduces during drowsy state and stops during sleep.
+        Returns 0.0 if breathing is disabled via config.
+        """
+        if not self._enable_breathing:
+            return 0.0
+        if self._behavior_state == BehaviorEnums.STATE_ASLEEP.value:
+            return 0.0
+
+        amplitude = self._breathing_amplitude
+        if self._behavior_state == BehaviorEnums.STATE_DROWSY.value:
+            # Reduce breathing amplitude as drowsy progresses
+            elapsed = time.time() - self._drowsy_start_time
+            duration = BehaviorEnums.DROWSY_TO_SLEEP_DURATION.value
+            factor = max(0.0, 1.0 - elapsed / duration)
+            amplitude *= factor
+
+        return amplitude * sin(self._breathing_freq * time.time())
+
     def _update_targets(self, target_world_lr: float, target_world_ud: float,
                          trace_id: str = None) -> None:
         """Compute head and body servo targets from world-space angles and send one MQTT message.
@@ -543,6 +600,9 @@ class MotionTrack(MQTTClient):
         body_ud_target = body_targets[self.body_UD_name]
 
         # Clamp all to physical ranges
+        # Add breathing oscillation to body_UD
+        body_ud_target += self._get_breathing_offset()
+
         head_lr_target = self._clamp(head_lr_target, self.head_LR_name)
         head_ud_target = self._clamp(head_ud_target, self.head_UD_name)
         body_lr_target = self._clamp(body_lr_target, self.body_LR_name)
@@ -564,7 +624,10 @@ class MotionTrack(MQTTClient):
         if trace_id:
             msg[TraceEnums.TRACE_ID.value] = trace_id
             msg[TraceEnums.TS_VISION.value] = self._tracer._active.get(trace_id, {}).get("ts_vision")
-        self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        if self._enable_movement:
+            self.send_command(msg, ServoEnum.MQTT_COMMAND_TOPIC.value)
+        else:
+            self.logger.debug(f"Movement disabled — would send: {targets}")
 
         # Update local estimators to match what we just commanded
         speed = self.dms
@@ -581,36 +644,121 @@ class MotionTrack(MQTTClient):
         )
 
     def _generate_idle_drift(self) -> None:
-        """Generate subtle organic drift when no target is detected.
-        Layered sine waves at irrational-ratio frequencies produce smooth, non-repeating sway.
+        """Generate behavior based on the current state when no target is actively tracked.
+
+        Behavior hierarchy:
+            1. DRIFT TOWARD: side camera sees someone → slowly rotate toward them
+            2. IDLE: random layered sine waves
+            3. DROWSY: decreasing amplitude, head drooping (after 2 min idle)
+            4. ASLEEP: still, no movement (after 30s drowsy)
         """
         now = time.time()
+
+        # Check for sleep/drowsy transitions (skip if sleep disabled)
+        if not self._enable_sleep:
+            self._behavior_state = BehaviorEnums.STATE_IDLE.value
+        if self._behavior_state == BehaviorEnums.STATE_ASLEEP.value:
+            # Asleep — no movement. Side camera wake-up is handled in track_loop.
+            if self.debug_overlay_enabled:
+                self._debug_overlay["state"] = "ASLEEP"
+            return
+
+        if self._behavior_state == BehaviorEnums.STATE_DROWSY.value:
+            elapsed = now - self._drowsy_start_time
+            if elapsed >= BehaviorEnums.DROWSY_TO_SLEEP_DURATION.value:
+                self._behavior_state = BehaviorEnums.STATE_ASLEEP.value
+                self.logger.info("Falling asleep")
+                if self.debug_overlay_enabled:
+                    self._debug_overlay["state"] = "ASLEEP"
+                return
+
+        # Transition idle → drowsy after 2 minutes
+        if self._behavior_state == BehaviorEnums.STATE_IDLE.value:
+            if self._idle_start_time > 0:
+                idle_duration = now - self._idle_start_time
+                if idle_duration >= BehaviorEnums.IDLE_TO_DROWSY_TIMEOUT.value:
+                    if self._behavior_state != BehaviorEnums.STATE_DROWSY.value:
+                        self._behavior_state = BehaviorEnums.STATE_DROWSY.value
+                        self._drowsy_start_time = now
+                        self.logger.info("Getting drowsy")
+
+        # Rate limit drift updates
         if now - self._last_idle_send < self._idle_interval:
             return
         self._last_idle_send = now
 
+        # Check if side camera sees someone — drift toward them
+        best_side = self._fusion.get_best_side_world_lr()
+        if best_side is not None:
+            # Someone is visible on side camera — drift toward them
+            current_angles = {
+                self.body_LR_name: self._get_estimated_position(self.body_LR_name),
+                self.body_UD_name: self._get_estimated_position(self.body_UD_name),
+                self.head_LR_name: self._get_estimated_position(self.head_LR_name),
+                self.head_UD_name: self._get_estimated_position(self.head_UD_name),
+            }
+            _, current_pitch = self._kinematics.forward_kinematics(current_angles)
+            self._update_targets(best_side, current_pitch)
+            if self.debug_overlay_enabled:
+                self._debug_overlay["state"] = "DRIFT_TOWARD"
+            return
+
+        # No one detected — check for memory glance opportunity
+        if self._enable_glances and self._last_known_positions and not self._idle_active:
+            # Occasionally glance at where someone was last seen
+            import random
+            if random.random() < 0.02:  # ~2% chance per update cycle
+                face_id = random.choice(list(self._last_known_positions.keys()))
+                glance_lr = self._last_known_positions[face_id]
+                head_ud_mid = self._servo_middles[self.head_UD_name]
+                self._update_targets(glance_lr, head_ud_mid)
+                self.logger.debug(f"Memory glance toward {face_id}")
+                if self.debug_overlay_enabled:
+                    self._debug_overlay["state"] = "GLANCE"
+                return
+
+        # Random idle drift — layered sine waves
         t = now
-        lr = 2.5 * sin(0.3 * t) + 1.0 * sin(0.7 * t + 1.2) + 0.4 * sin(1.4 * t + 0.5)
-        ud = 1.8 * sin(0.25 * t + 0.8) + 0.6 * sin(0.55 * t + 2.1)
+        # Scale amplitude based on behavior state (drowsy reduces amplitude)
+        amplitude_scale = 1.0
+        if self._behavior_state == BehaviorEnums.STATE_DROWSY.value:
+            elapsed = now - self._drowsy_start_time
+            duration = BehaviorEnums.DROWSY_TO_SLEEP_DURATION.value
+            amplitude_scale = max(0.0, 1.0 - elapsed / duration)
+
+        lr = amplitude_scale * (2.5 * sin(0.3 * t) + 1.0 * sin(0.7 * t + 1.2) + 0.4 * sin(1.4 * t + 0.5))
+        ud = amplitude_scale * (1.8 * sin(0.25 * t + 0.8) + 0.6 * sin(0.55 * t + 2.1))
+
+        # Drowsy head droop — gradually lower the head
+        if self._behavior_state == BehaviorEnums.STATE_DROWSY.value:
+            droop = BehaviorEnums.DROOP_ANGLE.value * (1.0 - amplitude_scale)
+            ud -= droop
 
         head_lr_mid = self._servo_middles[self.head_LR_name]
         head_ud_mid = self._servo_middles[self.head_UD_name]
 
-        # Idle drift uses the same _update_targets path so body follows naturally
         self._update_targets(head_lr_mid + lr, head_ud_mid + ud)
         if not self._idle_active:
             self._idle_active = True
+            self._idle_start_time = now
+            self._behavior_state = BehaviorEnums.STATE_IDLE.value
             self.logger.debug("Entering idle drift mode")
         if self.debug_overlay_enabled:
-            self._debug_overlay["state"] = "IDLE"
+            self._debug_overlay["state"] = self._behavior_state
 
     def __select_target(self, seen_data: list, camera: str) -> dict:
         """Select the best target using human-like priority.
 
-        Scoring:
-            1. Proximity to last tracked world angle (50%) — minimal head movement
-            2. Similar bbox height to last target (30%) — same distance from robot
-            3. Confidence (20%) — tiebreaker
+        When face ID history is available:
+            1. Face ID match (40%) — same person as last tracked
+            2. Proximity to last tracked world angle (30%)
+            3. Similar bbox height (15%) — distance proxy
+            4. Confidence (15%) — tiebreaker
+
+        Without face ID history:
+            1. Proximity to last tracked world angle (50%)
+            2. Similar bbox height (30%)
+            3. Confidence (20%)
 
         Falls back to highest confidence when no prior tracking state exists.
 
@@ -623,6 +771,8 @@ class MotionTrack(MQTTClient):
         """
         confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
         box_key = TrackingEnums.KEY_BOX.value
+        face_key = VisionResultsEnum.VISION_RESULTS_FACE_KEY.value
+        face_id_key = VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value
         if not seen_data:
             return {}
 
@@ -636,29 +786,48 @@ class MotionTrack(MQTTClient):
                     best = p
             return best
 
+        has_face_history = self._last_tracked_face_id is not None
+
         best = {}
         best_score = -1.0
         for p in seen_data:
             score = 0.0
             bbox = p.get(box_key, {})
             confidence = p.get(confidence_key, 0)
+            face_data = p.get(face_key, {})
+            face_id = face_data.get(face_id_key) if face_data else None
 
-            # Proximity: prefer targets near last known angle (50% weight)
-            if bbox:
-                world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
-                angle_diff = abs(world_lr - self._last_tracked_world_lr)
-                proximity = max(0.0, 1.0 - angle_diff / 90.0)
-                score += proximity * 0.5
-
-            # Distance similarity: prefer similar bbox height (30% weight)
-            if bbox and self._last_tracked_bbox_height and self._last_tracked_bbox_height > 0:
-                height = bbox.get('y2', 0) - bbox.get('y1', 0)
-                if height > 0:
-                    height_ratio = min(height, self._last_tracked_bbox_height) / max(height, self._last_tracked_bbox_height)
-                    score += height_ratio * 0.3
-
-            # Confidence: tiebreaker (20% weight)
-            score += confidence * 0.2
+            if has_face_history:
+                # Face ID match: strong signal (40%)
+                if face_id and face_id == self._last_tracked_face_id:
+                    score += 0.4
+                # Proximity (30%)
+                if bbox:
+                    world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
+                    angle_diff = abs(world_lr - self._last_tracked_world_lr)
+                    proximity = max(0.0, 1.0 - angle_diff / 90.0)
+                    score += proximity * 0.3
+                # Height similarity (15%)
+                if bbox and self._last_tracked_bbox_height and self._last_tracked_bbox_height > 0:
+                    height = bbox.get('y2', 0) - bbox.get('y1', 0)
+                    if height > 0:
+                        height_ratio = min(height, self._last_tracked_bbox_height) / max(height, self._last_tracked_bbox_height)
+                        score += height_ratio * 0.15
+                # Confidence (15%)
+                score += confidence * 0.15
+            else:
+                # No face history — use position-based scoring
+                if bbox:
+                    world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
+                    angle_diff = abs(world_lr - self._last_tracked_world_lr)
+                    proximity = max(0.0, 1.0 - angle_diff / 90.0)
+                    score += proximity * 0.5
+                if bbox and self._last_tracked_bbox_height and self._last_tracked_bbox_height > 0:
+                    height = bbox.get('y2', 0) - bbox.get('y1', 0)
+                    if height > 0:
+                        height_ratio = min(height, self._last_tracked_bbox_height) / max(height, self._last_tracked_bbox_height)
+                        score += height_ratio * 0.3
+                score += confidence * 0.2
 
             if score > best_score:
                 best_score = score
@@ -703,9 +872,14 @@ class MotionTrack(MQTTClient):
                 self._generate_idle_drift()
             return
 
-        # Found a target
+        # Found a target — wake up if sleeping/drowsy
+        was_asleep = self._behavior_state in (BehaviorEnums.STATE_ASLEEP.value,
+                                               BehaviorEnums.STATE_DROWSY.value)
         self._last_target_time = time.time()
         self._idle_active = False
+        self._behavior_state = BehaviorEnums.STATE_ACTIVE.value
+        if was_asleep:
+            self.logger.info("Waking up — target detected")
 
         # Extract trace_id from vision results (stamped by MachineVision)
         trace_id = vision_map[camera].get(TraceEnums.TRACE_ID.value)
@@ -744,7 +918,8 @@ class MotionTrack(MQTTClient):
                                                    ServoEnum.Y_AXIS.value, point=use_point)
 
             # Apply handoff blending if transitioning from side camera
-            world_lr = self._fusion.get_blended_world_lr(world_lr)
+            if self._enable_blending:
+                world_lr = self._fusion.get_blended_world_lr(world_lr)
 
             # Update head person count for room-level awareness
             self._fusion.update_head_count(target_data.get(self.count, 0))
@@ -755,7 +930,7 @@ class MotionTrack(MQTTClient):
                 self._world_ud = world_ud
             else:
                 alpha = self._world_smooth_alpha
-                if self._fusion.is_confirmed_by_side(world_lr):
+                if self._enable_confirmation and self._fusion.is_confirmed_by_side(world_lr):
                     alpha = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
                 self._world_lr = alpha * self._world_lr + (1 - alpha) * world_lr
                 self._world_ud = alpha * self._world_ud + (1 - alpha) * world_ud
@@ -774,6 +949,13 @@ class MotionTrack(MQTTClient):
             if bbox_for_height:
                 self._last_tracked_bbox_height = float(
                     bbox_for_height.get('y2', 0) - bbox_for_height.get('y1', 0))
+            # Store face ID for identity-based target selection
+            face_data = best_target.get(VisionResultsEnum.VISION_RESULTS_FACE_KEY.value, {})
+            if face_data.get(VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value):
+                self._last_tracked_face_id = face_data[VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value]
+                # Remember where this person was for memory glances
+                if self._last_tracked_face_id != "unknown":
+                    self._last_known_positions[self._last_tracked_face_id] = self._world_lr
 
             # Update debug overlay for RTSP stream visualization
             if self.debug_overlay_enabled:
@@ -837,8 +1019,11 @@ class MotionTrack(MQTTClient):
             if self._fusion.side_can_drive_servos():
                 bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
                 if bbox:
-                    # Use predicted angle (leads moving targets by ~0.75s)
-                    world_lr = self._fusion.get_predicted_world_lr(camera)
+                    # Use predicted angle if enabled, otherwise raw angle
+                    if self._enable_predictive:
+                        world_lr = self._fusion.get_predicted_world_lr(camera)
+                    else:
+                        world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
                     # Use current body_UD as the UD target (side cameras don't provide vertical info)
                     current_ud = self._get_estimated_position(self.body_UD_name)
                     # Use the head camera's FK pitch if available, otherwise keep body UD stable

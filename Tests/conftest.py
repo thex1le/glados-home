@@ -117,6 +117,12 @@ _mock_module("rtmlib")
 _mock_module("whisperx")
 _mock_module("ffmpeg")
 
+# Face recognition / emotion
+_mock_module("insightface")
+_mock_module("insightface.app")
+_mock_module("hsemotion")
+_mock_module("hsemotion.facial_emotions")
+
 # gladosTTS (external, not in repo)
 _mock_module("gladosTTS")
 _mock_module("gladosTTS.engine")

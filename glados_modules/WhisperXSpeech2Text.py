@@ -226,7 +226,7 @@ class LocalSTTtx(MQTTClient):
         return audio_np
 
     @staticmethod
-    def add_time_metrics_word_segments(stt_object: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[float, float]]:
+    def add_time_metrics_word_segments(stt_object: Dict[str, Any]) -> tuple:
         """Add timing metrics to each word in the word_segments list.
 
         This function updates the input STT object by adding two keys to each word in the
@@ -236,13 +236,13 @@ class LocalSTTtx(MQTTClient):
               For the last word, the value is set to 0.
 
         Args:
-            stt_object (Dict[str, Any]): The input STT object containing 'word_segments' in
-                STT_RESULTS -> raw.
+            stt_object: The input STT object containing 'word_segments'.
 
         Returns:
-            Dict[str, Any]: The modified STT object with added timing information for each word.
+            Tuple of (modified stt_object, time_map). time_map is a list of
+            (word_duration, gap_to_next) tuples preserving all words in order.
         """
-        time_map = {}
+        time_map = []
         word_segments = (
             stt_object.get(STTEnums.STT_WORD_SEGMENTS_KEY.value, [])
         )
@@ -259,7 +259,7 @@ class LocalSTTtx(MQTTClient):
             else:
                 ttn = 0
                 word["time_to_next"] = ttn
-            time_map[tt] = ttn
+            time_map.append((tt, ttn))
         return stt_object, time_map
 
 
@@ -372,7 +372,7 @@ class LocalSTTrx(MQTTClient):
 
 
 if __name__ == "__main__":
-    # Test stub
+    # Standalone debugging: start AudioServerRX and LocalSTTtx for testing
     broker = AudioServerRX.broker_tuple
     server_broker = broker("127.0.0.1", 5000)
     mqtt_broker = broker("192.168.1.39", 1883)

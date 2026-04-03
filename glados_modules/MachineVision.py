@@ -39,7 +39,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.RTSPClient import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
-from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums, TraceEnums
+from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums, TraceEnums, FaceEnums
 from glados_modules.MqttConsumerModules import ServoLocation
 from glados_modules.VisionTracker import MotionTrack
 from glados_modules.TraceLog import TraceLog
@@ -118,6 +118,8 @@ class MLDetect(Thread, MQTTClient):
         # yolo
         self.model_config = configfile["YOLO"]["model"]
         self.tracker_yaml = configfile["YOLO"]["tracker"]
+        self.kpt_threshold = float(configfile.get("YOLO", "keypoint_threshold",
+                                                   fallback=str(VisionResultsEnum.KEYPOINT_DRAW_THRESHOLD.value)))
 
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
 
@@ -129,6 +131,28 @@ class MLDetect(Thread, MQTTClient):
             self.logger.info(msg)
 
         self.rtsp = RTSPServer(self.cam_configs)
+
+        # Face recognition (head camera only, toggleable via config)
+        face_enabled = configfile.get(FaceEnums.CONFIG_HEAD.value,
+                                       FaceEnums.ENABLED.value,
+                                       fallback="True").strip().lower() == "true"
+        if face_enabled:
+            try:
+                from glados_modules.FaceRecognition import GladosFaceRecognition
+                face_db = configfile.get(FaceEnums.CONFIG_HEAD.value,
+                                         FaceEnums.FACE_DB_PATH.value,
+                                         fallback=FaceEnums.FACE_DB_PATH.value)
+                emotion_enabled = configfile.get(FaceEnums.CONFIG_HEAD.value,
+                                                  FaceEnums.EMOTION_ENABLED.value,
+                                                  fallback="True").strip().lower() == "true"
+                self.face_recognition = GladosFaceRecognition(
+                    db_path=face_db, enable_emotion=emotion_enabled)
+            except Exception:
+                self.logger.warning("Face recognition unavailable — continuing without it")
+                self.face_recognition = None
+        else:
+            self.logger.info("Face recognition disabled via config")
+            self.face_recognition = None
 
         # Pipeline tracing
         self.tracer = TraceLog()
@@ -309,13 +333,37 @@ class MLDetect(Thread, MQTTClient):
                     color=yellow_orange_color, thickness=2)
         t_results = self.__translate_results(results)
 
+        # Face recognition + emotion detection (head camera only)
+        if camera_location == CameraEnum.CAMERA_HEAD.value and self.face_recognition:
+            person_key = VisionResultsEnum.VISION_RESULTS_PERSON_KEY.value
+            objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+            if person_key in t_results and objects_key in t_results[person_key]:
+                faces = self.face_recognition.detect_and_analyze(image)
+                self.face_recognition.match_faces_to_persons(
+                    faces, t_results[person_key][objects_key])
+                # Annotate face bounding boxes and labels on RTSP stream
+                face_key = VisionResultsEnum.VISION_RESULTS_FACE_KEY.value
+                for person in t_results[person_key][objects_key]:
+                    if face_key in person:
+                        face_data = person[face_key]
+                        fb = face_data.get(VisionResultsEnum.VISION_RESULTS_FACE_BOX_KEY.value, {})
+                        fx1 = fb.get(VisionResultsEnum.BOX_X1.value, 0)
+                        fy1 = fb.get(VisionResultsEnum.BOX_Y1.value, 0)
+                        fx2 = fb.get(VisionResultsEnum.BOX_X2.value, 0)
+                        fy2 = fb.get(VisionResultsEnum.BOX_Y2.value, 0)
+                        fid = face_data.get(VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value, "?")
+                        emo = face_data.get(VisionResultsEnum.VISION_RESULTS_EMOTION_KEY.value, "?")
+                        cv2.rectangle(a_image, (fx1, fy1), (fx2, fy2), (0, 255, 0), 2)
+                        label = f"{fid} ({emo})"
+                        cv2.putText(a_image, label, (fx1, fy1 - 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
         # if a pose model exists, plot the pose on the camera
         if p_model is not None:
             # we have a model, must be head camera, run model and draw points
             key_points, scores = p_model(image)
-            # TODO read key point threshold from enum or config file
             a_image = draw_skeleton(a_image, key_points, scores,
-                                    kpt_thr=VisionResultsEnum.KEYPOINT_DRAW_THRESHOLD.value)
+                                    kpt_thr=self.kpt_threshold)
             # assign results to bounding boxes
             t_results = self.assign_key_points_to_response(t_results, key_points, scores)
 
@@ -461,6 +509,13 @@ class MLDetect(Thread, MQTTClient):
         """
         status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
         self.send_command(status, self.status_topic)
+
+        # Subscribe to face enrollment commands
+        if self.face_recognition:
+            self.subscribe(FaceEnums.MQTT_ENROLL_TOPIC.value,
+                           self._handle_face_command)
+            self.logger.info("Subscribed to face enrollment commands")
+
         # Start tracking for each camera in separate threads
         self.start_tracking_threads()
         self.logger.info("Started YOLO tracking threads for all cameras")
@@ -468,3 +523,33 @@ class MLDetect(Thread, MQTTClient):
         # The actual work happens in the tracker threads spawned above.
         while True:
             sleep(1)
+
+    def _handle_face_command(self, msg: Any) -> None:
+        """Handle face enrollment/forget commands from MQTT.
+
+        Args:
+            msg: MQTT message with cmd and name fields.
+        """
+        from json import loads
+        try:
+            j_msg = loads(msg.payload.decode())
+        except Exception:
+            return
+        cmd = j_msg.get(FaceEnums.MSG_COMMAND_KEY.value, "")
+        name = j_msg.get(FaceEnums.MSG_NAME_KEY.value, "")
+        if not name:
+            return
+
+        if cmd == FaceEnums.COMMAND_ENROLL.value:
+            self.logger.info(f"Face enrollment requested for '{name}'")
+            self.face_recognition.start_enrollment(name)
+            status = {FaceEnums.MSG_COMMAND_KEY.value: FaceEnums.COMMAND_STATUS_ENROLLED.value,
+                      FaceEnums.MSG_NAME_KEY.value: name,
+                      "status": "pending"}
+            self.send_command(status, FaceEnums.MQTT_STATUS_TOPIC.value)
+        elif cmd == FaceEnums.COMMAND_FORGET.value:
+            success = self.face_recognition.forget(name)
+            status_msg = "forgotten" if success else "not_found"
+            status = {FaceEnums.MSG_COMMAND_KEY.value: status_msg,
+                      FaceEnums.MSG_NAME_KEY.value: name}
+            self.send_command(status, FaceEnums.MQTT_STATUS_TOPIC.value)

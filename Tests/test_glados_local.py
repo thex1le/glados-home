@@ -185,6 +185,108 @@ class TestProcessSight:
         assert "2 person" in result  # only 0.9 and 0.7 pass
 
 
+class TestProcessSightWithFaces:
+    """Test vision result string building with face identity and emotion."""
+
+    def _make_gl(self):
+        """Create a minimal GladosLocal for testing process_sight."""
+        from glados_modules.GLaDOSLocal import GladosLocal
+        with patch.object(GladosLocal, '__init__', lambda self, *a, **kw: None):
+            gl = GladosLocal.__new__(GladosLocal)
+        gl.vision_confidence = 0.65
+        gl.logger = MagicMock()
+        return gl
+
+    def test_person_with_name(self):
+        gl = self._make_gl()
+        seen = {"person": {"objects": [
+            {"confidence": 0.9, "face": {"face_id": "ben", "emotion": "neutral"}}
+        ]}}
+        result = gl.process_sight(seen)
+        assert "ben" in result
+
+    def test_person_with_emotion(self):
+        gl = self._make_gl()
+        seen = {"person": {"objects": [
+            {"confidence": 0.9, "face": {"face_id": "ben", "emotion": "happy"}}
+        ]}}
+        result = gl.process_sight(seen)
+        assert "happy" in result
+
+    def test_unknown_face_not_named(self):
+        gl = self._make_gl()
+        seen = {"person": {"objects": [
+            {"confidence": 0.9, "face": {"face_id": "unknown", "emotion": "neutral"}}
+        ]}}
+        result = gl.process_sight(seen)
+        assert "unknown" not in result
+        assert "person" in result
+
+    def test_neutral_emotion_not_mentioned(self):
+        gl = self._make_gl()
+        seen = {"person": {"objects": [
+            {"confidence": 0.9, "face": {"face_id": "ben", "emotion": "neutral"}}
+        ]}}
+        result = gl.process_sight(seen)
+        assert "neutral" not in result
+
+    def test_no_face_data_still_counts(self):
+        gl = self._make_gl()
+        seen = {"person": {"objects": [{"confidence": 0.9}]}}
+        result = gl.process_sight(seen)
+        assert "1 person" in result
+
+    def test_non_person_objects_unchanged(self):
+        gl = self._make_gl()
+        seen = {"chair": {"objects": [{"confidence": 0.9}]}}
+        result = gl.process_sight(seen)
+        assert "1 chair" in result
+
+
+class TestEnrollFaceCommand:
+    """Test face enrollment voice command parsing."""
+
+    def _make_gl(self):
+        from glados_modules.GLaDOSLocal import GladosLocal
+        with patch.object(GladosLocal, '__init__', lambda self, *a, **kw: None):
+            gl = GladosLocal.__new__(GladosLocal)
+        gl.logger = MagicMock()
+        gl.send_command = MagicMock()
+        gl.speak = MagicMock()
+        return gl
+
+    def test_my_name_is(self):
+        gl = self._make_gl()
+        assert gl.enroll_face("my name is Ben")
+        gl.send_command.assert_called_once()
+        args = gl.send_command.call_args
+        assert args[1]["command"]["name"] == "ben"
+        assert args[1]["command"]["cmd"] == "enroll"
+
+    def test_im(self):
+        gl = self._make_gl()
+        assert gl.enroll_face("I'm Sarah")
+        args = gl.send_command.call_args
+        assert args[1]["command"]["name"] == "sarah"
+
+    def test_call_me(self):
+        gl = self._make_gl()
+        assert gl.enroll_face("call me Dave")
+        args = gl.send_command.call_args
+        assert args[1]["command"]["name"] == "dave"
+
+    def test_forget_person(self):
+        gl = self._make_gl()
+        assert gl.enroll_face("forget Ben")
+        args = gl.send_command.call_args
+        assert args[1]["command"]["cmd"] == "forget"
+        assert args[1]["command"]["name"] == "ben"
+
+    def test_no_match(self):
+        gl = self._make_gl()
+        assert not gl.enroll_face("what is the weather?")
+
+
 class TestDedupe:
     """Test random choice deduplication."""
 
