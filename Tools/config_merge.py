@@ -130,22 +130,24 @@ def apply_merge(template: ConfigParser, deployed_path: str, diff: dict) -> None:
             inserted = False
             for i, line in enumerate(lines):
                 if line.strip() == section_header:
-                    # Find the end of this section (next section or EOF)
+                    # Find the last non-blank content line in this section
+                    # (before the next section header or EOF)
                     insert_at = i + 1
+                    last_content = i  # track last line with actual content
                     while insert_at < len(lines):
                         stripped = lines[insert_at].strip()
                         if stripped.startswith('[') and stripped.endswith(']'):
                             break
+                        if stripped:
+                            last_content = insert_at
                         insert_at += 1
-                    # Insert new keys before the next section (or at end)
+                    # Insert new keys right after the last content line
+                    insert_pos = last_content + 1
                     new_lines = []
                     for key, val in keys.items():
                         new_lines.append(f"{key} = {val}\n")
-                    # Add a blank line before if the previous line isn't blank
-                    if insert_at > 0 and lines[insert_at - 1].strip():
-                        new_lines.insert(0, "\n")
                     for nl in reversed(new_lines):
-                        lines.insert(insert_at, nl)
+                        lines.insert(insert_pos, nl)
                     inserted = True
                     break
             if not inserted:
@@ -154,13 +156,31 @@ def apply_merge(template: ConfigParser, deployed_path: str, diff: dict) -> None:
 
     # Add entire new sections at the end
     if diff["new_sections"]:
-        # Also grab all the keys for these sections from the template
         for section in diff["new_sections"]:
             lines.append(f"\n[{section}]\n")
             for key, val in template.items(section):
                 if key in template.defaults() and key not in dict(template[section]):
                     continue
                 lines.append(f"{key} = {val}\n")
+
+    # Clean up formatting: ensure blank line between sections, no blanks within
+    cleaned = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # If this is a section header, ensure blank line before it (unless first line)
+        if stripped.startswith('[') and stripped.endswith(']'):
+            if cleaned and cleaned[-1].strip():
+                cleaned.append("\n")
+            cleaned.append(line)
+        # Skip consecutive blank lines within a section
+        elif not stripped and cleaned and not cleaned[-1].strip():
+            continue
+        else:
+            cleaned.append(line)
+    # Ensure file ends with newline
+    if cleaned and not cleaned[-1].endswith("\n"):
+        cleaned.append("\n")
+    lines = cleaned
 
     # Handle any sections we couldn't find in raw text
     for section, keys in additions:
