@@ -53,8 +53,13 @@ def _make_motion_track():
     mt._last_idle_send = 0.0
     mt._idle_timeout = MotionProfile.IDLE_TIMEOUT.value
     mt._recorder = None
-    mt.side_camera_count = 0
     mt.debug_overlay_enabled = False
+
+    # Camera fusion state machine
+    from glados_modules.VisionTracker import CameraFusionState
+    mt._fusion = CameraFusionState()
+    mt._last_tracked_world_lr = None
+    mt._last_tracked_bbox_height = None
     mt._lock = __import__('threading').Lock()
     mt.client = MagicMock()
     mt.send_command = MagicMock()
@@ -235,8 +240,8 @@ class TestFullTrackingPipeline:
         # Low confidence -> __find_target returns empty -> no command sent
         # (depends on count being > 0 in the vision map -- count=1 here so it tries)
 
-    def test_side_camera_only_moves_body(self):
-        """Side camera detection should only send body_LR target, not head."""
+    def test_side_camera_uses_full_ik(self):
+        """Side camera detection should send all 4 servo targets via IK pipeline."""
         mt = _make_motion_track()
         vision_map = {
             CameraEnum.CAMERA_LEFT.value: {
@@ -249,12 +254,13 @@ class TestFullTrackingPipeline:
         mt.vision_tracker.get_vision_map.return_value = vision_map
         mt.track_loop(CameraEnum.CAMERA_LEFT.value)
 
-        if mt.send_command.called:
-            targets = mt.send_command.call_args[0][0].get(ServoEnum.MSG_TARGETS.value, {})
-            assert mt.body_LR_name in targets
-            # Head should NOT be in side camera targets
-            assert mt.head_LR_name not in targets
-            assert mt.head_UD_name not in targets
+        assert mt.send_command.called
+        targets = mt.send_command.call_args[0][0].get(ServoEnum.MSG_TARGETS.value, {})
+        assert mt.body_LR_name in targets
+        # Side cameras now use full IK — all 4 servos should be in targets
+        assert mt.head_LR_name in targets
+        assert mt.head_UD_name in targets
+        assert mt.body_UD_name in targets
 
     def test_world_space_smoothing_applied(self):
         """Second detection should produce smoothed (blended) world angle."""

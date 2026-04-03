@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from threading import Thread, Lock
-from time import time
 import gi
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
@@ -20,10 +19,9 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
-        self._last_push_time = 0
-        self._push_count = 0
+        self._new_frame = False
         # TODO figure out how to do hardware encoding
-        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+        self.launch_string = 'appsrc name=source is-live=true block=false format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
@@ -32,6 +30,7 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def send_data(self, data):
         with self.data_lock:
             self.data = data
+            self._new_frame = True
 
     def start(self):
         t = Thread(target=self._thread_rtsp)
@@ -42,26 +41,21 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         loop.run()
 
     def on_need_data(self, src, length):
-        # Copy frame reference under lock, then push outside the lock.
-        # push-buffer can block if the encoder queue is full — holding
-        # data_lock during that would deadlock the camera capture loop.
+        # Only push when the camera has delivered a new frame.
+        # GStreamer calls on_need_data at encoder demand rate (~65 FPS)
+        # but the camera only captures at ~15 FPS. Without this gate,
+        # x264 wastes CPU encoding duplicate frames.
+        # block=false on appsrc ensures GStreamer doesn't stall when we skip.
         with self.data_lock:
-            frame = self.data
-        if frame is not None:
-            t0 = time()
-            retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(frame.tobytes()))
-            push_time = time() - t0
-            if push_time > 1.0:
-                print(f"WARNING: push-buffer took {push_time:.2f}s")
+            if not self._new_frame:
+                return
+            # Convert to bytes inside the lock to prevent data race with send_data
+            frame_bytes = self.data.tobytes() if self.data is not None else None
+            self._new_frame = False
+        if frame_bytes is not None:
+            retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(frame_bytes))
             if retval != Gst.FlowReturn.OK:
                 print(f"push-buffer returned {retval}")
-            self._push_count += 1
-            now = time()
-            if now - self._last_push_time >= 10.0:
-                elapsed = now - self._last_push_time if self._last_push_time > 0 else 1
-                print(f"RTSP push: {self._push_count / elapsed:.1f} FPS")
-                self._push_count = 0
-                self._last_push_time = now
 
     def do_create_element(self, url):
         return Gst.parse_launch(self.launch_string)

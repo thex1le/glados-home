@@ -88,12 +88,13 @@ def build_frame_record(
     smoothed_world_lr: float,
     smoothed_world_ud: float,
     output_targets: Dict[str, dict],
+    fusion_state: str = "",
 ) -> dict:
     """Build a complete frame record from MotionTrack's internal state.
 
     This captures everything needed to replay the calculation offline:
     - Input: detection bbox/pose, camera, estimator positions, servo config
-    - Intermediate: raw and smoothed world angles
+    - Intermediate: raw and smoothed world angles, fusion state
     - Output: final servo targets
     """
     return {
@@ -111,6 +112,7 @@ def build_frame_record(
         "raw_world_ud": round(raw_world_ud, 4),
         "smoothed_world_lr": round(smoothed_world_lr, 4),
         "smoothed_world_ud": round(smoothed_world_ud, 4),
+        "fusion_state": fusion_state,
         # Outputs
         "output_targets": output_targets,
     }
@@ -383,9 +385,10 @@ def _calc_world_angle(detection: dict, camera: str, axis: str, use_point: bool,
         yaw, pitch = kin.forward_kinematics(servo_angles)
         camera_world = yaw if axis == ServoEnum.X_AXIS.value else pitch
     elif camera == CameraEnum.CAMERA_LEFT.value:
-        camera_world = est_state[body_lr]["position"] + MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
+        # Side cameras are fixed to the ceiling mount — world angle is constant
+        camera_world = middles[body_lr] + MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
     elif camera == CameraEnum.CAMERA_RIGHT.value:
-        camera_world = est_state[body_lr]["position"] + MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
+        camera_world = middles[body_lr] + MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
     else:
         camera_world = 90.0
 

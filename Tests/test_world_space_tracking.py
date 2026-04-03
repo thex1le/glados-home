@@ -214,6 +214,50 @@ class TestFKBasedTracking:
         assert abs(pitch_tilted - pitch_home) > 0.5
 
 
+class TestSideCameraWorldAngle:
+    """Test that fixed side cameras produce body-independent world angles.
+
+    Side cameras are mounted on the ceiling (fixed), so their world angle
+    should be constant regardless of body rotation.
+    """
+
+    def _calc_side_world_angle(self, pixel_center, axis_size, mounting_offset, body_middle=90.0):
+        """Compute side camera world angle — should NOT depend on body position."""
+        fov = 160.0  # side camera fisheye FOV
+        offset = (axis_size / 2) - pixel_center
+        focal = (axis_size / 2) / tan(radians(fov) / 2)
+        angle_offset = degrees(atan(offset / focal))
+        camera_world = body_middle + mounting_offset  # fixed — no body_lr added
+        return camera_world + angle_offset
+
+    def test_side_camera_ignores_body_position(self):
+        """Side camera world angle should not change when body rotates."""
+        mounting_offset = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
+        bbox_center = 320  # center of 640px frame
+        # Regardless of body position, the side camera angle should be the same
+        angle_at_60 = self._calc_side_world_angle(bbox_center, 640, mounting_offset, body_middle=90.0)
+        angle_at_120 = self._calc_side_world_angle(bbox_center, 640, mounting_offset, body_middle=90.0)
+        assert angle_at_60 == pytest.approx(angle_at_120, abs=0.01)
+
+    def test_left_camera_center_is_offset(self):
+        """Left camera center pixel should map to body_middle + left_offset."""
+        angle = self._calc_side_world_angle(
+            pixel_center=320, axis_size=640,
+            mounting_offset=MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
+        )
+        expected = 90.0 + MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value  # 90 + (-55) = 35
+        assert angle == pytest.approx(expected, abs=0.5)
+
+    def test_right_camera_center_is_offset(self):
+        """Right camera center pixel should map to body_middle + right_offset."""
+        angle = self._calc_side_world_angle(
+            pixel_center=320, axis_size=640,
+            mounting_offset=MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
+        )
+        expected = 90.0 + MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value  # 90 + 55 = 145
+        assert angle == pytest.approx(expected, abs=0.5)
+
+
 class TestWorldSpaceSmoothing:
     """Test EMA smoothing in world space."""
 

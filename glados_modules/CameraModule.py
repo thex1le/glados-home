@@ -357,6 +357,59 @@ class Camera(Process):
             return None
 
 
+class CameraWatchdog(Thread):
+    """Daemon thread that monitors Camera processes and respawns them if they die.
+
+    Checks each registered camera every second. If a camera process has exited,
+    waits a short delay (for the kernel to release the device), respawns it,
+    and re-registers it with the HealthMonitor.
+
+    Usage:
+        watchdog = CameraWatchdog(health_monitor=health)
+        watchdog.add_camera("head_camera", head_camera)
+        watchdog.add_camera("left_camera", left_camera)
+        watchdog.start()
+    """
+
+    RESPAWN_DELAY = 5  # seconds to wait before respawning
+
+    def __init__(self, health_monitor=None) -> None:
+        Thread.__init__(self)
+        self.daemon = True
+        self.__name__ = self.__class__.__name__
+        self.logger = setup_logger(name=self.__name__)
+        self._health = health_monitor
+        self._cameras: dict = {}
+
+    def add_camera(self, name: str, camera: Camera) -> None:
+        """Register a camera process to be monitored.
+
+        Args:
+            name: Health monitor registration name for this camera.
+            camera: The Camera process instance.
+        """
+        self._cameras[name] = camera
+
+    def run(self) -> None:
+        """Monitor loop — checks all cameras every second."""
+        while True:
+            sleep(1)
+            for name in list(self._cameras.keys()):
+                camera = self._cameras[name]
+                if not camera.is_alive():
+                    self.logger.warning(
+                        f"Camera {name} died (exit code {camera.exitcode}), "
+                        f"respawning in {self.RESPAWN_DELAY}s...")
+                    camera.join(timeout=2)
+                    sleep(self.RESPAWN_DELAY)
+                    new_camera = camera.respawn()
+                    new_camera.start()
+                    self._cameras[name] = new_camera
+                    if self._health:
+                        self._health.register(name, new_camera)
+                    self.logger.info(f"Camera {name} respawned successfully")
+
+
 if __name__ == "__main__":
     """
     This main block is just for local debugging. 

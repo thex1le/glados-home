@@ -9,7 +9,7 @@ from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, MQTTEnums, TrackingEnums, VisionResultsEnum,
     MotionProfile, LEDHead, LEDShoulders, LEDLampStrip8, LCDEnums,
     TraceEnums, DashboardEnums, LoggingEnums, SystemEnums,
-    IMUEnums, TOFEnums, THEnums, MOXEnums,
+    IMUEnums, TOFEnums, THEnums, MOXEnums, FusionEnums,
 )
 
 
@@ -148,6 +148,25 @@ class TestMQTTTopics:
         ]
         for name in required:
             assert hasattr(MQTTEnums, name), f"Missing MQTT topic: {name}"
+
+
+class TestFusionEnums:
+    """Validate camera fusion state machine enums."""
+
+    def test_all_states_defined(self):
+        required = ['STATE_HEAD_TRACKING', 'STATE_SIDE_ONLY',
+                     'STATE_HANDOFF_TO_HEAD', 'STATE_HANDOFF_TO_SIDE']
+        for name in required:
+            assert hasattr(FusionEnums, name)
+
+    def test_blend_duration_positive(self):
+        assert FusionEnums.HANDOFF_BLEND_DURATION.value > 0
+
+    def test_staleness_positive(self):
+        assert FusionEnums.SIDE_CAMERA_STALENESS.value > 0
+
+    def test_agreement_threshold_positive(self):
+        assert FusionEnums.HANDOFF_AGREEMENT_THRESHOLD.value > 0
 
 
 class TestTraceEnums:

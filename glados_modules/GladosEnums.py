@@ -494,6 +494,22 @@ class MotionProfile(Enum):
     CAMERA_RIGHT_MOUNTING_OFFSET = 55.0
 
 
+class FusionEnums(Enum):
+    """Camera fusion state machine states and tuning parameters."""
+    STATE_HEAD_TRACKING = "head_tracking"
+    STATE_SIDE_ONLY = "side_only"
+    STATE_HANDOFF_TO_HEAD = "handoff_to_head"
+    STATE_HANDOFF_TO_SIDE = "handoff_to_side"
+    HANDOFF_BLEND_DURATION = 0.5       # seconds to lerp during camera handoff
+    HANDOFF_AGREEMENT_THRESHOLD = 8.0  # degrees — cameras agree within this
+    SIDE_CAMERA_STALENESS = 1.0        # seconds before side detection is stale
+    CONFIRMED_SMOOTH_ALPHA = 0.5       # tighter EMA when head + side cameras agree
+    PREDICTION_LEAD_TIME = 0.75        # seconds to predict ahead for side cameras
+    PREDICTION_MIN_VELOCITY = 15.0     # degrees/sec minimum to trigger prediction
+    PREDICTION_MAX_OFFSET = 15.0       # max degrees of pre-rotation
+    PREDICTION_HISTORY_WINDOW = 1.0    # seconds of angle history for velocity estimate
+
+
 class KinematicsEnums(Enum):
     """URDF-derived kinematic parameters for the GLaDOS robot arm.
 

@@ -13,7 +13,7 @@ from adafruit_servokit import ServoKit
 
 # glados imports
 from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD
-from glados_modules.CameraModule import GLaDOSServerException, Camera
+from glados_modules.CameraModule import GLaDOSServerException, Camera, CameraWatchdog
 from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.WebDashboard import WebDashboard
@@ -128,6 +128,11 @@ if __name__ == "__main__":
     )
     dashboard.start()
 
+    # Camera watchdog: respawn camera processes if they die
+    cam_watchdog = CameraWatchdog(health_monitor=health)
+    cam_watchdog.add_camera("camera", head_camera)
+    cam_watchdog.start()
+
     def shutdown_handler(signum, frame):
         print("\nShutting down BodyServer...")
         os._exit(0)
@@ -135,14 +140,5 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
-    # Camera watchdog: respawn the camera process if it dies
-    CAMERA_RESPAWN_DELAY = 5  # seconds to wait before respawning
     while True:
         sleep(1)
-        if not head_camera.is_alive():
-            print(f"Camera process died (exit code {head_camera.exitcode}), respawning in {CAMERA_RESPAWN_DELAY}s...")
-            head_camera.join(timeout=2)
-            sleep(CAMERA_RESPAWN_DELAY)
-            head_camera = head_camera.respawn()
-            head_camera.start()
-            health.register("camera", head_camera)

@@ -12,7 +12,7 @@ import configparser
 from glados_modules.ChatGPTConnector import GladosGPT
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
-from glados_modules.CameraModule import Camera
+from glados_modules.CameraModule import Camera, CameraWatchdog
 from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums
 from glados_modules.BodyControlModules import IMU
 from glados_modules.HealthMonitor import HealthMonitor
@@ -86,6 +86,12 @@ if __name__ == "__main__":
         port=dash_port
     )
     dashboard.start()
+
+    # Camera watchdog: respawn camera processes if they die
+    cam_watchdog = CameraWatchdog(health_monitor=health)
+    cam_watchdog.add_camera("left_camera", left_camera)
+    cam_watchdog.add_camera("right_camera", right_camera)
+    cam_watchdog.start()
 
     def shutdown_handler(signum, frame):
         print("\nShutting down GLaDOS...")
