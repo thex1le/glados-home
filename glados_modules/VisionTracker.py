@@ -368,6 +368,8 @@ class MotionTrack(MQTTClient):
                                       PersonalityEnums.SLEEP_ENABLED.value)
         self._enable_movement = _toggle(FeatureToggles.CONFIG_HEAD.value,
                                          FeatureToggles.MOVEMENT_ENABLED.value)
+        self._enable_idle_drift = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                           FeatureToggles.IDLE_DRIFT_ENABLED.value)
 
         # Behavior state machine (active → idle → drowsy → asleep)
         self._behavior_state: str = BehaviorEnums.STATE_ACTIVE.value
@@ -861,7 +863,8 @@ class MotionTrack(MQTTClient):
             if camera == self.main_camera:
                 self._fusion.head_lost()
             if time.time() - self._last_target_time > self._idle_timeout:
-                self._generate_idle_drift()
+                if self._enable_idle_drift:
+                    self._generate_idle_drift()
             return
 
         target_data = vision_map[camera].get(self.target, {})
@@ -869,7 +872,8 @@ class MotionTrack(MQTTClient):
             if camera == self.main_camera:
                 self._fusion.head_lost()
             if time.time() - self._last_target_time > self._idle_timeout:
-                self._generate_idle_drift()
+                if self._enable_idle_drift:
+                    self._generate_idle_drift()
             return
 
         # Found a target — wake up if sleeping/drowsy

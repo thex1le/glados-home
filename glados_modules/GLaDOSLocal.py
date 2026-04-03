@@ -23,7 +23,7 @@ from glados_modules.HomeAssistantConnector import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
 from glados_modules.MqttConnector import MQTTClient, LEDMessageBuilder
 from glados_modules.GladosEnums import (SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums,
-                                        VisionResultsEnum, FaceEnums)
+                                        VisionResultsEnum, FaceEnums, FeatureToggles)
 from glados_modules.WhisperXSpeech2Text import AudioServerTx, LocalSTTrx
 
 
@@ -195,6 +195,15 @@ class GladosLocal(Thread, MQTTClient):
             PersonalityEnums.COMMENTARY_ENABLED.value,
             fallback="False").strip().lower() == "true"
         self._last_person_seen: bool = False
+
+        # Feature toggles
+        def _feat(key: str, fallback: bool = True) -> bool:
+            return config_file.get(FeatureToggles.CONFIG_HEAD.value, key,
+                                    fallback=str(fallback)).strip().lower() == "true"
+        self._led_enabled: bool = _feat(FeatureToggles.LED_ENABLED.value)
+        self._tts_enabled: bool = _feat(FeatureToggles.TTS_ENABLED.value)
+        self._stt_timing_enabled: bool = _feat(FeatureToggles.STT_TIMING_ENABLED.value)
+
         # add in support to get timing maps for played audio
         self.audioTx = AudioServerTx(broker=audio_broker)
         self.localsttrx = LocalSTTrx(broker=mqtt_broker)
@@ -548,7 +557,7 @@ class GladosLocal(Thread, MQTTClient):
 
             # Update eye LED color if mood changed
             current_color = self.mood.get_eye_color()
-            if current_color != last_mood_color:
+            if self._led_enabled and current_color != last_mood_color:
                 led_msg = {
                     LEDHead.MSG_COMMAND_LOCATION_KEY.value: LEDHead.EYE_LED_LOCATION.value,
                     LEDHead.MSG_COMMAND_KEY.value: LEDHead.ANIMATION_NORMAL_EYE_KEY.value,
@@ -676,8 +685,8 @@ class GladosLocal(Thread, MQTTClient):
         Args:
             data: Audio data in bytes.
         """
-        if led is True:
-            # send auto out to get converted and time mapped
+        if led and self._stt_timing_enabled and self._led_enabled:
+            # send audio out to get converted and time mapped
             self.logger.debug("Sending audio bytes off to be processed")
             self.audioTx.send_bytes(data)
             time_map = self.localsttrx.get_timing_map(block=True)
@@ -703,6 +712,9 @@ class GladosLocal(Thread, MQTTClient):
         Args:
             text: The text to be spoken.
         """
+        if not self._tts_enabled:
+            self.logger.debug(f"TTS disabled — would say: {text}")
+            return
         audio_data = self.__get_audio(text)
         # Only play if valid audio data was returned.
         if isinstance(audio_data, bytes):

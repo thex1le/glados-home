@@ -576,9 +576,14 @@ class PersonalityEnums(Enum):
 
 
 class FeatureToggles(Enum):
-    """Debug toggles for new tracking features. All in [FEATURES] config section."""
+    """Debug toggles for features. All in [FEATURES] config section."""
     CONFIG_HEAD = "FEATURES"
     MOVEMENT_ENABLED = "movement_enabled"
+    LED_ENABLED = "led_enabled"
+    TTS_ENABLED = "tts_enabled"
+    STT_TIMING_ENABLED = "stt_timing_enabled"
+    IDLE_DRIFT_ENABLED = "idle_drift_enabled"
+    POSE_MODEL_ENABLED = "pose_model_enabled"
     PREDICTIVE_ROTATION = "predictive_rotation"
     PERIPHERAL_CONFIRMATION = "peripheral_confirmation"
     HANDOFF_BLENDING = "handoff_blending"

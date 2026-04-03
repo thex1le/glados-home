@@ -39,7 +39,7 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.RTSPClient import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
-from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums, TraceEnums, FaceEnums
+from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums, TraceEnums, FaceEnums, FeatureToggles
 from glados_modules.MqttConsumerModules import ServoLocation
 from glados_modules.VisionTracker import MotionTrack
 from glados_modules.TraceLog import TraceLog
@@ -260,13 +260,20 @@ class MLDetect(Thread, MQTTClient):
         Start a separate tracking thread for each camera.
         """
         self.logger.debug(f"YOLOv8 model started with {self.model_config}")
+        pose_enabled = self.configfile.get(FeatureToggles.CONFIG_HEAD.value,
+                                            FeatureToggles.POSE_MODEL_ENABLED.value,
+                                            fallback="True").strip().lower() == "true"
         for camera_key in self.cam_configs.keys():
             with safe_globals([DetectionModel, Sequential, Conv]):
                 detection_model = YOLO(self.model_config)
-            self.logger.debug("Creating Pose model")
-            openpose_skeleton = False  # True for openpose-style, False for mmpose-style
-            backend = 'onnxruntime'  # opencv, onnxruntime, openvino
-            pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
+            pose_model = None
+            if pose_enabled:
+                self.logger.debug("Creating Pose model")
+                openpose_skeleton = False  # True for openpose-style, False for mmpose-style
+                backend = 'onnxruntime'  # opencv, onnxruntime, openvino
+                pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
+            else:
+                self.logger.info(f"Pose model disabled via config for {camera_key}")
             thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
                                                                        detection_model, pose_model), daemon=True)
             thread.start()

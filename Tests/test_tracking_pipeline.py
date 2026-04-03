@@ -74,6 +74,7 @@ def _make_motion_track():
 
     # Feature toggles (all enabled for tests)
     mt._enable_movement = True
+    mt._enable_idle_drift = True
     mt._enable_predictive = True
     mt._enable_confirmation = True
     mt._enable_blending = True
