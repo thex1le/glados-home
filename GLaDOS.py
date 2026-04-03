@@ -48,7 +48,10 @@ if __name__ == "__main__":
     imu.start()
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    gl.speak("Oh Its you! , , Its been a long time...")
+    try:
+        gl.speak("Oh Its you! , , Its been a long time...")
+    except Exception:
+        print("TTS unavailable at startup — continuing without greeting")
     gstt = GladosSTT(configp, gl)
     gstt.start()
     local_commands = (gl.get_temp, gl.fuck_you, gl.timer, gl.set_volume)
