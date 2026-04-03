@@ -464,3 +464,7 @@ class MLDetect(Thread, MQTTClient):
         # Start tracking for each camera in separate threads
         self.start_tracking_threads()
         self.logger.info("Started YOLO tracking threads for all cameras")
+        # Keep this thread alive so HealthMonitor reports it as running.
+        # The actual work happens in the tracker threads spawned above.
+        while True:
+            sleep(1)
