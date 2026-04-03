@@ -393,6 +393,16 @@ class CameraWatchdog(Thread):
         self._cameras[name] = camera
         self._fail_counts[name] = 0
 
+    def shutdown(self) -> None:
+        """Terminate all managed camera processes."""
+        for name, camera in self._cameras.items():
+            if camera.is_alive():
+                camera.terminate()
+        for name, camera in self._cameras.items():
+            camera.join(timeout=2)
+            if camera.is_alive():
+                camera.kill()
+
     def run(self) -> None:
         """Monitor loop — checks all cameras every second.
 

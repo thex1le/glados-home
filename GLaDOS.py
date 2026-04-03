@@ -98,6 +98,7 @@ if __name__ == "__main__":
 
     def shutdown_handler(signum, frame):
         print("\nShutting down GLaDOS...")
+        cam_watchdog.shutdown()
         os._exit(0)
 
     signal.signal(signal.SIGINT, shutdown_handler)
