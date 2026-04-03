@@ -36,9 +36,18 @@ class RtspConsumer:
         """
         Attempts to connect to the RTSP stream. Retries on failure.
         """
-        # Try GPU decode first (nvh264dec), fall back to software (avdec_h264)
-        # nvh264dec outputs to CUDA memory — cudadownload moves it to CPU
-        gst_hw_pipeline = (
+        # GStreamer pipelines for RTSP decode — tried in order until one connects
+        # Pipeline 1: Original working pipeline (nvh264dec, no cudadownload)
+        gst_original = (
+            f"rtspsrc location={self.rtsp_uri} latency=0 ! "
+            f"rtpjitterbuffer drop-on-latency=true ! "
+            f"rtph264depay ! "
+            f"h264parse ! "
+            f"nvh264dec ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true max-buffers=1 sync=false emit-signals=false")
+        # Pipeline 2: GPU decode with explicit CUDA download
+        gst_hw_cuda = (
             f"rtspsrc location={self.rtsp_uri} latency=0 ! "
             f"rtpjitterbuffer drop-on-latency=true ! "
             f"rtph264depay ! "
@@ -47,14 +56,12 @@ class RtspConsumer:
             f"cudadownload ! "
             f"videoconvert ! video/x-raw,format=BGR ! "
             f"appsink drop=true max-buffers=1 sync=false emit-signals=false")
-        gst_sw_pipeline = (
-            f"rtspsrc location={self.rtsp_uri} latency=0 ! "
-            f"rtpjitterbuffer drop-on-latency=true ! "
-            f"rtph264depay ! "
-            f"h264parse ! "
-            f"avdec_h264 ! "
+        # Pipeline 3: Software decode (matches dashboard pipeline)
+        gst_sw = (
+            f"rtspsrc location={self.rtsp_uri} latency=200 ! "
+            f"rtph264depay ! h264parse ! avdec_h264 ! "
             f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink drop=true max-buffers=1 sync=false emit-signals=false")
+            f"appsink drop=true max-buffers=1 sync=false")
         attempt = 0
         while True:
             try:
@@ -65,20 +72,30 @@ class RtspConsumer:
                     sleep(0.5)  # let GStreamer tear down before creating a new pipeline
 
                 attempt += 1
-                # Try GPU decode first, fall back to software
-                for pipeline, label in [(gst_hw_pipeline, "GPU"), (gst_sw_pipeline, "software")]:
-                    self.logger.info(f"Connecting to RTSP stream at {self.rtsp_uri} "
-                                     f"(attempt {attempt}, {label} decode)...")
-                    self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+                # Try each pipeline until one connects
+                pipelines = [
+                    (gst_original, "nvh264dec"),
+                    (gst_hw_cuda, "nvh264dec+cudadownload"),
+                    (gst_sw, "avdec_h264"),
+                    (self.rtsp_uri, "default backend"),
+                ]
+                for pipeline, label in pipelines:
+                    self.logger.info(f"Connecting to RTSP at {self.rtsp_uri} "
+                                     f"(attempt {attempt}, {label})...")
+                    if label == "default backend":
+                        self.cap = cv2.VideoCapture(pipeline)
+                    else:
+                        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
                     if self.cap.isOpened():
-                        self.logger.info(f"Connected to {self.rtsp_uri} using {label} decode.")
+                        self.logger.info(f"Connected to {self.rtsp_uri} using {label}.")
                         return
                     self.cap.release()
                     self.cap = None
                     sleep(0.5)
 
                 self.logger.warning(
-                    f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay}s...")
+                    f"All decode methods failed for {self.rtsp_uri}. "
+                    f"Retrying in {self.reconnect_delay}s...")
             except Exception as e:
                 self.logger.error(f"Exception occurred while connecting: {e}")
 
