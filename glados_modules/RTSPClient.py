@@ -1,4 +1,5 @@
 # native imports
+import os
 from typing import Optional, Dict
 from time import sleep
 
@@ -111,6 +112,92 @@ class RtspConsumer:
             self.logger.info(f"{self.__name__} Resources released.")
         else:
             self.logger.info(f"{self.__name__} Resources were already released or never opened.")
+
+
+class VideoFileSource:
+    """Replay recorded video frames as if from a live camera.
+
+    Returns the same image_dict structure as RtspConsumer.get_frame().
+    Can run at original wall-clock timing or as fast as possible.
+
+    Args:
+        session_path: Path to the recording session directory.
+        camera: Camera name subdirectory (e.g., "camera_head").
+        realtime: If True, sleep between frames to match original timing.
+    """
+
+    def __init__(self, session_path: str, camera: str, realtime: bool = True) -> None:
+        import json
+        from glob import glob
+
+        self.__name__ = f"{camera}_video_source"
+        self.logger = setup_logger(name=self.__name__,
+                                    console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        self._camera = camera
+        self._realtime = realtime
+
+        # Load frame list
+        frames_dir = os.path.join(session_path, camera, "frames")
+        self._frame_list = sorted(glob(os.path.join(frames_dir, "*.jpg")))
+        self._index = 0
+
+        # Load metadata for resolution
+        meta_path = os.path.join(session_path, "metadata.json")
+        if os.path.exists(meta_path):
+            with open(meta_path, 'r') as f:
+                self._metadata = json.load(f)
+        else:
+            self._metadata = {}
+
+        # Load tracking JSONL for wall_time sync
+        self._wall_times: list = []
+        tracking_path = os.path.join(session_path, camera, "tracking.jsonl")
+        if os.path.exists(tracking_path):
+            with open(tracking_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        record = json.loads(line)
+                        self._wall_times.append(record.get("wall_time", 0))
+
+        self.logger.info(f"Video source loaded: {len(self._frame_list)} frames from {frames_dir}")
+
+    def get_frame(self) -> Dict[str, Optional[any]]:
+        """Return the next frame as an image_dict matching RtspConsumer format.
+
+        Returns:
+            Dict with camera location, raw image, and resolution.
+
+        Raises:
+            StopIteration: When all frames have been replayed.
+        """
+        if self._index >= len(self._frame_list):
+            raise StopIteration(f"Recording complete: {len(self._frame_list)} frames replayed")
+
+        frame = cv2.imread(self._frame_list[self._index])
+        if frame is None:
+            self.logger.warning(f"Failed to read frame: {self._frame_list[self._index]}")
+            self._index += 1
+            return self.get_frame()
+
+        # Realtime pacing — sleep to match original frame timing
+        if self._realtime and self._index > 0 and self._index < len(self._wall_times):
+            dt = self._wall_times[self._index] - self._wall_times[self._index - 1]
+            if dt > 0:
+                sleep(dt)
+
+        h, w = frame.shape[:2]
+        self._index += 1
+
+        return {
+            CameraEnum.MSG_LOCATION_KEY.value: self._camera,
+            CameraEnum.MSG_RAW_IMAGE.value: frame,
+            CameraEnum.MSG_RESOLUTION.value: (float(w), float(h)),
+        }
+
+    def close(self) -> None:
+        """No-op for file source — nothing to release."""
+        pass
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnum
 from glados_modules.MqttConsumerModules import ServoLocation
 from glados_modules.VisionTracker import MotionTrack
 from glados_modules.TraceLog import TraceLog
+from glados_modules.VideoRecorder import RecordingSession, RecordingGate
 
 
 class GLaDOSServerException(Exception):
@@ -154,6 +155,31 @@ class MLDetect(Thread, MQTTClient):
             self.logger.info("Face recognition disabled via config")
             self.face_recognition = None
 
+        # Video recording
+        self._record_enabled = configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.RECORD_VIDEO.value,
+            fallback="False").strip().lower() == "true"
+        self._recording_path = configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.RECORDING_PATH.value,
+            fallback="./recordings")
+        self._recording_timeout = float(configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.RECORDING_READY_TIMEOUT.value,
+            fallback="120"))
+        self._jpeg_quality = int(configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.RECORDING_JPEG_QUALITY.value,
+            fallback="85"))
+        self._recording_session: RecordingSession = None
+        self._recording_gate: RecordingGate = None
+        self._replay_session: str = None  # set via --replay CLI flag
+
+        if self._record_enabled:
+            cam_names = list(self.cam_configs.keys())
+            self._recording_gate = RecordingGate(cam_names, self._recording_timeout)
+
         # Pipeline tracing
         self.tracer = TraceLog()
         self._frame_times: Dict[str, float] = {}  # per-camera FPS tracking
@@ -211,15 +237,43 @@ class MLDetect(Thread, MQTTClient):
             p_model (Optional[Whole body]): The Whole body pose model or None if not used.
         """
         self.logger.info(f"Starting tracker for camera {camera_key}")
-        # Run the tracker for this camera
-        image_get = RtspConsumer(location=camera_key,
-                                 uri=self.cam_configs[camera_key][CameraEnum.MSG_RTSP_URI.value])
+        # Select frame source: replay from disk or live RTSP
+        if self._replay_session:
+            from glados_modules.RTSPClient import VideoFileSource
+            image_get = VideoFileSource(self._replay_session, camera_key, realtime=False)
+            self.logger.info(f"Replaying from {self._replay_session} for {camera_key}")
+        else:
+            image_get = RtspConsumer(location=camera_key,
+                                     uri=self.cam_configs[camera_key][CameraEnum.MSG_RTSP_URI.value])
         skip_counter = 0
         consecutive_errors = 0
         MAX_BACKOFF = 30  # seconds
         while True:
             try:
                 image_dict = image_get.get_frame()
+                wall_time = time()
+
+                # Signal recording gate that this camera is producing frames
+                if self._recording_gate and not self._recording_session:
+                    self._recording_gate.camera_ready(camera_key)
+                    if self._recording_gate.should_start():
+                        ready_cams = self._recording_gate.get_ready_cameras()
+                        self._recording_session = RecordingSession(
+                            base_path=self._recording_path,
+                            cameras=ready_cams,
+                            jpeg_quality=self._jpeg_quality,
+                            config_snapshot={"cam_configs": {
+                                c: {"resolution": self.cam_configs[c].get(
+                                    CameraEnum.MSG_RESOLUTION.value)}
+                                for c in ready_cams}})
+
+                # Record raw frame before YOLO processing
+                if self._recording_session and self._recording_session.is_active:
+                    raw_frame = image_dict.get(CameraEnum.MSG_RAW_IMAGE.value)
+                    if raw_frame is not None:
+                        self._recording_session.record_frame(
+                            camera_key, raw_frame, wall_time)
+
                 # During movement, process every 3rd frame instead of skipping entirely.
                 # This keeps the world-angle estimate warm on the tracking side.
                 if camera_key == CameraEnum.CAMERA_HEAD.value:
@@ -243,9 +297,16 @@ class MLDetect(Thread, MQTTClient):
                 self.send_command(results, self.cmd_topic, qos=0)
                 # Start trace record
                 self.tracer.start_trace(trace_id, camera=camera_key, ts_vision=ts_vision)
+
+                # Record tracking data alongside the frame
+                if self._recording_session and self._recording_session.is_active:
+                    self._recording_session.record_frame(
+                        camera_key, None, wall_time, tracking_data=sight)
+
                 consecutive_errors = 0  # reset on success
 
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, StopIteration):
+                self.logger.info(f"Tracker for {camera_key} finished")
                 break
             except Exception:
                 consecutive_errors += 1
@@ -523,6 +584,10 @@ class MLDetect(Thread, MQTTClient):
                            self._handle_face_command)
             self.logger.info("Subscribed to face enrollment commands")
 
+        # Subscribe to recording control commands
+        self.subscribe(FeatureToggles.MQTT_RECORDING_TOPIC.value,
+                       self._handle_recording_command)
+
         # Start tracking for each camera in separate threads
         self.start_tracking_threads()
         self.logger.info("Started YOLO tracking threads for all cameras")
@@ -530,6 +595,33 @@ class MLDetect(Thread, MQTTClient):
         # The actual work happens in the tracker threads spawned above.
         while True:
             sleep(1)
+
+    def _handle_recording_command(self, msg: Any) -> None:
+        """Handle start/stop recording commands from MQTT.
+
+        Args:
+            msg: MQTT message with cmd field.
+        """
+        from json import loads
+        try:
+            j_msg = loads(msg.payload.decode())
+        except Exception:
+            return
+        cmd = j_msg.get("cmd", "")
+        if cmd == FeatureToggles.RECORDING_CMD_START.value:
+            if self._recording_session and self._recording_session.is_active:
+                self.logger.warning("Recording already active")
+                return
+            cam_names = list(self.cam_configs.keys())
+            self._recording_gate = RecordingGate(cam_names, self._recording_timeout)
+            self._record_enabled = True
+            self.logger.info("Recording requested via MQTT — waiting for cameras")
+        elif cmd == FeatureToggles.RECORDING_CMD_STOP.value:
+            if self._recording_session and self._recording_session.is_active:
+                self._recording_session.stop()
+                self._recording_session = None
+                self.logger.info("Recording stopped via MQTT")
+            self._record_enabled = False
 
     def _handle_face_command(self, msg: Any) -> None:
         """Handle face enrollment/forget commands from MQTT.

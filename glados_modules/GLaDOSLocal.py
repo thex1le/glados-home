@@ -867,6 +867,33 @@ class GladosLocal(Thread, MQTTClient):
 
         return False
 
+    def toggle_recording(self, user_prompt: str) -> bool:
+        """Start or stop video recording via voice command.
+
+        Args:
+            user_prompt: The input command from the user.
+
+        Returns:
+            True if a recording command was processed, False otherwise.
+        """
+        prompt_lower = user_prompt.lower().strip()
+        start_pattern = re.compile(r"start recording", re.IGNORECASE)
+        stop_pattern = re.compile(r"stop recording", re.IGNORECASE)
+
+        if start_pattern.search(prompt_lower):
+            self.send_command(
+                {"cmd": FeatureToggles.RECORDING_CMD_START.value},
+                FeatureToggles.MQTT_RECORDING_TOPIC.value)
+            self.speak("Recording started. Try not to do anything embarrassing.")
+            return True
+        elif stop_pattern.search(prompt_lower):
+            self.send_command(
+                {"cmd": FeatureToggles.RECORDING_CMD_STOP.value},
+                FeatureToggles.MQTT_RECORDING_TOPIC.value)
+            self.speak("Recording stopped. I've seen enough.")
+            return True
+        return False
+
     def get_local_commands(self) -> tuple:
         """Return all local command handlers for the voice interaction loop.
 
@@ -874,7 +901,7 @@ class GladosLocal(Thread, MQTTClient):
         Add new commands here — they'll be picked up by GLaDOS.py automatically.
         """
         return (self.get_temp, self.fuck_you, self.timer, self.set_volume,
-                self.enroll_face, self.toggle_commentary)
+                self.enroll_face, self.toggle_commentary, self.toggle_recording)
 
     def register_interaction(self) -> None:
         """Register that the user asked a question. Escalates mood if pestering.

@@ -588,6 +588,14 @@ class FeatureToggles(Enum):
     PERIPHERAL_CONFIRMATION = "peripheral_confirmation"
     HANDOFF_BLENDING = "handoff_blending"
     MEMORY_GLANCES = "memory_glances"
+    # Video recording
+    RECORD_VIDEO = "record_video"
+    RECORDING_PATH = "recording_path"
+    RECORDING_READY_TIMEOUT = "recording_ready_timeout"
+    RECORDING_JPEG_QUALITY = "recording_jpeg_quality"
+    MQTT_RECORDING_TOPIC = "system/recording"
+    RECORDING_CMD_START = "start_recording"
+    RECORDING_CMD_STOP = "stop_recording"
 
 
 class BehaviorEnums(Enum):
