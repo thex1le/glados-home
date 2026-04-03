@@ -48,10 +48,18 @@ if __name__ == "__main__":
     imu.start()
     gl = GladosLocal(configp, GladosGPT)
     gl.start()
-    try:
-        gl.speak("Oh Its you! , , Its been a long time...")
-    except Exception:
-        print("TTS unavailable at startup — continuing without greeting")
+    # Greeting in background thread — retries if TTS isn't ready yet
+    def _startup_greeting():
+        for attempt in range(3):
+            try:
+                gl.speak("Oh Its you! , , Its been a long time...")
+                return
+            except Exception:
+                if attempt < 2:
+                    time.sleep(15)
+        print("TTS unavailable — startup greeting skipped")
+    from threading import Thread as _Thread
+    _Thread(target=_startup_greeting, daemon=True).start()
     gstt = GladosSTT(configp, gl)
     gstt.start()
     local_commands = gl.get_local_commands()
