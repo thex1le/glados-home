@@ -47,6 +47,12 @@ class RtspConsumer:
         attempt = 0
         while True:
             try:
+                # Release any previous capture before creating a new pipeline
+                if self.cap is not None:
+                    self.cap.release()
+                    self.cap = None
+                    sleep(0.5)  # let GStreamer tear down before creating a new pipeline
+
                 attempt += 1
                 self.logger.info(f"Connecting to RTSP stream at {self.rtsp_uri} (attempt {attempt})...")
                 self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
@@ -58,6 +64,7 @@ class RtspConsumer:
                         f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay}s...")
                     self.cap.release()
                     self.cap = None
+                    sleep(0.5)
             except Exception as e:
                 self.logger.error(f"Exception occurred while connecting: {e}")
 
