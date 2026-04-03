@@ -80,6 +80,10 @@ class MLDetect(Thread, MQTTClient):
         mh = SystemEnums.CONFIG_HEAD_MQTT.value
         broker = self.configfile[mh][SystemEnums.MQTT_SERVER_IP.value]
         port = self.configfile[mh][SystemEnums.MQTT_PORT.value]
+        # Pre-populate topic_handler before MQTT connects (subscribes on_connect)
+        self.topic_handler = {
+            FeatureToggles.MQTT_RECORDING_TOPIC.value: self._handle_recording_command,
+        }
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
@@ -148,6 +152,10 @@ class MLDetect(Thread, MQTTClient):
                                                   fallback="True").strip().lower() == "true"
                 self.face_recognition = GladosFaceRecognition(
                     db_path=face_db, enable_emotion=emotion_enabled)
+                # Add face enrollment MQTT handler (subscribe after connect)
+                self.topic_handler[FaceEnums.MQTT_ENROLL_TOPIC.value] = self._handle_face_command
+                self.client.subscribe(FaceEnums.MQTT_ENROLL_TOPIC.value, qos=1)
+                self.logger.info("Subscribed to face enrollment commands")
             except Exception:
                 self.logger.warning("Face recognition unavailable — continuing without it")
                 self.face_recognition = None
@@ -577,16 +585,7 @@ class MLDetect(Thread, MQTTClient):
         """
         status = CameraMessageBuilder.send_status(self.__name__, "Machine Vision Started")
         self.send_command(status, self.status_topic)
-
-        # Subscribe to face enrollment commands
-        if self.face_recognition:
-            self.subscribe(FaceEnums.MQTT_ENROLL_TOPIC.value,
-                           self._handle_face_command)
-            self.logger.info("Subscribed to face enrollment commands")
-
-        # Subscribe to recording control commands
-        self.subscribe(FeatureToggles.MQTT_RECORDING_TOPIC.value,
-                       self._handle_recording_command)
+        # MQTT topics are subscribed in __init__ via topic_handler (before connect)
 
         # Start tracking for each camera in separate threads
         self.start_tracking_threads()
