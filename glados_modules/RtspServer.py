@@ -20,20 +20,26 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data_lock = Lock()
         self.number_frames = 0
         self._cached_bytes = None
+        self._new_frame = False
         # TODO figure out how to do hardware encoding
-        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
-                             'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
-                             '! videoconvert ! video/x-raw,format=I420 ' \
-                             '! x264enc speed-preset=ultrafast tune=zerolatency ' \
-                             '! rtph264pay config-interval=0 name=pay0 pt=96'.format(self.cam_x, self.cam_y, fps)
+        # TODO figure out how to do hardware encoding
+        # block=true keeps the pipeline alive (GStreamer keeps calling on_need_data).
+        # We gate pushes with _new_frame so only actual new frames get encoded.
+        # queue max-size-buffers=1 leaky=downstream between appsrc and encoder
+        # drops old frames if the encoder falls behind (prevents latency buildup).
+        self.launch_string = ('appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
+                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 '
+                              '! queue max-size-buffers=1 leaky=downstream '
+                              '! videoconvert ! video/x-raw,format=I420 '
+                              '! x264enc speed-preset=ultrafast tune=zerolatency '
+                              '! rtph264pay config-interval=0 name=pay0 pt=96'.format(
+                                  self.cam_x, self.cam_y, fps))
 
     def send_data(self, data):
         with self.data_lock:
             self.data = data
-            # Convert to bytes once here so on_need_data doesn't re-convert
-            # the same frame repeatedly. x264 will still detect identical
-            # frames and encode them cheaply as P-frames with no motion.
             self._cached_bytes = data.tobytes() if data is not None else None
+            self._new_frame = True
 
     def start(self):
         t = Thread(target=self._thread_rtsp)
@@ -44,17 +50,15 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         loop.run()
 
     def on_need_data(self, src, length):
-        # Copy cached bytes under lock, then push outside the lock.
-        # send_data() converts to bytes once per new frame, so repeated
-        # on_need_data calls just re-push the same bytes without calling
-        # tobytes() again. x264 encodes duplicate frames cheaply as
-        # P-frames with no motion vectors.
+        # Always push when GStreamer asks (block=true requires it).
+        # The queue element between appsrc and encoder has max-size-buffers=1
+        # and leaky=downstream, so if the encoder falls behind, old frames
+        # are dropped instead of queuing up (prevents latency buildup).
+        # send_data() caches tobytes() so we don't re-convert the same frame.
         with self.data_lock:
             frame_bytes = self._cached_bytes
         if frame_bytes is not None:
-            retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(frame_bytes))
-            if retval != Gst.FlowReturn.OK:
-                print(f"push-buffer returned {retval}")
+            src.emit('push-buffer', Gst.Buffer.new_wrapped(frame_bytes))
 
     def do_create_element(self, url):
         return Gst.parse_launch(self.launch_string)
