@@ -97,9 +97,9 @@ class Camera(Process):
         try:
             try:
                 self.__init_camera()
-            except RuntimeError:
-                # Camera device likely stuck from a previous crash.
-                # Reset the kernel module and retry.
+            except (RuntimeError, IndexError):
+                # RuntimeError: camera device stuck from a previous crash
+                # IndexError: camera hardware not found (wrong cam_num)
                 self.logger.warning("Camera init failed — resetting kernel module and retrying...")
                 self._reset_camera_kernel_module()
                 sleep(3.0)
@@ -371,7 +371,8 @@ class CameraWatchdog(Thread):
         watchdog.start()
     """
 
-    RESPAWN_DELAY = 5  # seconds to wait before respawning
+    RESPAWN_DELAY = 5    # initial seconds to wait before respawning
+    MAX_RESPAWN_DELAY = 300  # max backoff (5 minutes) for repeatedly failing cameras
 
     def __init__(self, health_monitor=None) -> None:
         Thread.__init__(self)
@@ -380,6 +381,7 @@ class CameraWatchdog(Thread):
         self.logger = setup_logger(name=self.__name__)
         self._health = health_monitor
         self._cameras: dict = {}
+        self._fail_counts: dict = {}
 
     def add_camera(self, name: str, camera: Camera) -> None:
         """Register a camera process to be monitored.
@@ -389,25 +391,44 @@ class CameraWatchdog(Thread):
             camera: The Camera process instance.
         """
         self._cameras[name] = camera
+        self._fail_counts[name] = 0
 
     def run(self) -> None:
-        """Monitor loop — checks all cameras every second."""
+        """Monitor loop — checks all cameras every second.
+
+        Uses exponential backoff for cameras that keep failing (e.g., hardware
+        not connected). Resets backoff after a successful run of 30+ seconds.
+        """
+        last_alive_time: dict = {}
         while True:
             sleep(1)
             for name in list(self._cameras.keys()):
                 camera = self._cameras[name]
-                if not camera.is_alive():
-                    self.logger.warning(
-                        f"Camera {name} died (exit code {camera.exitcode}), "
-                        f"respawning in {self.RESPAWN_DELAY}s...")
-                    camera.join(timeout=2)
-                    sleep(self.RESPAWN_DELAY)
-                    new_camera = camera.respawn()
-                    new_camera.start()
-                    self._cameras[name] = new_camera
-                    if self._health:
-                        self._health.register(name, new_camera)
-                    self.logger.info(f"Camera {name} respawned successfully")
+                if camera.is_alive():
+                    last_alive_time[name] = time()
+                    # Reset fail count if camera has been alive for 30+ seconds
+                    if self._fail_counts[name] > 0:
+                        alive_duration = time() - last_alive_time.get(name, time())
+                        if alive_duration > 30:
+                            self._fail_counts[name] = 0
+                    continue
+
+                self._fail_counts[name] += 1
+                delay = min(self.RESPAWN_DELAY * (2 ** (self._fail_counts[name] - 1)),
+                            self.MAX_RESPAWN_DELAY)
+                self.logger.warning(
+                    f"Camera {name} died (exit code {camera.exitcode}), "
+                    f"respawn attempt {self._fail_counts[name]}, "
+                    f"waiting {delay}s...")
+                camera.join(timeout=2)
+                sleep(delay)
+                new_camera = camera.respawn()
+                new_camera.start()
+                self._cameras[name] = new_camera
+                last_alive_time[name] = time()
+                if self._health:
+                    self._health.register(name, new_camera)
+                self.logger.info(f"Camera {name} respawned")
 
 
 if __name__ == "__main__":
