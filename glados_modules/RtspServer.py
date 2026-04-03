@@ -19,9 +19,9 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.data = None
         self.data_lock = Lock()
         self.number_frames = 0
-        self._new_frame = False
+        self._cached_bytes = None
         # TODO figure out how to do hardware encoding
-        self.launch_string = 'appsrc name=source is-live=true block=false format=GST_FORMAT_TIME ' \
+        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
@@ -30,7 +30,10 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
     def send_data(self, data):
         with self.data_lock:
             self.data = data
-            self._new_frame = True
+            # Convert to bytes once here so on_need_data doesn't re-convert
+            # the same frame repeatedly. x264 will still detect identical
+            # frames and encode them cheaply as P-frames with no motion.
+            self._cached_bytes = data.tobytes() if data is not None else None
 
     def start(self):
         t = Thread(target=self._thread_rtsp)
@@ -41,17 +44,13 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         loop.run()
 
     def on_need_data(self, src, length):
-        # Only push when the camera has delivered a new frame.
-        # GStreamer calls on_need_data at encoder demand rate (~65 FPS)
-        # but the camera only captures at ~15 FPS. Without this gate,
-        # x264 wastes CPU encoding duplicate frames.
-        # block=false on appsrc ensures GStreamer doesn't stall when we skip.
+        # Copy cached bytes under lock, then push outside the lock.
+        # send_data() converts to bytes once per new frame, so repeated
+        # on_need_data calls just re-push the same bytes without calling
+        # tobytes() again. x264 encodes duplicate frames cheaply as
+        # P-frames with no motion vectors.
         with self.data_lock:
-            if not self._new_frame:
-                return
-            # Convert to bytes inside the lock to prevent data race with send_data
-            frame_bytes = self.data.tobytes() if self.data is not None else None
-            self._new_frame = False
+            frame_bytes = self._cached_bytes
         if frame_bytes is not None:
             retval = src.emit('push-buffer', Gst.Buffer.new_wrapped(frame_bytes))
             if retval != Gst.FlowReturn.OK:
