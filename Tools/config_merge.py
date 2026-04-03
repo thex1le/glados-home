@@ -243,14 +243,13 @@ def clean_config(filepath: str, dry_run: bool = False) -> int:
     with open(filepath, 'r') as f:
         original_lines = f.readlines()
 
-    # Parse to identify DEFAULT keys
+    # Parse to identify DEFAULT keys and their values
     config = ConfigParser()
     config.read(filepath)
-    default_keys = set(config.defaults().keys())
+    default_keys = config.defaults()  # dict of {key: value}
 
     cleaned = []
     current_section = None
-    section_keys_seen = set()
     changes = 0
 
     for line in original_lines:
@@ -269,34 +268,31 @@ def clean_config(filepath: str, dry_run: bool = False) -> int:
                     break
             cleaned.append(line.rstrip() + "\n")
             current_section = stripped[1:-1]
-            section_keys_seen = set()
             continue
 
-        # Skip blank lines within a section (allow one blank line max)
+        # Skip blank lines within a section
         if not stripped:
-            # Keep blank lines before section headers (handled above)
-            # Skip consecutive blanks within sections
+            # Skip consecutive blanks
             if cleaned and not cleaned[-1].strip():
                 changes += 1
                 continue
-            # Don't add blank lines within a section's keys
-            # Only allow blank line if next non-blank is a section header
             cleaned.append("\n")
             continue
 
-        # Check if this is a key=value line with a DEFAULT duplicate
+        # Check if this is a key=value line that duplicates a DEFAULT key
         if current_section and current_section != "DEFAULT" and '=' in stripped:
-            key = stripped.split('=')[0].strip().lower()
-            if key in default_keys and key not in section_keys_seen:
-                # Check if this key is genuinely in this section or just DEFAULT
-                section_only = _section_only_keys(config, current_section)
-                if key not in section_only:
-                    # This is a DEFAULT key that doesn't belong here
-                    if dry_run:
-                        print(f"  REMOVE: [{current_section}] {stripped}  (duplicate from DEFAULT)")
-                    changes += 1
-                    continue
-            section_keys_seen.add(key)
+            # Parse key and value from the raw line
+            eq_pos = stripped.index('=')
+            key = stripped[:eq_pos].strip().lower()
+            val = stripped[eq_pos + 1:].strip()
+
+            if key in default_keys:
+                # This key exists in DEFAULT — remove it from this section
+                # since ConfigParser will inherit it automatically
+                if dry_run:
+                    print(f"  REMOVE: [{current_section}] {key} = {val}  (inherited from DEFAULT)")
+                changes += 1
+                continue
 
         # Comment or regular key line — keep it
         cleaned.append(line.rstrip() + "\n")
