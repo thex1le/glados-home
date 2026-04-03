@@ -36,15 +36,25 @@ class RtspConsumer:
         """
         Attempts to connect to the RTSP stream. Retries on failure.
         """
-        gst_pipeline = (
+        # Try GPU decode first (nvh264dec), fall back to software (avdec_h264)
+        # nvh264dec outputs to CUDA memory — cudadownload moves it to CPU
+        gst_hw_pipeline = (
             f"rtspsrc location={self.rtsp_uri} latency=0 ! "
             f"rtpjitterbuffer drop-on-latency=true ! "
             f"rtph264depay ! "
-            f"h264parse ! "  # Parse the stream to negotiate caps properly
+            f"h264parse ! "
             f"nvh264dec ! "
+            f"cudadownload ! "
             f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink drop=true max-buffers=1 sync=false emit-signals=false"
-            )
+            f"appsink drop=true max-buffers=1 sync=false emit-signals=false")
+        gst_sw_pipeline = (
+            f"rtspsrc location={self.rtsp_uri} latency=0 ! "
+            f"rtpjitterbuffer drop-on-latency=true ! "
+            f"rtph264depay ! "
+            f"h264parse ! "
+            f"avdec_h264 ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true max-buffers=1 sync=false emit-signals=false")
         attempt = 0
         while True:
             try:
@@ -55,17 +65,20 @@ class RtspConsumer:
                     sleep(0.5)  # let GStreamer tear down before creating a new pipeline
 
                 attempt += 1
-                self.logger.info(f"Connecting to RTSP stream at {self.rtsp_uri} (attempt {attempt})...")
-                self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-                if self.cap.isOpened():
-                    self.logger.info(f"Successfully connected to RTSP stream {self.rtsp_uri}.")
-                    return
-                else:
-                    self.logger.warning(
-                        f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay}s...")
+                # Try GPU decode first, fall back to software
+                for pipeline, label in [(gst_hw_pipeline, "GPU"), (gst_sw_pipeline, "software")]:
+                    self.logger.info(f"Connecting to RTSP stream at {self.rtsp_uri} "
+                                     f"(attempt {attempt}, {label} decode)...")
+                    self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+                    if self.cap.isOpened():
+                        self.logger.info(f"Connected to {self.rtsp_uri} using {label} decode.")
+                        return
                     self.cap.release()
                     self.cap = None
                     sleep(0.5)
+
+                self.logger.warning(
+                    f"Failed to connect to RTSP stream. Retrying in {self.reconnect_delay}s...")
             except Exception as e:
                 self.logger.error(f"Exception occurred while connecting: {e}")
 
