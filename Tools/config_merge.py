@@ -34,6 +34,26 @@ def load_config(filepath: str) -> ConfigParser:
     return config
 
 
+def _section_only_keys(config: ConfigParser, section: str) -> dict:
+    """Get keys that are explicitly defined in a section, excluding DEFAULT inheritance.
+
+    ConfigParser's .items(section) and dict(config[section]) both include
+    DEFAULT keys merged in. This function returns only the keys that are
+    actually written in the [section] block of the config file.
+
+    Args:
+        config: The ConfigParser instance.
+        section: The section name.
+
+    Returns:
+        Dict of {key: value} for keys explicitly in this section.
+    """
+    # _sections is the internal dict of {section: {key: value}} without DEFAULT
+    if section in config._sections:
+        return dict(config._sections[section])
+    return {}
+
+
 def compare_configs(template: ConfigParser, deployed: ConfigParser) -> dict:
     """Compare template against deployed and return differences.
 
@@ -57,12 +77,17 @@ def compare_configs(template: ConfigParser, deployed: ConfigParser) -> dict:
             result["new_sections"].append(section)
             continue
 
-        # Check for new and changed keys within existing sections
-        for key, template_val in template.items(section):
-            # Skip DEFAULT inherited keys unless they're explicitly in this section
-            if key in template.defaults() and key not in dict(template[section]):
+        # Only compare keys explicitly in this section (not inherited from DEFAULT)
+        template_section_keys = _section_only_keys(template, section)
+        deployed_section_keys = _section_only_keys(deployed, section)
+
+        for key, template_val in template_section_keys.items():
+            if key == "__name__":
                 continue
-            if not deployed.has_option(section, key):
+            if key not in deployed_section_keys:
+                # Also check if deployed has it via DEFAULT — if so, skip
+                if deployed.has_option(section, key):
+                    continue
                 if section not in result["new_keys"]:
                     result["new_keys"][section] = {}
                 result["new_keys"][section][key] = template_val
@@ -71,10 +96,12 @@ def compare_configs(template: ConfigParser, deployed: ConfigParser) -> dict:
     for section in deployed.sections():
         if not template.has_section(section):
             continue
-        for key, _ in deployed.items(section):
-            if key in deployed.defaults() and key not in dict(deployed[section]):
+        deployed_section_keys = _section_only_keys(deployed, section)
+        template_section_keys = _section_only_keys(template, section)
+        for key in deployed_section_keys:
+            if key == "__name__":
                 continue
-            if not template.has_option(section, key):
+            if key not in template_section_keys:
                 if section not in result["removed_keys"]:
                     result["removed_keys"][section] = []
                 result["removed_keys"][section].append(key)
@@ -154,12 +181,13 @@ def apply_merge(template: ConfigParser, deployed_path: str, diff: dict) -> None:
                 # Section exists in ConfigParser but wasn't found as raw text (unusual)
                 additions.append((section, keys))
 
-    # Add entire new sections at the end
+    # Add entire new sections at the end (section-only keys, no DEFAULT inheritance)
     if diff["new_sections"]:
         for section in diff["new_sections"]:
             lines.append(f"\n[{section}]\n")
-            for key, val in template.items(section):
-                if key in template.defaults() and key not in dict(template[section]):
+            section_keys = _section_only_keys(template, section)
+            for key, val in section_keys.items():
+                if key == "__name__":
                     continue
                 lines.append(f"{key} = {val}\n")
 
@@ -194,6 +222,127 @@ def apply_merge(template: ConfigParser, deployed_path: str, diff: dict) -> None:
     print(f"  Merged changes into {deployed_path}")
 
 
+def clean_config(filepath: str, dry_run: bool = False) -> int:
+    """Clean up a config file: fix spacing, remove duplicate DEFAULT keys from sections.
+
+    Rules applied:
+        - Blank line between sections (before each [SECTION] header)
+        - No blank lines between keys within a section
+        - No duplicate DEFAULT keys repeated in individual sections
+        - Comments preserved in place
+        - Trailing whitespace removed
+        - File ends with single newline
+
+    Args:
+        filepath: Path to the config file to clean.
+        dry_run: If True, print what would change without modifying the file.
+
+    Returns:
+        Number of lines changed.
+    """
+    with open(filepath, 'r') as f:
+        original_lines = f.readlines()
+
+    # Parse to identify DEFAULT keys
+    config = ConfigParser()
+    config.read(filepath)
+    default_keys = set(config.defaults().keys())
+
+    cleaned = []
+    current_section = None
+    section_keys_seen = set()
+    changes = 0
+
+    for line in original_lines:
+        stripped = line.strip()
+
+        # Track current section
+        if stripped.startswith('[') and stripped.endswith(']'):
+            # Blank line before section header (unless first line)
+            if cleaned and cleaned[-1].strip():
+                cleaned.append("\n")
+            # Remove any accumulated blank lines before the header
+            while cleaned and not cleaned[-1].strip():
+                if len(cleaned) >= 2 and not cleaned[-2].strip():
+                    cleaned.pop()
+                else:
+                    break
+            cleaned.append(line.rstrip() + "\n")
+            current_section = stripped[1:-1]
+            section_keys_seen = set()
+            continue
+
+        # Skip blank lines within a section (allow one blank line max)
+        if not stripped:
+            # Keep blank lines before section headers (handled above)
+            # Skip consecutive blanks within sections
+            if cleaned and not cleaned[-1].strip():
+                changes += 1
+                continue
+            # Don't add blank lines within a section's keys
+            # Only allow blank line if next non-blank is a section header
+            cleaned.append("\n")
+            continue
+
+        # Check if this is a key=value line with a DEFAULT duplicate
+        if current_section and current_section != "DEFAULT" and '=' in stripped:
+            key = stripped.split('=')[0].strip().lower()
+            if key in default_keys and key not in section_keys_seen:
+                # Check if this key is genuinely in this section or just DEFAULT
+                section_only = _section_only_keys(config, current_section)
+                if key not in section_only:
+                    # This is a DEFAULT key that doesn't belong here
+                    if dry_run:
+                        print(f"  REMOVE: [{current_section}] {stripped}  (duplicate from DEFAULT)")
+                    changes += 1
+                    continue
+            section_keys_seen.add(key)
+
+        # Comment or regular key line — keep it
+        cleaned.append(line.rstrip() + "\n")
+
+    # Remove trailing blank lines, ensure single newline at end
+    while cleaned and not cleaned[-1].strip():
+        cleaned.pop()
+    if cleaned:
+        cleaned.append("\n")
+
+    # Remove stray blank lines within sections (second pass)
+    final = []
+    for i, line in enumerate(cleaned):
+        stripped = line.strip()
+        # Skip blank line if the next line is NOT a section header and prev was content
+        if not stripped:
+            # Look ahead — keep blank only if next line is a section header
+            if i + 1 < len(cleaned) and cleaned[i + 1].strip().startswith('['):
+                final.append(line)
+            # Skip blank lines within sections
+            continue
+        final.append(line)
+
+    # Re-add blank lines between sections
+    result = []
+    for i, line in enumerate(final):
+        stripped = line.strip()
+        if stripped.startswith('[') and stripped.endswith(']') and result:
+            result.append("\n")
+        result.append(line)
+
+    if not dry_run and changes > 0:
+        backup_path = f"{filepath}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        shutil.copy2(filepath, backup_path)
+        print(f"  Backup saved to {backup_path}")
+        with open(filepath, 'w') as f:
+            f.writelines(result)
+        print(f"  Cleaned {filepath} ({changes} changes)")
+    elif dry_run and changes > 0:
+        print(f"  Would make {changes} changes to {filepath}")
+    else:
+        print(f"  {filepath}: already clean")
+
+    return changes
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Merge new config keys from template into deployed configs",
@@ -205,13 +354,21 @@ def main() -> None:
             "  # Apply changes\n"
             "  python3 Tools/config_merge.py glog.conf dont_commit_glados.conf --apply\n\n"
             "  # Multiple configs\n"
-            "  python3 Tools/config_merge.py glog.conf pi4.conf pi5.conf --apply"
+            "  python3 Tools/config_merge.py glog.conf pi4.conf pi5.conf --apply\n\n"
+            "  # Clean up formatting of deployed configs\n"
+            "  python3 Tools/config_merge.py glog.conf dont_commit_glados.conf --cleanup\n\n"
+            "  # Dry run cleanup (show what would change)\n"
+            "  python3 Tools/config_merge.py glog.conf dont_commit_glados.conf --cleanup --dry-run"
         ),
     )
     parser.add_argument("template", help="Template config file (e.g. glog.conf from repo)")
     parser.add_argument("deployed", nargs="+", help="Deployed config file(s) to update")
     parser.add_argument("--apply", action="store_true",
-                        help="Apply changes (default: dry run)")
+                        help="Apply merge changes (default: dry run)")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="Clean up config formatting (fix spacing, remove DEFAULT dupes)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what cleanup would change without modifying files")
     args = parser.parse_args()
 
     if not os.path.exists(args.template):
@@ -222,6 +379,16 @@ def main() -> None:
 
     print(f"Template: {args.template}")
     print(f"Sections: {template.sections()}")
+
+    if args.cleanup:
+        print("\n=== Config Cleanup ===")
+        for deployed_path in args.deployed:
+            if not os.path.exists(deployed_path):
+                print(f"\nWARNING: File not found, skipping: {deployed_path}")
+                continue
+            print(f"\n--- {deployed_path} ---")
+            clean_config(deployed_path, dry_run=args.dry_run)
+        return
 
     total_changes = 0
 
