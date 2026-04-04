@@ -150,6 +150,13 @@ DASHBOARD_HTML = """
             </div>
 
             <div class="card">
+                <h2>Tracking State</h2>
+                <div id="tracking-state">
+                    <div style="color:#555">Waiting for data...</div>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Connected Systems</h2>
                 <div id="peers" class="peer-section">
                     <div style="color:#555">Waiting for heartbeats...</div>
@@ -220,8 +227,51 @@ DASHBOARD_HTML = """
             }
         }
 
+        async function updateTracking() {
+            try {
+                const r = await fetch('/api/tracking');
+                const d = await r.json();
+                const div = document.getElementById('tracking-state');
+                let html = '';
+
+                if (d.overlay) {
+                    const o = d.overlay;
+                    html += '<div class="status-grid">';
+                    html += '<div class="status-item"><div class="status-label">State</div>'
+                          + '<div class="status-value">' + (o.state || '?') + '</div></div>';
+                    html += '<div class="status-item"><div class="status-label">World</div>'
+                          + '<div class="status-value">LR ' + (o.world_lr||0).toFixed(1) + '° UD ' + (o.world_ud||0).toFixed(1) + '°</div></div>';
+                    html += '<div class="status-item"><div class="status-label">Head Target</div>'
+                          + '<div class="status-value">LR ' + Math.round(o.head_lr||0) + '° UD ' + Math.round(o.head_ud||0) + '°</div></div>';
+                    html += '<div class="status-item"><div class="status-label">Body Target</div>'
+                          + '<div class="status-value">LR ' + Math.round(o.body_lr||0) + '° UD ' + Math.round(o.body_ud||0) + '°</div></div>';
+                    html += '</div>';
+                }
+
+                if (d.room && d.room.count > 0) {
+                    html += '<h2 style="margin-top:8px">Room (' + d.room.count + ')</h2>';
+                    for (const p of d.room.roster || []) {
+                        const emo = p.emotion && p.emotion !== 'neutral' ? ' · ' + p.emotion : '';
+                        const cams = (p.cameras||[]).map(c => c.replace('camera_','')).join(',');
+                        html += '<div class="thread-row"><span class="thread-name">' + p.person_id + emo + '</span>'
+                              + '<span style="color:#888">[' + cams + '] ' + (p.world_lr||0).toFixed(0) + '°</span></div>';
+                    }
+                }
+
+                if (d.attention && d.attention.attention_target) {
+                    html += '<div style="margin-top:6px;padding:6px;background:#1a1a1a;border-radius:4px;border-left:3px solid #ff6600">'
+                          + '<span style="color:#ff6600">▸ </span><span class="thread-name">' + d.attention.attention_target + '</span>'
+                          + ' <span style="color:#888">(' + d.attention.attention_reason + ')</span></div>';
+                }
+
+                div.innerHTML = html || '<div style="color:#555">No tracking data</div>';
+            } catch(e) {}
+        }
+
         updateHealth();
+        updateTracking();
         setInterval(updateHealth, 2000);
+        setInterval(updateTracking, 500);
     </script>
 </body>
 </html>
@@ -301,9 +351,10 @@ class WebDashboard(Thread):
     """Flask-based web dashboard running in a daemon thread.
 
     Serves:
-    - / : HTML dashboard with video feeds and health status
+    - / : HTML dashboard with video feeds, health status, and tracking state
     - /feed/<path> : MJPEG stream (direct buffer or RTSP consumer)
     - /api/health : JSON health data for local system + peers
+    - /api/tracking : JSON tracking state (overlay, room roster, attention)
 
     Args:
         rtsp_server: Direct frame buffer access (GPU server where MLDetect runs in-process)
@@ -314,6 +365,7 @@ class WebDashboard(Thread):
     def __init__(self, system_name: str, health_monitor=None,
                  rtsp_server=None, feeds: Dict[str, str] = None,
                  feed_uris: Dict[str, str] = None,
+                 motion_tracking=None,
                  port: int = 8080) -> None:
         Thread.__init__(self)
         self.daemon = True
@@ -322,6 +374,7 @@ class WebDashboard(Thread):
         self.system_name = system_name
         self.health_monitor = health_monitor
         self.rtsp_server = rtsp_server  # direct buffer (GPU server)
+        self.motion_tracking = motion_tracking  # MotionTrack for tracking state API
         self.feeds = feeds or {}        # {label: factory_path} for direct buffer
         self.feed_uris = feed_uris or {}  # {label: rtsp_uri} for RTSP consumer
         self.port = port
@@ -403,6 +456,20 @@ class WebDashboard(Thread):
             if dashboard.health_monitor:
                 result["local"] = dashboard.health_monitor.get_status()
                 result["peers"] = dict(dashboard.health_monitor._peer_status)
+            return jsonify(result)
+
+        @app.route('/api/tracking')
+        def tracking_api():
+            """Return current tracking state for dashboard sidebar."""
+            result = {}
+            mt = dashboard.motion_tracking
+            if mt:
+                if hasattr(mt, '_debug_overlay'):
+                    result["overlay"] = mt._debug_overlay
+                if hasattr(mt, '_room_state') and mt._room_state:
+                    result["room"] = mt._room_state.get_room_summary()
+                if hasattr(mt, '_attention') and mt._attention:
+                    result["attention"] = mt._attention.get_state()
             return jsonify(result)
 
         return app

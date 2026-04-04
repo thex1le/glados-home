@@ -239,6 +239,13 @@ class VisionResultsEnum(Enum):
     KEYPOINT_LOCATION = "location"
     # Keypoint confidence threshold for drawing
     KEYPOINT_DRAW_THRESHOLD = 0.5
+    # Pose-YOLO fusion: create person detections from unmatched pose results
+    VISION_RESULTS_SOURCE_KEY = "source"
+    VISION_RESULTS_SOURCE_YOLO = "yolo"
+    VISION_RESULTS_SOURCE_POSE = "pose"
+    POSE_PERSON_MIN_CONFIDENCE = 0.3   # min avg keypoint score for synthetic detection
+    POSE_PERSON_BOX_PADDING = 0.1      # 10% padding on keypoint-derived box
+    POSE_KEYPOINT_MIN_SCORE = 0.1      # min score for keypoint to count in box computation
     # Key used for class name in YOLO results
     YOLO_CLASS_NAME_KEY = "name"
     # Gesture recognition keys

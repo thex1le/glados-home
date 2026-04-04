@@ -95,6 +95,7 @@ if __name__ == "__main__":
         rtsp_server=mv.rtsp,
         feeds=ai_feeds,
         feed_uris=raw_feeds,
+        motion_tracking=mv.motion_tracking,
         port=dash_port
     )
     dashboard.start()

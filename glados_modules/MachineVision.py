@@ -478,34 +478,8 @@ class MLDetect(Thread, MQTTClient):
                             cv2.putText(a_image, g, (wx, wy - 15),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        # Draw debug overlay with tracking state (top-right panel)
-        if hasattr(self, 'motion_tracking') and self.motion_tracking.debug_overlay_enabled:
-            overlay = self.motion_tracking._debug_overlay
-            lines = [
-                f"State: {overlay.get('state', '?')}",
-                f"World: LR={overlay.get('world_lr', 0):.1f} UD={overlay.get('world_ud', 0):.1f}",
-                f"H tgt: LR={overlay.get('head_lr', 0):.0f} UD={overlay.get('head_ud', 0):.0f}",
-                f"B tgt: LR={overlay.get('body_lr', 0):.0f} UD={overlay.get('body_ud', 0):.0f}",
-                f"H est: LR={overlay.get('est_head_lr', 0):.0f} UD={overlay.get('est_head_ud', 0):.0f}",
-                f"B est: LR={overlay.get('est_body_lr', 0):.0f} UD={overlay.get('est_body_ud', 0):.0f}",
-            ]
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.5
-            thickness = 1
-            color = (255, 255, 255)
-            line_height = 18
-            # Semi-transparent background
-            panel_w = 280
-            panel_h = len(lines) * line_height + 10
-            x_start = a_image.shape[1] - panel_w - 10
-            y_start = 10
-            sub_img = a_image[y_start:y_start+panel_h, x_start:x_start+panel_w]
-            if sub_img.size > 0:
-                dark = (sub_img * 0.3).astype(sub_img.dtype)
-                a_image[y_start:y_start+panel_h, x_start:x_start+panel_w] = dark
-            for i, line in enumerate(lines):
-                y = y_start + 15 + i * line_height
-                cv2.putText(a_image, line, (x_start + 5, y), font, font_scale, color, thickness)
+        # Tracking state overlay removed from video — now served via /api/tracking
+        # on the web dashboard sidebar instead.
 
         self.logger.debug(f"Sending image to RTSP server factory: {image_dict[CameraEnum.MSG_LOCATION_KEY.value]}")
         self.rtsp.send_data(image_dict[CameraEnum.MSG_LOCATION_KEY.value], a_image)
@@ -580,6 +554,10 @@ class MLDetect(Thread, MQTTClient):
         bx2 = VisionResultsEnum.BOX_X2.value
         by2 = VisionResultsEnum.BOX_Y2.value
 
+        # Track which pose indices get matched to YOLO boxes
+        matched_pose_indices = set()
+        source_key = VisionResultsEnum.VISION_RESULTS_SOURCE_KEY.value
+
         # Iterate over the response dictionary to find matching objects
         count = 0
         for person_data in response.get(person_key, {}).get(objects_key, []):
@@ -590,7 +568,7 @@ class MLDetect(Thread, MQTTClient):
 
             # Filter key points that fit inside the bounding box based on the given threshold
             filtered_key_points = []
-            for key_points in merged_key_points:
+            for pose_idx, key_points in enumerate(merged_key_points):
                 total_points = len(key_points)
                 if total_points == 0:
                     continue  # Avoid division by zero if no key points are present
@@ -602,7 +580,7 @@ class MLDetect(Thread, MQTTClient):
                 # If the percentage of points inside the box meets or exceeds the threshold, assign them.
                 if (points_in_box / total_points) >= percentage_threshold:
                     filtered_key_points = key_points
-                    self.logger.debug(f"Linking {key_points} to {person_data}")
+                    matched_pose_indices.add(pose_idx)
                     break  # Use the first matching set of key points
 
             # Assign the filtered key points to the person data if any were found
@@ -610,6 +588,67 @@ class MLDetect(Thread, MQTTClient):
                 pose_dict = {kp[kp_loc]: kp for kp in filtered_key_points}
                 response[person_key][objects_key][count][pose_key] = pose_dict
             count += 1
+
+        # Create synthetic person detections from unmatched pose results
+        min_conf = VisionResultsEnum.POSE_PERSON_MIN_CONFIDENCE.value
+        box_padding = VisionResultsEnum.POSE_PERSON_BOX_PADDING.value
+        kp_min_score = VisionResultsEnum.POSE_KEYPOINT_MIN_SCORE.value
+        kp_conf = VisionResultsEnum.KEYPOINT_CONFIDENCE.value
+        source_pose = VisionResultsEnum.VISION_RESULTS_SOURCE_POSE.value
+        name_key = VisionResultsEnum.YOLO_CLASS_NAME_KEY.value
+        conf_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+
+        for pose_idx, key_points in enumerate(merged_key_points):
+            if pose_idx in matched_pose_indices:
+                continue
+            if not key_points:
+                continue
+
+            # Filter to keypoints with meaningful confidence
+            valid_kps = [kp for kp in key_points if kp.get(kp_conf, 0) > kp_min_score]
+            if not valid_kps:
+                continue
+
+            # Compute average confidence
+            avg_conf = sum(kp[kp_conf] for kp in valid_kps) / len(valid_kps)
+            if avg_conf < min_conf:
+                self.logger.debug(
+                    f"POSE_FUSION: skipped pose idx={pose_idx} conf={avg_conf:.2f} below threshold")
+                continue
+
+            # Compute bounding box from keypoint extremes with padding
+            xs = [kp[kp_x] for kp in valid_kps]
+            ys = [kp[kp_y] for kp in valid_kps]
+            raw_x1, raw_y1 = min(xs), min(ys)
+            raw_x2, raw_y2 = max(xs), max(ys)
+            w = raw_x2 - raw_x1
+            h = raw_y2 - raw_y1
+            pad_x = w * box_padding
+            pad_y = h * box_padding
+            syn_x1 = max(0, raw_x1 - pad_x)
+            syn_y1 = max(0, raw_y1 - pad_y)
+            syn_x2 = raw_x2 + pad_x
+            syn_y2 = raw_y2 + pad_y
+
+            # Build synthetic person detection
+            pose_dict = {kp[kp_loc]: kp for kp in key_points}
+            synthetic = {
+                name_key: person_key,
+                conf_key: round(avg_conf, 3),
+                box_key: {bx1: syn_x1, by1: syn_y1, bx2: syn_x2, by2: syn_y2},
+                pose_key: pose_dict,
+                source_key: source_pose,
+            }
+
+            # Ensure person key exists in response
+            if person_key not in response:
+                response[person_key] = {objects_key: [], "count": 0}
+            response[person_key][objects_key].append(synthetic)
+            response[person_key]["count"] = len(response[person_key][objects_key])
+
+            self.logger.debug(
+                f"POSE_FUSION: created synthetic person from pose idx={pose_idx} "
+                f"conf={avg_conf:.2f} box=({syn_x1:.0f},{syn_y1:.0f},{syn_x2:.0f},{syn_y2:.0f})")
 
         return response
 
