@@ -117,6 +117,12 @@ fi
 
 pip install -r "$PIP_REQUIREMENTS"
 
+# Remove pip opencv packages that might have been pulled in as dependencies
+# (ultralytics, rtmlib require opencv-python but we build from source)
+if [ "$SYSTEM" = "gpu" ]; then
+    pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
+fi
+
 # --- Build OpenCV from source with GStreamer + CUDA (GPU server) ---
 if [ "$SYSTEM" = "gpu" ]; then
     echo ""

@@ -9,7 +9,7 @@ paho-mqtt
 cachetools
 
 # Video / streaming
-opencv-python
+# opencv-python -- built from source with GStreamer+CUDA (see install_deps.sh)
 numpy
 PyGObject                        # GStreamer RTSP server bindings
 
