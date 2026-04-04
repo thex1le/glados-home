@@ -133,7 +133,8 @@ class CameraFusionState:
 
     def head_lost(self) -> None:
         """Signal that the head camera lost the target."""
-        if self.state == FusionEnums.STATE_HEAD_TRACKING.value:
+        if self.state in (FusionEnums.STATE_HEAD_TRACKING.value,
+                          FusionEnums.STATE_HANDOFF_TO_HEAD.value):
             best_side = self.get_best_side_world_lr()
             if best_side is not None:
                 self.state = FusionEnums.STATE_HANDOFF_TO_SIDE.value
@@ -245,9 +246,23 @@ class CameraFusionState:
         return max(self._head_count, self._left_count + self._right_count)
 
     def side_can_drive_servos(self) -> bool:
-        """Return True if side cameras should command servo movement."""
-        return self.state in (FusionEnums.STATE_SIDE_ONLY.value,
-                              FusionEnums.STATE_HANDOFF_TO_SIDE.value)
+        """Return True if side cameras should command servo movement.
+
+        Also transitions back to SIDE_ONLY if the head camera has gone stale
+        (e.g., RTSP stream dropped without sending a 'no target' frame).
+        """
+        if self.state in (FusionEnums.STATE_SIDE_ONLY.value,
+                          FusionEnums.STATE_HANDOFF_TO_SIDE.value):
+            return True
+
+        # Head camera stream may have dropped — force transition after staleness timeout
+        if self._head_last_seen > 0:
+            head_age = time.time() - self._head_last_seen
+            if head_age > FusionEnums.SIDE_CAMERA_STALENESS.value:
+                self.state = FusionEnums.STATE_SIDE_ONLY.value
+                return True
+
+        return False
 
 
 class MotionTrack(MQTTClient):
