@@ -186,6 +186,8 @@ class MQTTEnums(Enum):
     TH_STATUS_TOPIC = "body/th/status"
     SYSTEM_HEALTH_TOPIC = "system/health"
     SYSTEM_LOG_LEVEL_TOPIC = "system/log_level"
+    PERSONALITY_MODIFIER_TOPIC = "system/personality"
+    ATTENTION_CONVERSATION_TOPIC = "system/attention/conversation"
 
 
 class DashboardEnums(Enum):
@@ -577,6 +579,11 @@ class PersonalityEnums(Enum):
     # Calm amounts
     CALM_PERSON_LEFT = 2.0
     CALM_COMPLIMENT = 1.0
+    # Room event configuration
+    GREETING_COOLDOWN = 60.0           # seconds between greetings for same person
+    DEPARTURE_COMMENT_CHANCE = 0.3     # probability of verbal departure comment
+    PARTY_THRESHOLD = 3                # person count that triggers party commentary
+    ANGER_UNKNOWN_ARRIVAL = 0.5        # slight anger when unknown person appears
     # Feature toggles
     MOOD_ENABLED = "mood_enabled"
     BREATHING_ENABLED = "breathing_enabled"
@@ -599,6 +606,7 @@ class FeatureToggles(Enum):
     MEMORY_GLANCES = "memory_glances"
     GESTURE_RECOGNITION = "gesture_recognition"
     ROOM_STATE_ENABLED = "room_state_enabled"
+    ATTENTION_MODEL_ENABLED = "attention_model_enabled"
     # Video recording
     RECORD_VIDEO = "record_video"
     RECORDING_PATH = "recording_path"
@@ -607,6 +615,26 @@ class FeatureToggles(Enum):
     MQTT_RECORDING_TOPIC = "system/recording"
     RECORDING_CMD_START = "start_recording"
     RECORDING_CMD_STOP = "stop_recording"
+
+
+class AttentionEnums(Enum):
+    """Attention model configuration — priority-based target selection."""
+    # Budget durations: how long a priority holds before re-evaluation (seconds)
+    BUDGET_NEW_ARRIVAL = 3.0
+    BUDGET_GESTURE = 2.0
+    BUDGET_SPEAKER = 5.0           # overridden by speech duration + 2s when available
+    BUDGET_CONVERSATION = 5.0
+    BUDGET_FATIGUE_GLANCE = 2.0
+    BUDGET_PROXIMITY = 0.0         # continuous, re-evaluates every frame
+
+    # Fatigue: glance at neglected person after this many seconds
+    FATIGUE_NEGLECT_THRESHOLD = 30.0
+    # How recent a detection counts as "new arrival" (seconds since first_seen)
+    NEW_ARRIVAL_WINDOW = 3.0
+    # How recent a gesture must be to trigger attention (seconds)
+    GESTURE_RECENCY = 2.0
+    # Personality grudge: extra priority bonus for people who angered GLaDOS
+    GRUDGE_ATTENTION_BONUS = 15.0
 
 
 class RoomStateEnums(Enum):

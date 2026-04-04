@@ -1,5 +1,5 @@
 import time
-from typing import Dict, Callable, Tuple, NamedTuple, Any
+from typing import Dict, Callable, Tuple, NamedTuple, Any, Optional
 from json import loads
 from collections import namedtuple
 from math import sin, radians, tan, atan, degrees, pi
@@ -15,11 +15,13 @@ from glados_modules.GladosEnums import (CameraEnum, ServoEnum, SystemEnums,
                                         TrackingEnums, VisionResultsEnum, LoggingEnums,
                                         MotionProfile, TraceEnums, KinematicsEnums,
                                         FusionEnums, BehaviorEnums, FeatureToggles,
-                                        PersonalityEnums, RoomStateEnums)
+                                        PersonalityEnums, RoomStateEnums,
+                                        AttentionEnums, MQTTEnums)
 from glados_modules.RobotKinematics import RobotKinematics
 from glados_modules.MotionRecorder import MotionRecorder, build_frame_record
 from glados_modules.TraceLog import TraceLog
 from glados_modules.RoomStateManager import RoomStateManager
+from glados_modules.AttentionModel import AttentionModel
 
 
 class SpringDamperEstimator:
@@ -322,7 +324,9 @@ class MotionTrack(MQTTClient):
 
         self.topic_handler: Dict[str, Callable] = {
             self.cmd_topic: self.handle_cmd,
-            self.intensity_topic: self.handle_intensity
+            self.intensity_topic: self.handle_intensity,
+            MQTTEnums.PERSONALITY_MODIFIER_TOPIC.value: self._handle_personality_modifier,
+            MQTTEnums.ATTENTION_CONVERSATION_TOPIC.value: self._handle_conversation_partner,
         }
 
         # Head camera resolution
@@ -417,6 +421,12 @@ class MotionTrack(MQTTClient):
 
         # Room state manager (persistent room roster across frames/cameras)
         self._room_state = RoomStateManager() if self._enable_room_state else None
+
+        self._enable_attention = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                          FeatureToggles.ATTENTION_MODEL_ENABLED.value)
+        # Attention model (priority-based target selection from room roster)
+        self._attention = AttentionModel() if (self._enable_attention and self._enable_room_state) else None
+        self._last_attention_time: float = time.time()
 
         # Behavior state machine (active → idle → drowsy → asleep)
         self._behavior_state: str = BehaviorEnums.STATE_ACTIVE.value
@@ -811,6 +821,52 @@ class MotionTrack(MQTTClient):
         if self.debug_overlay_enabled:
             self._debug_overlay["state"] = self._behavior_state
 
+    def _find_detection_for_person(self, detections: list, person_id: str,
+                                    roster: Dict[str, Any]) -> Optional[dict]:
+        """Find the detection in the current frame that matches a room roster person.
+
+        Matches by face_id first, then by proximity to the roster person's
+        last known world_lr position.
+
+        Args:
+            detections: List of person detection dicts from this frame.
+            person_id: The room roster person_id to find.
+            roster: Current room roster for position lookup.
+
+        Returns:
+            The best matching detection dict, or None.
+        """
+        if person_id not in roster:
+            return None
+
+        person = roster[person_id]
+
+        # Try face_id match first
+        for det in detections:
+            face_data = det.get("face", {})
+            if face_data and face_data.get("face_id") == person.face_id and person.face_id != "unknown":
+                return det
+
+        # Fall back to closest bbox center to person's world_lr
+        best_det = None
+        best_dist = float("inf")
+        for det in detections:
+            box = det.get("box", {})
+            if not box:
+                continue
+            cx = (box.get("x1", 0) + box.get("x2", 0)) / 2
+            # Approximate: bbox center offset from frame center as proxy for angle
+            # Not exact but good enough for matching within a single frame
+            det_height = box.get("y2", 0) - box.get("y1", 0)
+            height_diff = abs(det_height - person.bbox_height)
+            height_ratio = height_diff / max(person.bbox_height, 1.0)
+            dist = height_ratio  # Lower = better match
+            if dist < best_dist:
+                best_dist = dist
+                best_det = det
+
+        return best_det
+
     def _drive_from_room_state(self) -> None:
         """Single decision point for side-camera-driven servo movement.
 
@@ -989,7 +1045,26 @@ class MotionTrack(MQTTClient):
         trace_id = vision_map[camera].get(TraceEnums.TRACE_ID.value)
         ts_vision = vision_map[camera].get(TraceEnums.TS_VISION.value)
 
-        best_target = self.__select_target(target_data[self.objects], camera)
+        # Target selection: attention model (if enabled) or legacy __select_target
+        if self._attention and self._room_state and camera == self.main_camera:
+            now = time.time()
+            dt = now - self._last_attention_time
+            self._last_attention_time = now
+            roster = self._room_state.get_roster()
+            attention_id, attention_reason = self._attention.select_target(roster, dt)
+            if attention_id:
+                # Find the detection matching the attention target
+                best_target = self._find_detection_for_person(
+                    target_data[self.objects], attention_id, roster)
+                if not best_target:
+                    # Attention target not in this frame — fall back to legacy
+                    best_target = self.__select_target(target_data[self.objects], camera)
+                # Update attention time on room roster
+                self._room_state.update_attention(attention_id, dt)
+            else:
+                best_target = self.__select_target(target_data[self.objects], camera)
+        else:
+            best_target = self.__select_target(target_data[self.objects], camera)
         if not best_target:
             return
 
@@ -1002,9 +1077,15 @@ class MotionTrack(MQTTClient):
             # Periodically publish room state and process arrivals/departures
             if self._room_state.should_publish():
                 arrivals, departures = self._room_state.tick()
+                # Clean up attention model state for departed people
+                if self._attention and departures:
+                    for pid in departures:
+                        self._attention.on_person_departed(pid)
                 summary = self._room_state.get_room_summary()
                 summary["arrivals"] = arrivals
                 summary["departures"] = departures
+                if self._attention:
+                    summary.update(self._attention.get_state())
                 self.send_command(summary, RoomStateEnums.MQTT_ROOM_TOPIC.value)
                 self._room_state.mark_published()
                 if arrivals or departures:
@@ -1144,6 +1225,37 @@ class MotionTrack(MQTTClient):
         elif camera in (self.left_camera, self.right_camera):
             if self._fusion.side_can_drive_servos():
                 self._drive_from_room_state()
+
+    def _handle_personality_modifier(self, msg: MQTTMessage) -> None:
+        """Handle personality modifier from GLaDOSLocal (grudge tracking).
+
+        When GLaDOS gets angry at someone (e.g., middle finger), this message
+        arrives so the attention model watches that person more closely.
+        """
+        if not self._attention:
+            return
+        j_msg = loads(msg.payload.decode())
+        person_id = j_msg.get("person_id", "")
+        modifier = j_msg.get("modifier", 0.0)
+        if person_id and modifier:
+            self._attention.add_personality_modifier(person_id, modifier)
+            self.logger.debug(
+                f"ATTENTION grudge: {person_id} bonus={modifier}")
+
+    def _handle_conversation_partner(self, msg: MQTTMessage) -> None:
+        """Handle conversation partner from GLaDOSLocal.
+
+        After GLaDOS speaks to someone, this message arrives so the attention
+        model maintains gaze on the conversation partner while awaiting response.
+        """
+        if not self._attention:
+            return
+        j_msg = loads(msg.payload.decode())
+        person_id = j_msg.get("person_id", "")
+        if person_id:
+            self._attention.set_conversation_partner(person_id)
+            self.logger.debug(
+                f"ATTENTION conversation: partner={person_id}")
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         """Handle intensity messages."""

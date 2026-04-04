@@ -190,11 +190,15 @@ class TestProcessSightWithFaces:
 
     def _make_gl(self):
         """Create a minimal GladosLocal for testing process_sight."""
+        import threading
         from glados_modules.GLaDOSLocal import GladosLocal
         with patch.object(GladosLocal, '__init__', lambda self, *a, **kw: None):
             gl = GladosLocal.__new__(GladosLocal)
         gl.vision_confidence = 0.65
         gl.logger = MagicMock()
+        gl.mood = MagicMock()
+        gl._room_roster = []
+        gl._room_lock = threading.Lock()
         return gl
 
     def test_person_with_name(self):

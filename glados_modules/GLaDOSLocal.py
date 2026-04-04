@@ -2,6 +2,7 @@ import io
 import base64
 import random
 from threading import Thread
+import threading
 import time
 from os import getcwd, path
 import multiprocessing as mp
@@ -23,7 +24,9 @@ from glados_modules.HomeAssistantConnector import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
 from glados_modules.MqttConnector import MQTTClient, LEDMessageBuilder
 from glados_modules.GladosEnums import (SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums,
-                                        VisionResultsEnum, FaceEnums, FeatureToggles)
+                                        VisionResultsEnum, FaceEnums, FeatureToggles,
+                                        PersonalityEnums, RoomStateEnums,
+                                        AttentionEnums)
 from glados_modules.WhisperXSpeech2Text import AudioServerTx, LocalSTTrx
 
 
@@ -116,7 +119,8 @@ class GladosLocal(Thread, MQTTClient):
         self.cmd_topic: str = MQTTEnums.VISION_RESULTS_MQTT_TOPIC.value
         self.intensity_topic: str = MQTTEnums.SYSTEM_INTENSITY_TOPIC.value
         self.topic_handler: Dict[str, Callable] = {
-            self.intensity_topic: self.handle_intensity
+            self.intensity_topic: self.handle_intensity,
+            RoomStateEnums.MQTT_ROOM_TOPIC.value: self._handle_room_state,
         }
         self.llm = remote_llm
         self.last_greeting: Optional[str] = None
@@ -203,6 +207,14 @@ class GladosLocal(Thread, MQTTClient):
         self._led_enabled: bool = _feat(FeatureToggles.LED_ENABLED.value)
         self._tts_enabled: bool = _feat(FeatureToggles.TTS_ENABLED.value)
         self._stt_timing_enabled: bool = _feat(FeatureToggles.STT_TIMING_ENABLED.value)
+
+        # Room state tracking (populated via system/room MQTT from GPU server)
+        self._room_roster: List[Dict[str, Any]] = []
+        self._room_count: int = 0
+        self._known_people: set = set()         # person_ids currently in room
+        self._greeting_timestamps: Dict[str, float] = {}  # person_id -> last greeting time
+        self._last_party_comment: float = 0.0   # prevent repeated party commentary
+        self._room_lock = threading.Lock()
 
         # add in support to get timing maps for played audio
         self.audioTx = AudioServerTx(broker=audio_broker)
@@ -592,8 +604,45 @@ class GladosLocal(Thread, MQTTClient):
                 count += 1
         return count
 
+    def _process_gestures(self, seen: Dict[str, Any]) -> None:
+        """Process gesture data from sight results for mood effects.
+
+        Extracts gestures from person detections and triggers mood
+        escalation/calming. Called by both room-roster and fallback paths.
+
+        Args:
+            seen: Raw sight_results dictionary.
+        """
+        person_data = seen.get("person", {})
+        objects = person_data.get("objects", [])
+        gesture_key = VisionResultsEnum.VISION_RESULTS_GESTURE_KEY.value
+        for obj in objects:
+            if obj.get("confidence", 0) < self.vision_confidence:
+                continue
+            gesture = obj.get(gesture_key, {})
+            for hand in [VisionResultsEnum.VISION_RESULTS_GESTURE_LEFT.value,
+                          VisionResultsEnum.VISION_RESULTS_GESTURE_RIGHT.value]:
+                g = gesture.get(hand, "none")
+                if g == "middle_finger":
+                    self.mood.escalate(PersonalityEnums.ANGER_PROFANITY.value, "middle_finger")
+                    # Publish grudge so attention model watches this person more
+                    face_data = obj.get("face", {})
+                    fid = face_data.get("face_id", "") if face_data else ""
+                    if fid and fid != "unknown":
+                        self.send_command(
+                            {"person_id": fid, "modifier": AttentionEnums.GRUDGE_ATTENTION_BONUS.value},
+                            MQTTEnums.PERSONALITY_MODIFIER_TOPIC.value)
+                elif g == "thumbs_up":
+                    self.mood.calm(PersonalityEnums.CALM_COMPLIMENT.value, "thumbs_up")
+                elif g == "thumbs_down":
+                    self.mood.escalate(1.0, "thumbs_down")
+
     def process_sight(self, seen: Dict[str, Any]) -> str:
         """Process sight results into a readable string with face identity and emotion.
+
+        Uses the room roster (from system/room MQTT) when available for richer
+        descriptions with persistent identity. Falls back to raw sight_results
+        when room roster is empty.
 
         Args:
             seen: A dictionary where keys are object types and values are
@@ -602,6 +651,24 @@ class GladosLocal(Thread, MQTTClient):
         Returns:
             A formatted string summarizing what is seen, including names and emotions.
         """
+        # If room roster is available, build description from it
+        room_context = self.get_room_context()
+        if room_context:
+            context: List[str] = ["You can see the following things in the room"]
+            context.append(room_context)
+            # Still process non-person objects from raw sight_results
+            for item in seen.keys():
+                if item == "person":
+                    continue  # handled by room roster
+                objects = seen[item].get("objects", [])
+                count = self.__adjust_count(objects)
+                if count > 0:
+                    context.append(f"{count} {item}")
+            # Still process gestures from raw sight_results (room roster doesn't carry these yet)
+            self._process_gestures(seen)
+            return ", ".join(context)
+
+        # Fallback: original logic using raw sight_results
         face_key = VisionResultsEnum.VISION_RESULTS_FACE_KEY.value
         face_id_key = VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value
         emotion_key = VisionResultsEnum.VISION_RESULTS_EMOTION_KEY.value
@@ -663,6 +730,133 @@ class GladosLocal(Thread, MQTTClient):
             else:
                 context.append(f"{count} {item}")
         return ", ".join(context)
+
+    def _handle_room_state(self, msg: Any) -> None:
+        """Handle room state updates from the GPU server via MQTT.
+
+        Detects arrivals and departures by diffing the incoming roster
+        against the known people set. Triggers greetings, mood changes,
+        and room count commentary.
+
+        Args:
+            msg: MQTT message with room state payload.
+        """
+        from json import loads
+        try:
+            data = loads(msg.payload.decode())
+        except Exception:
+            return
+
+        roster = data.get("roster", [])
+        arrivals = data.get("arrivals", [])
+        departures = data.get("departures", [])
+        count = data.get("count", 0)
+        now = time.time()
+
+        with self._room_lock:
+            self._room_roster = roster
+            self._room_count = count
+
+            # Process arrivals
+            for person_id in arrivals:
+                if person_id not in self._known_people:
+                    self._known_people.add(person_id)
+                    self._on_person_arrived(person_id, now)
+
+            # Process departures
+            for person_id in departures:
+                if person_id in self._known_people:
+                    self._known_people.discard(person_id)
+                    self._on_person_departed(person_id, now)
+
+            # Room count commentary
+            if (self._commentary_enabled and
+                    count >= PersonalityEnums.PARTY_THRESHOLD.value and
+                    (now - self._last_party_comment) > 60.0):
+                self._last_party_comment = now
+                self.logger.debug(f"ROOM_EVENT commentary: party ({count} people)")
+                Thread(target=self.speak,
+                       args=("Quite the gathering. I hope you're not planning anything.",),
+                       daemon=True).start()
+
+    def _on_person_arrived(self, person_id: str, now: float) -> None:
+        """Handle a new person arriving in the room.
+
+        Triggers a greeting (with cooldown) and mood adjustment.
+        Known faces get a named greeting, unknowns get slight anger.
+
+        Args:
+            person_id: The person_id from the room roster.
+            now: Current timestamp.
+        """
+        cooldown = PersonalityEnums.GREETING_COOLDOWN.value
+        last_greeted = self._greeting_timestamps.get(person_id, 0.0)
+
+        if (now - last_greeted) < cooldown:
+            self.logger.debug(f"ROOM_EVENT cooldown: {person_id} skip greeting")
+            return
+
+        self._greeting_timestamps[person_id] = now
+
+        if person_id.startswith("unknown_"):
+            # Unknown person — slight irritation
+            self.mood.escalate(PersonalityEnums.ANGER_UNKNOWN_ARRIVAL.value,
+                               f"unknown_arrival_{person_id}")
+            self.logger.debug(f"ROOM_EVENT arrival: {person_id} greeting=False (unknown)")
+        else:
+            # Known person — named greeting
+            self.logger.debug(f"ROOM_EVENT arrival: {person_id} greeting=True")
+            greeting = f"Oh, {person_id}. You again."
+            Thread(target=self.speak, args=(greeting,), daemon=True).start()
+
+    def _on_person_departed(self, person_id: str, now: float) -> None:
+        """Handle a person leaving the room.
+
+        Calms mood slightly and optionally makes a comment.
+
+        Args:
+            person_id: The person_id who left.
+            now: Current timestamp.
+        """
+        self.mood.calm(PersonalityEnums.CALM_PERSON_LEFT.value,
+                        f"person_left_{person_id}")
+        self.logger.debug(
+            f"ROOM_EVENT departure: {person_id} calm={PersonalityEnums.CALM_PERSON_LEFT.value}")
+
+        # Occasional departure comment
+        if self._commentary_enabled and random.random() < PersonalityEnums.DEPARTURE_COMMENT_CHANCE.value:
+            if not person_id.startswith("unknown_"):
+                comment = f"Good riddance, {person_id}."
+            else:
+                comment = "Good riddance."
+            self.logger.debug(f"ROOM_EVENT commentary: {comment}")
+            Thread(target=self.speak, args=(comment,), daemon=True).start()
+
+    def get_room_context(self) -> str:
+        """Build a room context string for GPT prompts.
+
+        Returns a description of who is in the room and how long they've
+        been there, for inclusion in the system prompt.
+
+        Returns:
+            Room context string, or empty string if no room data.
+        """
+        with self._room_lock:
+            if not self._room_roster:
+                return ""
+            people = []
+            for p in self._room_roster:
+                pid = p.get("person_id", "someone")
+                emotion = p.get("emotion", "neutral")
+                first_seen = p.get("first_seen", 0)
+                duration = time.time() - first_seen if first_seen else 0
+                if duration > 60:
+                    time_str = f"{int(duration / 60)} minutes"
+                else:
+                    time_str = f"{int(duration)} seconds"
+                emo_str = f", looking {emotion}" if emotion != "neutral" else ""
+                people.append(f"{pid} (here for {time_str}{emo_str})")
+            return f"People in the room: {', '.join(people)}."
 
     def __get_audio(self, response: str) -> Union[bytes, int]:
         """Get audio data for a text response using a remote voice service.
@@ -730,11 +924,16 @@ class GladosLocal(Thread, MQTTClient):
         self.logger.debug("Playing audio file")
         play(AudioSegment.from_file(io.BytesIO(data)))
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, to_person: str = None) -> None:
         """Convert text to speech and play the resulting audio.
+
+        After speaking, publishes the conversation partner to MQTT so the
+        attention model on the GPU server knows who GLaDOS is talking to.
 
         Args:
             text: The text to be spoken.
+            to_person: Optional person_id GLaDOS is addressing. If None,
+                uses the current attention target from room state.
         """
         if not self._tts_enabled:
             self.logger.debug(f"TTS disabled — would say: {text}")
@@ -743,6 +942,20 @@ class GladosLocal(Thread, MQTTClient):
         # Only play if valid audio data was returned.
         if isinstance(audio_data, bytes):
             self.__play_audio(audio_data)
+            # Publish conversation partner so attention model maintains gaze
+            partner = to_person
+            if not partner:
+                with self._room_lock:
+                    # Use first known person in roster as default partner
+                    for p in self._room_roster:
+                        pid = p.get("person_id", "")
+                        if pid and not pid.startswith("unknown_"):
+                            partner = pid
+                            break
+            if partner:
+                self.send_command(
+                    {"person_id": partner},
+                    MQTTEnums.ATTENTION_CONVERSATION_TOPIC.value)
 
     def __change_volume(self, level: int) -> None:
         """Change the system volume.

@@ -63,6 +63,9 @@ def _make_motion_track():
     mt._prev_body_ud_target = None
     mt._room_state = None
     mt._enable_room_state = False
+    mt._attention = None
+    mt._enable_attention = False
+    mt._last_attention_time = 0.0
     mt._last_tracked_world_lr = None
     mt._last_tracked_bbox_height = None
     mt._last_tracked_face_id = None
