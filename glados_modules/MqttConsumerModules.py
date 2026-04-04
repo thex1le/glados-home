@@ -430,11 +430,12 @@ class VisionTracker(MQTTClient):
                                     TrackingEnums.MQTT_COMMAND_TOPIC.value,
                                 )
                             elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
-                                if TrackingEnums.BODY_HEAD_CAMERA.value not in self.response_cache:
-                                    self.send_command(
-                                        TargetMessageBuilder.send_track_command_start(camera),
-                                        TrackingEnums.MQTT_COMMAND_TOPIC.value,
-                                    )
+                                # Side cameras always send track commands so room state stays fresh.
+                                # Servo driving is gated by side_can_drive_servos() in MotionTrack.
+                                self.send_command(
+                                    TargetMessageBuilder.send_track_command_start(camera),
+                                    TrackingEnums.MQTT_COMMAND_TOPIC.value,
+                                )
                         else:
                             self.logger.debug("Skipping update as last message was recently sent")
 

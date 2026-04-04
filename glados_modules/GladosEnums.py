@@ -521,6 +521,9 @@ class MotionProfile(Enum):
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
+    # IK rate limiting: max degrees body targets can change per frame
+    BODY_LR_MAX_STEP_DEG = 15.0
+    BODY_UD_MAX_STEP_DEG = 10.0
 
 
 class FusionEnums(Enum):
@@ -535,6 +538,7 @@ class FusionEnums(Enum):
     CONFIRMED_SMOOTH_ALPHA = 0.5       # tighter EMA when head + side cameras agree
     PREDICTION_LEAD_TIME = 0.75        # seconds to predict ahead for side cameras
     PREDICTION_MIN_VELOCITY = 15.0     # degrees/sec minimum to trigger prediction
+    SIDE_WORLD_SMOOTH_ALPHA = 0.6      # EMA alpha for fused side camera world angle smoothing
     PREDICTION_MAX_OFFSET = 15.0       # max degrees of pre-rotation
     PREDICTION_HISTORY_WINDOW = 1.0    # seconds of angle history for velocity estimate
 
@@ -594,6 +598,7 @@ class FeatureToggles(Enum):
     HANDOFF_BLENDING = "handoff_blending"
     MEMORY_GLANCES = "memory_glances"
     GESTURE_RECOGNITION = "gesture_recognition"
+    ROOM_STATE_ENABLED = "room_state_enabled"
     # Video recording
     RECORD_VIDEO = "record_video"
     RECORDING_PATH = "recording_path"
@@ -602,6 +607,18 @@ class FeatureToggles(Enum):
     MQTT_RECORDING_TOPIC = "system/recording"
     RECORDING_CMD_START = "start_recording"
     RECORDING_CMD_STOP = "stop_recording"
+
+
+class RoomStateEnums(Enum):
+    """Room state manager configuration and MQTT topics."""
+    MQTT_ROOM_TOPIC = "system/room"
+    DEPARTURE_TIMEOUT = 5.0            # seconds before person is considered gone
+    PUBLISH_INTERVAL = 1.0             # seconds between MQTT room state publishes
+    MATCH_SCORE_THRESHOLD = 0.5        # minimum score to match detection to existing person
+    MATCH_PROXIMITY_WEIGHT = 0.6       # weight for world_lr proximity in matching
+    MATCH_HEIGHT_WEIGHT = 0.3          # weight for bbox height similarity in matching
+    MATCH_CAMERA_WEIGHT = 0.1          # weight for camera overlap in matching
+    MATCH_PROXIMITY_MAX_DEG = 30.0     # degrees beyond which proximity score = 0
 
 
 class BehaviorEnums(Enum):

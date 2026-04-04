@@ -15,10 +15,11 @@ from glados_modules.GladosEnums import (CameraEnum, ServoEnum, SystemEnums,
                                         TrackingEnums, VisionResultsEnum, LoggingEnums,
                                         MotionProfile, TraceEnums, KinematicsEnums,
                                         FusionEnums, BehaviorEnums, FeatureToggles,
-                                        PersonalityEnums)
+                                        PersonalityEnums, RoomStateEnums)
 from glados_modules.RobotKinematics import RobotKinematics
 from glados_modules.MotionRecorder import MotionRecorder, build_frame_record
 from glados_modules.TraceLog import TraceLog
+from glados_modules.RoomStateManager import RoomStateManager
 
 
 class SpringDamperEstimator:
@@ -158,6 +159,27 @@ class CameraFusionState:
             return self._left_world_lr
         elif right_fresh:
             return self._right_world_lr
+        return None
+
+    def get_best_side_camera(self) -> str:
+        """Return the camera name that produced the best side detection, or None.
+
+        Uses the same freshness logic as get_best_side_world_lr but returns the
+        camera name string instead of the angle, for use with get_predicted_world_lr.
+        """
+        now = time.time()
+        staleness = FusionEnums.SIDE_CAMERA_STALENESS.value
+        left_fresh = (now - self._left_last_seen) < staleness if self._left_last_seen > 0 else False
+        right_fresh = (now - self._right_last_seen) < staleness if self._right_last_seen > 0 else False
+
+        if left_fresh and right_fresh:
+            if self._left_last_seen >= self._right_last_seen:
+                return CameraEnum.CAMERA_LEFT.value
+            return CameraEnum.CAMERA_RIGHT.value
+        elif left_fresh:
+            return CameraEnum.CAMERA_LEFT.value
+        elif right_fresh:
+            return CameraEnum.CAMERA_RIGHT.value
         return None
 
     def get_blended_world_lr(self, head_world_lr: float) -> float:
@@ -355,6 +377,11 @@ class MotionTrack(MQTTClient):
 
         # Camera fusion state machine
         self._fusion = CameraFusionState()
+        self._side_world_lr_smooth: float = None
+
+        # IK rate limiting (prevents body target oscillation between solver minima)
+        self._prev_body_lr_target: float = None
+        self._prev_body_ud_target: float = None
 
         # Last tracked target state for multi-person selection
         self._last_tracked_world_lr: float = None
@@ -385,6 +412,11 @@ class MotionTrack(MQTTClient):
                                          FeatureToggles.MOVEMENT_ENABLED.value)
         self._enable_idle_drift = _toggle(FeatureToggles.CONFIG_HEAD.value,
                                            FeatureToggles.IDLE_DRIFT_ENABLED.value)
+        self._enable_room_state = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                           FeatureToggles.ROOM_STATE_ENABLED.value)
+
+        # Room state manager (persistent room roster across frames/cameras)
+        self._room_state = RoomStateManager() if self._enable_room_state else None
 
         # Behavior state machine (active → idle → drowsy → asleep)
         self._behavior_state: str = BehaviorEnums.STATE_ACTIVE.value
@@ -619,6 +651,19 @@ class MotionTrack(MQTTClient):
         self.logger.debug(f"IK debug: world_lr={target_world_lr:.1f} world_ud={target_world_ud:.1f} "
                           f"-> body_lr={body_lr_target:.1f} head_lr={head_lr_target:.1f}")
 
+        # Rate-limit body IK output to prevent frame-to-frame oscillation
+        # between solver local minima (especially at steep pitch angles)
+        max_lr = MotionProfile.BODY_LR_MAX_STEP_DEG.value
+        max_ud = MotionProfile.BODY_UD_MAX_STEP_DEG.value
+        if self._prev_body_lr_target is not None:
+            delta = body_lr_target - self._prev_body_lr_target
+            body_lr_target = self._prev_body_lr_target + max(-max_lr, min(max_lr, delta))
+        if self._prev_body_ud_target is not None:
+            delta = body_ud_target - self._prev_body_ud_target
+            body_ud_target = self._prev_body_ud_target + max(-max_ud, min(max_ud, delta))
+        self._prev_body_lr_target = body_lr_target
+        self._prev_body_ud_target = body_ud_target
+
         # Clamp all to physical ranges
         # Add breathing oscillation to body_UD
         body_ud_target += self._get_breathing_offset()
@@ -766,6 +811,43 @@ class MotionTrack(MQTTClient):
         if self.debug_overlay_enabled:
             self._debug_overlay["state"] = self._behavior_state
 
+    def _drive_from_room_state(self) -> None:
+        """Single decision point for side-camera-driven servo movement.
+
+        Reads the fused room state (best of left/right side cameras),
+        applies EMA smoothing, computes world_ud from current FK pitch,
+        and issues one _update_targets() call. This replaces the previous
+        per-camera _update_targets() calls that caused oscillation when
+        both side cameras detected people simultaneously.
+        """
+        best_lr = self._fusion.get_best_side_world_lr()
+        if best_lr is None:
+            return
+
+        # Predictive rotation if enabled
+        if self._enable_predictive:
+            best_camera = self._fusion.get_best_side_camera()
+            if best_camera:
+                best_lr = self._fusion.get_predicted_world_lr(best_camera)
+
+        # EMA smoothing — dampens noise from fisheye distortion and bbox jitter
+        alpha = FusionEnums.SIDE_WORLD_SMOOTH_ALPHA.value
+        if self._side_world_lr_smooth is None:
+            self._side_world_lr_smooth = best_lr
+        else:
+            self._side_world_lr_smooth = alpha * self._side_world_lr_smooth + (1 - alpha) * best_lr
+
+        # Compute world_ud from current FK pitch (side cameras can't determine vertical)
+        current_angles = {
+            self.body_LR_name: self._get_estimated_position(self.body_LR_name),
+            self.body_UD_name: self._get_estimated_position(self.body_UD_name),
+            self.head_LR_name: self._get_estimated_position(self.head_LR_name),
+            self.head_UD_name: self._get_estimated_position(self.head_UD_name),
+        }
+        _, world_ud = self._kinematics.forward_kinematics(current_angles)
+
+        self._update_targets(self._side_world_lr_smooth, world_ud)
+
     def __select_target(self, seen_data: list, camera: str) -> dict:
         """Select the best target using human-like priority.
 
@@ -911,13 +993,32 @@ class MotionTrack(MQTTClient):
         if not best_target:
             return
 
+        # Update room roster with ALL detections from this camera (not just best target)
+        if self._room_state:
+            self._room_state.update_from_vision(
+                camera, target_data[self.objects],
+                lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
+
+            # Periodically publish room state and process arrivals/departures
+            if self._room_state.should_publish():
+                arrivals, departures = self._room_state.tick()
+                summary = self._room_state.get_room_summary()
+                summary["arrivals"] = arrivals
+                summary["departures"] = departures
+                self.send_command(summary, RoomStateEnums.MQTT_ROOM_TOPIC.value)
+                self._room_state.mark_published()
+                if arrivals or departures:
+                    self.logger.debug(
+                        f"ROOM_ROSTER publish: count={summary['count']} "
+                        f"arrivals={arrivals} departures={departures}")
+
         # Side cameras: always record world angle in fusion state (even during head tracking)
         if camera in (self.left_camera, self.right_camera):
             bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
             if bbox:
                 side_world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
                 bbox_cx = (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2
-                self.logger.info(f"Side raw: {camera} bbox_cx={bbox_cx:.0f} raw_world_lr={side_world_lr:.1f}")
+                self.logger.debug(f"Side raw: {camera} bbox_cx={bbox_cx:.0f} raw_world_lr={side_world_lr:.1f}")
                 self._fusion.update_side_detection(camera, side_world_lr,
                                                     target_data.get(self.count, 0))
 
@@ -925,6 +1026,7 @@ class MotionTrack(MQTTClient):
         if camera == self.main_camera:
             # Signal head detection to fusion state machine
             self._fusion.update_head_detection()
+            self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
 
             # Check for pose data (prefer nose point over bounding box)
             use_point = False
@@ -1038,30 +1140,10 @@ class MotionTrack(MQTTClient):
                 )
                 self._recorder.log_frame(record)
 
-        # Side cameras: drive servos through full IK when head camera is not tracking
+        # Side cameras: drive servos from fused room state (single decision point)
         elif camera in (self.left_camera, self.right_camera):
             if self._fusion.side_can_drive_servos():
-                bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
-                if bbox:
-                    # Use predicted angle if enabled, otherwise raw angle
-                    if self._enable_predictive:
-                        world_lr = self._fusion.get_predicted_world_lr(camera)
-                    else:
-                        world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
-                    # Use current body_UD as the UD target (side cameras don't provide vertical info)
-                    current_ud = self._get_estimated_position(self.body_UD_name)
-                    # Use the head camera's FK pitch if available, otherwise keep body UD stable
-                    current_angles = {
-                        self.body_LR_name: self._get_estimated_position(self.body_LR_name),
-                        self.body_UD_name: current_ud,
-                        self.head_LR_name: self._get_estimated_position(self.head_LR_name),
-                        self.head_UD_name: self._get_estimated_position(self.head_UD_name),
-                    }
-                    _, world_ud = self._kinematics.forward_kinematics(current_angles)
-                    self.logger.info(f"Side camera {camera}: world_lr={world_lr:.1f} world_ud={world_ud:.1f} "
-                                     f"bbox_cx={(bbox.get('x1',0)+bbox.get('x2',0))/2:.0f} "
-                                     f"predictive={self._enable_predictive} fusion={self._fusion.state}")
-                    self._update_targets(world_lr, world_ud)
+                self._drive_from_room_state()
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
         """Handle intensity messages."""
