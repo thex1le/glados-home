@@ -916,6 +916,8 @@ class MotionTrack(MQTTClient):
             bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
             if bbox:
                 side_world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
+                bbox_cx = (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2
+                self.logger.info(f"Side raw: {camera} bbox_cx={bbox_cx:.0f} raw_world_lr={side_world_lr:.1f}")
                 self._fusion.update_side_detection(camera, side_world_lr,
                                                     target_data.get(self.count, 0))
 
@@ -1056,6 +1058,9 @@ class MotionTrack(MQTTClient):
                         self.head_UD_name: self._get_estimated_position(self.head_UD_name),
                     }
                     _, world_ud = self._kinematics.forward_kinematics(current_angles)
+                    self.logger.info(f"Side camera {camera}: world_lr={world_lr:.1f} world_ud={world_ud:.1f} "
+                                     f"bbox_cx={(bbox.get('x1',0)+bbox.get('x2',0))/2:.0f} "
+                                     f"predictive={self._enable_predictive} fusion={self._fusion.state}")
                     self._update_targets(world_lr, world_ud)
 
     def handle_intensity(self, msg: MQTTMessage) -> None:
