@@ -518,9 +518,9 @@ class MotionProfile(Enum):
     DEFAULT_SERVO_CENTER = 90.0        # fallback center angle
     BREATHING_AMPLITUDE = 0.3          # degrees of body_UD oscillation
     BREATHING_FREQ = 0.2               # Hz (~12 breaths per minute)
-    # Camera mounting offsets (degrees from body center)
-    CAMERA_LEFT_MOUNTING_OFFSET = -55.0
-    CAMERA_RIGHT_MOUNTING_OFFSET = 55.0
+    # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
+    CAMERA_LEFT_MOUNTING_OFFSET = 55.0
+    CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
 
 
 class FusionEnums(Enum):

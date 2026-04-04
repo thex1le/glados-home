@@ -99,8 +99,9 @@ class TestMotionProfile:
     def test_camera_mounting_offsets_opposite(self):
         left = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
         right = MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
-        assert left < 0
-        assert right > 0
+        # FK yaw convention: positive = robot's left, negative = robot's right
+        assert left > 0   # left camera is to robot's left = positive yaw
+        assert right < 0  # right camera is to robot's right = negative yaw
         assert abs(left) == abs(right)  # symmetric
 
 
