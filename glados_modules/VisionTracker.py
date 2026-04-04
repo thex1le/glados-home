@@ -534,12 +534,12 @@ class MotionTrack(MQTTClient):
                 camera_world = pitch
         elif camera == CameraEnum.CAMERA_LEFT.value:
             # Side cameras are fixed to the ceiling mount — they don't rotate with the body.
-            # World angle is the servo's center (forward) plus the fixed mounting offset.
-            camera_world = self._servo_middles[self.body_LR_name] + MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
+            # Use FK-space yaw (0 = forward), not servo-space, so the IK interprets it correctly.
+            camera_world = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
         elif camera == CameraEnum.CAMERA_RIGHT.value:
-            camera_world = self._servo_middles[self.body_LR_name] + MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
+            camera_world = MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
         else:
-            camera_world = 90.0
+            camera_world = 0.0
 
         # World angle = where camera is pointing + offset from frame center
         world_angle = camera_world + angle_offset_deg

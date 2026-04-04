@@ -221,13 +221,13 @@ class TestSideCameraWorldAngle:
     should be constant regardless of body rotation.
     """
 
-    def _calc_side_world_angle(self, pixel_center, axis_size, mounting_offset, body_middle=90.0):
-        """Compute side camera world angle — should NOT depend on body position."""
+    def _calc_side_world_angle(self, pixel_center, axis_size, mounting_offset):
+        """Compute side camera world angle in FK-space (yaw=0 is forward)."""
         fov = 160.0  # side camera fisheye FOV
         offset = (axis_size / 2) - pixel_center
         focal = (axis_size / 2) / tan(radians(fov) / 2)
         angle_offset = degrees(atan(offset / focal))
-        camera_world = body_middle + mounting_offset  # fixed — no body_lr added
+        camera_world = mounting_offset  # FK-space: 0 = forward, offset = camera direction
         return camera_world + angle_offset
 
     def test_side_camera_ignores_body_position(self):
@@ -235,26 +235,26 @@ class TestSideCameraWorldAngle:
         mounting_offset = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
         bbox_center = 320  # center of 640px frame
         # Regardless of body position, the side camera angle should be the same
-        angle_at_60 = self._calc_side_world_angle(bbox_center, 640, mounting_offset, body_middle=90.0)
-        angle_at_120 = self._calc_side_world_angle(bbox_center, 640, mounting_offset, body_middle=90.0)
+        angle_at_60 = self._calc_side_world_angle(bbox_center, 640, mounting_offset)
+        angle_at_120 = self._calc_side_world_angle(bbox_center, 640, mounting_offset)
         assert angle_at_60 == pytest.approx(angle_at_120, abs=0.01)
 
     def test_left_camera_center_is_offset(self):
-        """Left camera center pixel should map to body_middle + left_offset."""
+        """Left camera center pixel should map to left mounting offset in FK-space."""
         angle = self._calc_side_world_angle(
             pixel_center=320, axis_size=640,
             mounting_offset=MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
         )
-        expected = 90.0 + MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value  # 90 + (-55) = 35
+        expected = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value  # -55
         assert angle == pytest.approx(expected, abs=0.5)
 
     def test_right_camera_center_is_offset(self):
-        """Right camera center pixel should map to body_middle + right_offset."""
+        """Right camera center pixel should map to right mounting offset in FK-space."""
         angle = self._calc_side_world_angle(
             pixel_center=320, axis_size=640,
             mounting_offset=MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
         )
-        expected = 90.0 + MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value  # 90 + 55 = 145
+        expected = MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value  # 55
         assert angle == pytest.approx(expected, abs=0.5)
 
 
