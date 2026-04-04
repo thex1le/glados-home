@@ -130,13 +130,14 @@ if [ "$SYSTEM" = "gpu" ]; then
     VENV_PYTHON=$(which python3)
     SITE_PACKAGES=$($VENV_PYTHON -c "import site; print(site.getsitepackages()[0])")
 
-    # Build deps for OpenCV
+    # Build deps for OpenCV + cuDNN for CUDA DNN backend
     sudo apt-get install -y \
         build-essential cmake git \
         libavcodec-dev libavformat-dev libswscale-dev \
         libv4l-dev libxvidcore-dev libx264-dev \
         libjpeg-dev libpng-dev libtiff-dev \
-        libatlas-base-dev gfortran python3-numpy
+        libatlas-base-dev gfortran python3-numpy \
+        libcudnn9-dev-cuda-12 libcudnn9-cuda-12
 
     # Remove pip opencv (conflicts with source build)
     pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
