@@ -601,6 +601,9 @@ class MotionTrack(MQTTClient):
         body_lr_target = body_targets[self.body_LR_name]
         body_ud_target = body_targets[self.body_UD_name]
 
+        self.logger.debug(f"IK debug: world_lr={target_world_lr:.1f} world_ud={target_world_ud:.1f} "
+                          f"-> body_lr={body_lr_target:.1f} head_lr={head_lr_target:.1f}")
+
         # Clamp all to physical ranges
         # Add breathing oscillation to body_UD
         body_ud_target += self._get_breathing_offset()
