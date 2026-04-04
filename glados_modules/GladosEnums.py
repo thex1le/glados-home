@@ -239,6 +239,11 @@ class VisionResultsEnum(Enum):
     KEYPOINT_DRAW_THRESHOLD = 0.5
     # Key used for class name in YOLO results
     YOLO_CLASS_NAME_KEY = "name"
+    # Gesture recognition keys
+    VISION_RESULTS_GESTURE_KEY = "gesture"
+    VISION_RESULTS_GESTURE_LEFT = "left_hand"
+    VISION_RESULTS_GESTURE_RIGHT = "right_hand"
+    VISION_RESULTS_GESTURE_CONFIDENCE = "gesture_confidence"
     # Face recognition keys
     VISION_RESULTS_FACE_KEY = "face"
     VISION_RESULTS_FACE_DETECTED_KEY = "detected"
@@ -588,6 +593,7 @@ class FeatureToggles(Enum):
     PERIPHERAL_CONFIRMATION = "peripheral_confirmation"
     HANDOFF_BLENDING = "handoff_blending"
     MEMORY_GLANCES = "memory_glances"
+    GESTURE_RECOGNITION = "gesture_recognition"
     # Video recording
     RECORD_VIDEO = "record_video"
     RECORDING_PATH = "recording_path"

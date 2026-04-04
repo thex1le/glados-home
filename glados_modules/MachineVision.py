@@ -163,6 +163,18 @@ class MLDetect(Thread, MQTTClient):
             self.logger.info("Face recognition disabled via config")
             self.face_recognition = None
 
+        # Gesture recognition from hand keypoints (head camera only)
+        gesture_enabled = configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.GESTURE_RECOGNITION.value,
+            fallback="True").strip().lower() == "true"
+        if gesture_enabled:
+            from glados_modules.GestureRecognition import GestureClassifier
+            self.gesture_classifier = GestureClassifier()
+            self.logger.info("Gesture recognition enabled")
+        else:
+            self.gesture_classifier = None
+
         # Video recording
         self._record_enabled = configfile.get(
             FeatureToggles.CONFIG_HEAD.value,
@@ -442,6 +454,29 @@ class MLDetect(Thread, MQTTClient):
                                     kpt_thr=self.kpt_threshold)
             # assign results to bounding boxes
             t_results = self.assign_key_points_to_response(t_results, key_points, scores)
+
+        # Gesture recognition from hand keypoints (head camera only)
+        gesture_key = VisionResultsEnum.VISION_RESULTS_GESTURE_KEY.value
+        pose_key = VisionResultsEnum.VISION_RESULTS_POSE_KEY.value
+        if self.gesture_classifier and camera_location == CameraEnum.CAMERA_HEAD.value:
+            person_key = VisionResultsEnum.VISION_RESULTS_PERSON_KEY.value
+            objects_key = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
+            for person in t_results.get(person_key, {}).get(objects_key, []):
+                if pose_key in person:
+                    gesture = self.gesture_classifier.classify(person[pose_key])
+                    person[gesture_key] = gesture
+                    # Annotate gesture on RTSP frame
+                    for hand_key in [VisionResultsEnum.VISION_RESULTS_GESTURE_LEFT.value,
+                                      VisionResultsEnum.VISION_RESULTS_GESTURE_RIGHT.value]:
+                        g = gesture.get(hand_key, "none")
+                        if g != "none":
+                            prefix = "Left_Hand" if "left" in hand_key else "Right_Hand"
+                            wrist = person[pose_key].get(f"{prefix}_Wrist", {})
+                            wx = int(wrist.get("x", 0))
+                            wy = int(wrist.get("y", 0))
+                            color = (0, 0, 255) if g == "middle_finger" else (0, 200, 255)
+                            cv2.putText(a_image, g, (wx, wy - 15),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         # Draw debug overlay with tracking state (top-right panel)
         if hasattr(self, 'motion_tracking') and self.motion_tracking.debug_overlay_enabled:

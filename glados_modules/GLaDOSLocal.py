@@ -635,6 +635,30 @@ class GladosLocal(Thread, MQTTClient):
                     desc = f"{count} person"
                 if emotions:
                     desc += f", they look {emotions[0]}"
+
+                # Check for gestures
+                gesture_key = VisionResultsEnum.VISION_RESULTS_GESTURE_KEY.value
+                for obj in objects:
+                    if obj.get("confidence", 0) < self.vision_confidence:
+                        continue
+                    gesture = obj.get(gesture_key, {})
+                    for hand in [VisionResultsEnum.VISION_RESULTS_GESTURE_LEFT.value,
+                                  VisionResultsEnum.VISION_RESULTS_GESTURE_RIGHT.value]:
+                        g = gesture.get(hand, "none")
+                        if g == "middle_finger":
+                            self.mood.escalate(
+                                PersonalityEnums.ANGER_PROFANITY.value, "middle_finger")
+                            desc += ", someone is flipping you off"
+                        elif g == "thumbs_up":
+                            self.mood.calm(
+                                PersonalityEnums.CALM_COMPLIMENT.value, "thumbs_up")
+                        elif g == "thumbs_down":
+                            self.mood.escalate(1.0, "thumbs_down")
+                        elif g == "wave":
+                            desc += ", someone is waving"
+                        elif g == "point":
+                            desc += ", someone is pointing"
+
                 context.append(desc)
             else:
                 context.append(f"{count} {item}")
