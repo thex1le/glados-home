@@ -117,11 +117,85 @@ fi
 
 pip install -r "$PIP_REQUIREMENTS"
 
-# --- Rebuild OpenCV with GStreamer support (GPU server) ---
+# --- Build OpenCV from source with GStreamer + CUDA (GPU server) ---
 if [ "$SYSTEM" = "gpu" ]; then
     echo ""
-    echo "--- Rebuilding OpenCV with GStreamer support ---"
-    pip install --no-binary opencv-python opencv-python
+    echo "--- Building OpenCV from source with GStreamer + CUDA ---"
+    echo "  This enables nvh264dec GPU decode for RTSP camera streams."
+    echo "  Takes 30-60 minutes. Grab a coffee."
+    echo ""
+
+    OPENCV_VERSION="4.13.0"
+    BUILD_DIR="/tmp/opencv_build"
+    VENV_PYTHON=$(which python3)
+    SITE_PACKAGES=$($VENV_PYTHON -c "import site; print(site.getsitepackages()[0])")
+
+    # Build deps for OpenCV
+    sudo apt-get install -y \
+        build-essential cmake git \
+        libavcodec-dev libavformat-dev libswscale-dev \
+        libv4l-dev libxvidcore-dev libx264-dev \
+        libjpeg-dev libpng-dev libtiff-dev \
+        libatlas-base-dev gfortran python3-numpy
+
+    # Remove pip opencv (conflicts with source build)
+    pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
+
+    # Clone OpenCV source
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR"
+    git clone --depth 1 --branch "$OPENCV_VERSION" https://github.com/opencv/opencv.git
+    git clone --depth 1 --branch "$OPENCV_VERSION" https://github.com/opencv/opencv_contrib.git
+
+    # Configure with GStreamer + CUDA
+    mkdir -p opencv/build
+    cd opencv/build
+    cmake .. \
+        -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D OPENCV_EXTRA_MODULES_PATH="$BUILD_DIR/opencv_contrib/modules" \
+        -D PYTHON3_EXECUTABLE="$VENV_PYTHON" \
+        -D PYTHON3_INCLUDE_DIR=$($VENV_PYTHON -c "import sysconfig; print(sysconfig.get_path('include'))") \
+        -D PYTHON3_PACKAGES_PATH="$SITE_PACKAGES" \
+        -D BUILD_opencv_python3=ON \
+        -D WITH_GSTREAMER=ON \
+        -D WITH_CUDA=ON \
+        -D CUDA_ARCH_BIN=8.9 \
+        -D WITH_CUDNN=ON \
+        -D OPENCV_DNN_CUDA=ON \
+        -D ENABLE_FAST_MATH=ON \
+        -D CUDA_FAST_MATH=ON \
+        -D WITH_CUBLAS=ON \
+        -D WITH_FFMPEG=ON \
+        -D WITH_V4L=ON \
+        -D WITH_OPENGL=ON \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_PERF_TESTS=OFF \
+        -D BUILD_EXAMPLES=OFF \
+        -D BUILD_opencv_java=OFF \
+        -D BUILD_opencv_apps=OFF
+
+    # Build and install
+    NPROC=$(nproc)
+    echo "Building with $NPROC cores..."
+    make -j"$NPROC"
+    sudo make install
+    sudo ldconfig
+
+    # Verify
+    echo ""
+    echo "--- OpenCV build verification ---"
+    $VENV_PYTHON -c "
+import cv2
+print(f'OpenCV version: {cv2.__version__}')
+info = cv2.getBuildInformation()
+for line in info.split('\n'):
+    ll = line.strip().lower()
+    if any(k in ll for k in ['gstreamer', 'cuda', 'ffmpeg']):
+        print(f'  {line.strip()}')
+"
+    cd "$OLDPWD"
 fi
 
 # --- Dev/test dependencies (all systems) ---
