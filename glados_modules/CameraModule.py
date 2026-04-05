@@ -68,6 +68,8 @@ class Camera(Process):
         self.cap = None
         self.stop_flag = False
         self.rtsp_server = None
+        # Hardware H.264 encoding (Pi4 bcm2835 V4L2 codec)
+        self._hw_encode = cam_conf.get(CameraEnum.HW_ENCODE.value, "false").strip().lower() == "true"
         # Per-camera 180 degree flip (for upside-down mounted cameras)
         flip_key = f"{self.location}_flip"
         self._flip_180 = cam_conf.get(flip_key, "False").strip().lower() == "true"
@@ -89,7 +91,7 @@ class Camera(Process):
 
         self.logger.debug(f"Starting Camera process for {self.location}")
         self.logger.debug("Initializing RTSP Server...")
-        self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port)
+        self.rtsp_server = RTSPServer(self.cam_configs, port=self.rtsp_port, hw_encode=self._hw_encode)
 
         consecutive_failures = 0
         max_failures = 50
@@ -247,6 +249,7 @@ class Camera(Process):
         new_cam.stop_flag = False
         new_cam.rtsp_server = None
         new_cam._flip_180 = self._flip_180
+        new_cam._hw_encode = self._hw_encode
         new_cam.logger = self.logger
         return new_cam
 

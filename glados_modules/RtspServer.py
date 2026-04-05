@@ -12,7 +12,7 @@ from glados_modules.GladosEnums import CameraEnum, LoggingEnums
 
 
 class RtspSystem(GstRtspServer.RTSPMediaFactory):
-    def __init__(self, cam_x, cam_y, fps=30, **properties):
+    def __init__(self, cam_x, cam_y, fps=30, hw_encode=False, **properties):
         super(RtspSystem, self).__init__(**properties)
         self.cam_x = int(cam_x)
         self.cam_y = int(cam_y)
@@ -21,19 +21,32 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
         self.number_frames = 0
         self._cached_bytes = None
         self._new_frame = False
-        # TODO figure out how to do hardware encoding
-        # TODO figure out how to do hardware encoding
         # block=true keeps the pipeline alive (GStreamer keeps calling on_need_data).
         # We gate pushes with _new_frame so only actual new frames get encoded.
         # queue max-size-buffers=1 leaky=downstream between appsrc and encoder
         # drops old frames if the encoder falls behind (prevents latency buildup).
-        self.launch_string = ('appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
-                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 '
-                              '! queue max-size-buffers=1 leaky=downstream '
-                              '! videoconvert ! video/x-raw,format=I420 '
-                              '! x264enc speed-preset=ultrafast tune=zerolatency '
-                              '! rtph264pay config-interval=0 name=pay0 pt=96'.format(
-                                  self.cam_x, self.cam_y, fps))
+        if hw_encode:
+            # Pi4 hardware H.264 encoding via bcm2835 V4L2 codec (/dev/video11)
+            # Requires: bcm2835_codec kernel module, v4l2h264enc GStreamer element
+            # Input: BGR from OpenCV → videoconvert to I420 → hardware encode
+            self.launch_string = (
+                'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
+                'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 '
+                '! queue max-size-buffers=1 leaky=downstream '
+                '! videoconvert ! video/x-raw,format=I420 '
+                '! v4l2h264enc ! video/x-h264,level=(string)4 ! h264parse '
+                '! rtph264pay config-interval=1 name=pay0 pt=96'.format(
+                    self.cam_x, self.cam_y, fps))
+        else:
+            # Software H.264 encoding (CPU-based, works everywhere)
+            self.launch_string = (
+                'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
+                'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 '
+                '! queue max-size-buffers=1 leaky=downstream '
+                '! videoconvert ! video/x-raw,format=I420 '
+                '! x264enc speed-preset=ultrafast tune=zerolatency '
+                '! rtph264pay config-interval=0 name=pay0 pt=96'.format(
+                    self.cam_x, self.cam_y, fps))
 
     def send_data(self, data):
         with self.data_lock:
@@ -71,10 +84,11 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
 
 
 class RTSPServer(GstRtspServer.RTSPServer):
-    def __init__(self, cam_configs, port=8554, **properties):
+    def __init__(self, cam_configs, port=8554, hw_encode=False, **properties):
         super(RTSPServer, self).__init__(**properties)
         self.logger = setup_logger(name=self.__class__.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.set_service(str(port))
+        self._hw_encode = hw_encode
         Gst.init(None)
         self.factories = {}
         self._initialize_factories(cam_configs)
@@ -92,7 +106,8 @@ class RTSPServer(GstRtspServer.RTSPServer):
         mount_points = self.get_mount_points()
         for factory_path in cam_configs.keys():
             (cam_x, cam_y) = cam_configs[factory_path][CameraEnum.MSG_RESOLUTION.value]
-            rtsp_system = RtspSystem(cam_x, cam_y, int(cam_configs[factory_path][CameraEnum.MSG_FPS.value]))
+            rtsp_system = RtspSystem(cam_x, cam_y, int(cam_configs[factory_path][CameraEnum.MSG_FPS.value]),
+                                     hw_encode=self._hw_encode)
             rtsp_system.set_shared(True)
             factory_path = self.path_fixup(factory_path)
             mount_points.add_factory(factory_path, rtsp_system)
