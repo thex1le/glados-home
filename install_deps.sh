@@ -68,6 +68,7 @@ case "$SYSTEM" in
             python3-picamera2
             libatlas-base-dev
             i2c-tools
+            libcap-dev
             # OpenCV source build deps (GStreamer support)
             build-essential
             cmake
@@ -95,6 +96,7 @@ case "$SYSTEM" in
             libasound2-dev
             portaudio19-dev
             ffmpeg
+            libcap-dev
             # OpenCV source build deps (GStreamer support)
             build-essential
             cmake
