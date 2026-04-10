@@ -321,13 +321,11 @@ class RTSPFrameGrabber:
                     cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                     if not cap.isOpened():
                         # Fall back to FFmpeg with plain RTSP URL (Pi4/Pi5 without GStreamer OpenCV)
-                        # Low-latency flags: fflags nobuffer, rtsp_transport tcp, max_delay 0
-                        ffmpeg_uri = (f"rtsp://127.0.0.1{self.uri.split('localhost')[1]}"
-                                      if "localhost" in self.uri else self.uri)
+                        # Set low-latency flags before opening
                         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                            "rtsp_transport;tcp|fflags;nobuffer|max_delay;0|"
-                            "analyzeduration;0|probesize;32768")
-                        cap = cv2.VideoCapture(ffmpeg_uri, cv2.CAP_FFMPEG)
+                            "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|"
+                            "max_delay;0|analyzeduration;0|probesize;32768")
+                        cap = cv2.VideoCapture(self.uri, cv2.CAP_FFMPEG)
                         if cap.isOpened():
                             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
