@@ -2,7 +2,7 @@
 import os
 import subprocess
 from multiprocessing import Process
-from threading import Thread
+from threading import Thread, Lock
 from time import sleep, time
 
 # 3rd party import
@@ -70,6 +70,8 @@ class Camera(Process):
         self.rtsp_server = None
         # Hardware H.264 encoding (Pi4 bcm2835 V4L2 codec)
         self._hw_encode = cam_conf.get(CameraEnum.HW_ENCODE.value, "false").strip().lower() == "true"
+        # Camera pixel format: RGB888 (default, ready for OpenCV) or YUV420 (native, less ISP work)
+        self._camera_format = cam_conf.get(CameraEnum.CAMERA_FORMAT.value, "RGB888").strip()
         # Per-camera 180 degree flip (for upside-down mounted cameras)
         flip_key = f"{self.location}_flip"
         self._flip_180 = cam_conf.get(flip_key, "False").strip().lower() == "true"
@@ -88,6 +90,9 @@ class Camera(Process):
         self._mqtt = MQTTClient(self._broker_ip, self._broker_port)
         status = CameraMessageBuilder.send_status(self.location, f"Camera RAW {self.location} Started")
         self._mqtt.send_command(status, CameraEnum.MQTT_STATUS_TOPIC.value)
+
+        # Lock protecting self.cap — prevents race between capture loop and watchdog
+        self._cam_lock = Lock()
 
         self.logger.debug(f"Starting Camera process for {self.location}")
         self.logger.debug("Initializing RTSP Server...")
@@ -140,14 +145,15 @@ class Camera(Process):
                         self.logger.info("Watchdog: resetting kernel camera module...")
                         self._reset_camera_kernel_module()
                         sleep(3.0)
-                        # Reinit camera (old cap is dead, just overwrite it)
-                        self.cap = None
-                        try:
-                            self.__init_camera()
-                            self._watchdog_last_frame = time()
-                            self.logger.info("Watchdog: camera restarted after kernel reset")
-                        except Exception as e:
-                            self.logger.error(f"Watchdog: reinit failed: {e}")
+                        # Reinit camera under lock (prevents race with capture loop)
+                        with self._cam_lock:
+                            self.cap = None
+                            try:
+                                self.__init_camera()
+                                self._watchdog_last_frame = time()
+                                self.logger.info("Watchdog: camera restarted after kernel reset")
+                            except Exception as e:
+                                self.logger.error(f"Watchdog: reinit failed: {e}")
                     else:
                         # Kernel reset didn't help, hard exit for respawn
                         self.logger.error("Watchdog: all restarts failed, forcing process exit")
@@ -159,20 +165,23 @@ class Camera(Process):
             while not self.stop_flag:
                 try:
                     t0 = time()
-                    frame = self.__capture_frame()
+                    with self._cam_lock:
+                        frame = self.__capture_frame()
                     t_capture = time() - t0
 
                     if frame is None:
                         consecutive_failures += 1
                         if consecutive_failures >= max_failures:
-                            self.logger.warning(f"{consecutive_failures} consecutive capture failures, restarting camera...")
-                            self.__restart_camera()
+                            self.logger.warning(
+                                f"{consecutive_failures} failures — waiting for watchdog to handle restart")
                             consecutive_failures = 0
-                            self._watchdog_last_frame = time()
+                            sleep(1.0)
                         else:
                             sleep(0.1)
                         continue
                     consecutive_failures = 0
+                    # Update watchdog BEFORE RTSP send — if send stalls due to
+                    # GStreamer backpressure, the watchdog won't falsely blame the camera
                     self._watchdog_last_frame = time()
 
                     t1 = time()
@@ -199,8 +208,8 @@ class Camera(Process):
                     self.logger.error(f"Camera loop error: {e}")
                     consecutive_failures += 1
                     if consecutive_failures >= max_failures:
-                        self.logger.warning("Too many errors, restarting camera...")
-                        self.__restart_camera()
+                        self.logger.warning(
+                            f"Camera loop: {consecutive_failures} errors — waiting for watchdog")
                         consecutive_failures = 0
                     sleep(0.1)
         finally:
@@ -250,6 +259,7 @@ class Camera(Process):
         new_cam.rtsp_server = None
         new_cam._flip_180 = self._flip_180
         new_cam._hw_encode = self._hw_encode
+        new_cam._camera_format = self._camera_format
         new_cam.logger = self.logger
         return new_cam
 
@@ -260,42 +270,48 @@ class Camera(Process):
         """
         # If using Picamera2:
         self.logger.debug(f"Configuring PiCamera2 for {self.location} at {self.cam_res_x}x{self.cam_res_y}, "
-                          f"{self.fps} FPS")
+                          f"{self.fps} FPS, format={self._camera_format}")
         cam_num = self.cam_configs[self.location][CameraEnum.MSG_CAMERA_NUMBER.value]
         self.cap = Picamera2(cam_num)
-        # Create configuration for raw capture
+        # Create configuration — RGB888 is ready for OpenCV/GStreamer BGR pipeline,
+        # YUV420 is the camera's native format (less ISP work, needs cvtColor)
         video_config = self.cap.create_video_configuration(
-            main={"size": (self.cam_res_x, self.cam_res_y), "format": "RGB888"},
+            main={"size": (self.cam_res_x, self.cam_res_y), "format": self._camera_format},
             controls={"FrameRate": self.fps})
         self.cap.configure(video_config)
         # Start the camera. We'll capture frames via self.cap.capture_array.
         self.cap.start()
+        # Let ISP pipeline stabilize (auto-exposure, white balance) before first capture.
+        # Without this delay, the first few capture_array() calls may fail or return garbage.
+        sleep(0.5)
 
     def __restart_camera(self):
         """Tear down and reinitialize the camera after failures."""
         self.logger.info(f"Restarting camera {self.location}...")
-        try:
-            if self.cap:
-                self.cap.stop()
-                self.cap.close()
-        except Exception as e:
-            self.logger.error(f"Error stopping camera during restart: {e}")
-        self.cap = None
+        with self._cam_lock:
+            try:
+                if self.cap:
+                    self.cap.stop()
+                    self.cap.close()
+            except Exception as e:
+                self.logger.error(f"Error stopping camera during restart: {e}")
+            self.cap = None
         sleep(2.0)
-        try:
-            self.__init_camera()
-            self.logger.info(f"Camera {self.location} restarted successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to restart camera: {e}")
-            self.logger.info("Attempting kernel camera module reset...")
-            self._reset_camera_kernel_module()
-            sleep(3.0)
+        with self._cam_lock:
             try:
                 self.__init_camera()
-                self.logger.info(f"Camera {self.location} restarted after kernel reset")
-            except Exception as e2:
-                self.logger.error(f"Camera restart failed even after kernel reset: {e2}")
-                sleep(5.0)
+                self.logger.info(f"Camera {self.location} restarted successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to restart camera: {e}")
+                self.logger.info("Attempting kernel camera module reset...")
+                self._reset_camera_kernel_module()
+                sleep(3.0)
+                try:
+                    self.__init_camera()
+                    self.logger.info(f"Camera {self.location} restarted after kernel reset")
+                except Exception as e2:
+                    self.logger.error(f"Camera restart failed even after kernel reset: {e2}")
+                    sleep(5.0)
 
     @staticmethod
     def _reset_camera_kernel_module() -> None:
@@ -346,13 +362,19 @@ class Camera(Process):
     def __capture_frame(self):
         """Capture a single frame using PiCamera2.
 
-        Detects hangs by checking if time since last successful capture
-        exceeds CAPTURE_TIMEOUT. The actual timeout detection and restart
-        is handled in the main loop.
+        Returns BGR frame for OpenCV/GStreamer pipeline. If camera format
+        is YUV420, converts to BGR. If RGB888, Picamera2 returns BGR directly
+        (despite the name, RGB888 in Picamera2 outputs BGR for OpenCV compat).
         """
         try:
+            if self.cap is None:
+                return None
             frame = self.cap.capture_array("main")
-            if frame is not None and self._flip_180:
+            if frame is None:
+                return None
+            if self._camera_format == "YUV420":
+                frame = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_I420)
+            if self._flip_180:
                 frame = cv2.rotate(frame, cv2.ROTATE_180)
             return frame
         except Exception as e:

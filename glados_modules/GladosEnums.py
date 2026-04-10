@@ -750,6 +750,7 @@ class CameraEnum(Enum):
     CAMERA_LEFT_FACTORY = f"{CAMERA_LEFT}_{MSG_FACTORY}"
     CAMERA_RIGHT_FACTORY = f"{CAMERA_RIGHT}_{MSG_FACTORY}"
     HW_ENCODE = "hw_encode"
+    CAMERA_FORMAT = "camera_format"       # RGB888 (default) or YUV420
     CAMERA_HEAD_PORT = f"{CAMERA_HEAD}_rtsp_port"
     CAMERA_RIGHT_PORT = f"{CAMERA_RIGHT}_rtsp_port"
     CAMERA_LEFT_PORT = f"{CAMERA_LEFT}_rtsp_port"

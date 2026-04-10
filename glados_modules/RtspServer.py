@@ -49,9 +49,12 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
                     self.cam_x, self.cam_y, fps))
 
     def send_data(self, data):
+        # Convert outside lock — tobytes() is CPU-bound (~15ms for 640x480 RGB)
+        # and shouldn't block GStreamer's on_need_data callback
+        frame_bytes = data.tobytes() if data is not None else None
         with self.data_lock:
             self.data = data
-            self._cached_bytes = data.tobytes() if data is not None else None
+            self._cached_bytes = frame_bytes
             self._new_frame = True
 
     def start(self):
