@@ -315,7 +315,7 @@ fi
 # --- Dev/test dependencies (all systems) ---
 echo ""
 echo "--- Installing test dependencies ---"
-pip install pytest flexmock cachetools regex flask requests
+pip install pytest flexmock cachetools regex flask requests pyaudio
 
 # --- MQTT broker setup (GPU server only) ---
 if [ "$SYSTEM" = "gpu" ]; then

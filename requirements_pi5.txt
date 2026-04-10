@@ -22,6 +22,7 @@ pillow
 # Voice / audio
 pydub
 pyalsaaudio                      # ALSA mixer control
+pyaudio                          # microphone input for SpeechRecognition
 SpeechRecognition
 regex                            # fuzzy regex for wake word matching
 
