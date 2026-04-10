@@ -68,6 +68,20 @@ case "$SYSTEM" in
             python3-picamera2
             libatlas-base-dev
             i2c-tools
+            # OpenCV source build deps (GStreamer support)
+            build-essential
+            cmake
+            git
+            libavcodec-dev
+            libavformat-dev
+            libswscale-dev
+            libv4l-dev
+            libjpeg-dev
+            libpng-dev
+            libtiff-dev
+            python3-numpy
+            libgstreamer1.0-dev
+            libgstreamer-plugins-base1.0-dev
         )
         PIP_REQUIREMENTS="requirements_pi4.txt"
         ;;
@@ -81,6 +95,20 @@ case "$SYSTEM" in
             libasound2-dev
             portaudio19-dev
             ffmpeg
+            # OpenCV source build deps (GStreamer support)
+            build-essential
+            cmake
+            git
+            libavcodec-dev
+            libavformat-dev
+            libswscale-dev
+            libv4l-dev
+            libjpeg-dev
+            libpng-dev
+            libtiff-dev
+            python3-numpy
+            libgstreamer1.0-dev
+            libgstreamer-plugins-base1.0-dev
         )
         PIP_REQUIREMENTS="requirements_pi5.txt"
         ;;
@@ -118,10 +146,8 @@ fi
 pip install -r "$PIP_REQUIREMENTS"
 
 # Remove pip opencv packages that might have been pulled in as dependencies
-# (ultralytics, rtmlib require opencv-python but we build from source)
-if [ "$SYSTEM" = "gpu" ]; then
-    pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
-fi
+# We build OpenCV from source with GStreamer on all systems
+pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
 
 # --- Build OpenCV from source with GStreamer + CUDA (GPU server) ---
 if [ "$SYSTEM" = "gpu" ]; then
@@ -202,6 +228,73 @@ info = cv2.getBuildInformation()
 for line in info.split('\n'):
     ll = line.strip().lower()
     if any(k in ll for k in ['gstreamer', 'cuda', 'ffmpeg']):
+        print(f'  {line.strip()}')
+"
+    cd "$OLDPWD"
+fi
+
+# --- Build OpenCV from source with GStreamer (Pi4/Pi5) ---
+if [ "$SYSTEM" = "pi4" ] || [ "$SYSTEM" = "pi5" ]; then
+    echo ""
+    echo "--- Building OpenCV from source with GStreamer ---"
+    echo "  This enables GStreamer decode/encode for RTSP camera streams."
+    echo "  Takes 1-3 hours on Pi. Go do something else."
+    echo ""
+
+    OPENCV_VERSION="4.13.0"
+    BUILD_DIR="/tmp/opencv_build"
+    VENV_PYTHON=$(which python3)
+    SITE_PACKAGES=$($VENV_PYTHON -c "import site; print(site.getsitepackages()[0])")
+
+    # Remove pip opencv (conflicts with source build)
+    pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
+
+    # Clone OpenCV source
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR"
+    git clone --depth 1 --branch "$OPENCV_VERSION" https://github.com/opencv/opencv.git
+    git clone --depth 1 --branch "$OPENCV_VERSION" https://github.com/opencv/opencv_contrib.git
+
+    # Configure with GStreamer + FFmpeg (no CUDA on Pi)
+    mkdir -p opencv/build
+    cd opencv/build
+    cmake .. \
+        -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D OPENCV_EXTRA_MODULES_PATH="$BUILD_DIR/opencv_contrib/modules" \
+        -D PYTHON3_EXECUTABLE="$VENV_PYTHON" \
+        -D PYTHON3_INCLUDE_DIR=$($VENV_PYTHON -c "import sysconfig; print(sysconfig.get_path('include'))") \
+        -D PYTHON3_PACKAGES_PATH="$SITE_PACKAGES" \
+        -D BUILD_opencv_python3=ON \
+        -D WITH_GSTREAMER=ON \
+        -D WITH_FFMPEG=ON \
+        -D WITH_V4L=ON \
+        -D WITH_CUDA=OFF \
+        -D WITH_OPENGL=OFF \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_PERF_TESTS=OFF \
+        -D BUILD_EXAMPLES=OFF \
+        -D BUILD_opencv_java=OFF \
+        -D BUILD_opencv_apps=OFF
+
+    # Build — use all cores but limit memory pressure with MAKEFLAGS
+    NPROC=$(nproc)
+    echo "Building with $NPROC cores..."
+    make -j"$NPROC"
+    sudo make install
+    sudo ldconfig
+
+    # Verify
+    echo ""
+    echo "--- OpenCV build verification ---"
+    $VENV_PYTHON -c "
+import cv2
+print(f'OpenCV version: {cv2.__version__}')
+info = cv2.getBuildInformation()
+for line in info.split('\n'):
+    ll = line.strip().lower()
+    if any(k in ll for k in ['gstreamer', 'ffmpeg', 'v4l']):
         print(f'  {line.strip()}')
 "
     cd "$OLDPWD"
