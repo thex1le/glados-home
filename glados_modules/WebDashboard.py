@@ -27,6 +27,7 @@ Usage:
     )
 """
 
+import os
 import time
 import cv2
 import numpy as np
@@ -312,16 +313,23 @@ class RTSPFrameGrabber:
             try:
                 if cap is None or not cap.isOpened():
                     # Try GStreamer pipeline first (GPU server has GStreamer-enabled OpenCV)
-                    gst_uri = (f"rtspsrc location={self.uri} latency=200 "
+                    # latency=0 and drop=true minimize decode buffering
+                    gst_uri = (f"rtspsrc location={self.uri} latency=0 "
                                f"tcp-timeout=5000000 timeout=5000000 ! "
                                f"rtph264depay ! h264parse ! avdec_h264 ! "
                                f"videoconvert ! appsink drop=true max-buffers=1 sync=false")
                     cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                     if not cap.isOpened():
                         # Fall back to FFmpeg with plain RTSP URL (Pi4/Pi5 without GStreamer OpenCV)
-                        # Set timeouts via environment to prevent 30s hangs
-                        cap = cv2.VideoCapture(self.uri, cv2.CAP_FFMPEG)
+                        # Low-latency flags: fflags nobuffer, rtsp_transport tcp, max_delay 0
+                        ffmpeg_uri = (f"rtsp://127.0.0.1{self.uri.split('localhost')[1]}"
+                                      if "localhost" in self.uri else self.uri)
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                            "rtsp_transport;tcp|fflags;nobuffer|max_delay;0|"
+                            "analyzeduration;0|probesize;32768")
+                        cap = cv2.VideoCapture(ffmpeg_uri, cv2.CAP_FFMPEG)
                         if cap.isOpened():
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
                             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
                     if not cap.isOpened():

@@ -56,9 +56,10 @@ class RtspConsumer:
             f"cudadownload ! "
             f"videoconvert ! video/x-raw,format=BGR ! "
             f"appsink drop=true max-buffers=1 sync=false emit-signals=false")
-        # Pipeline 3: Software decode (matches dashboard pipeline)
+        # Pipeline 3: Software decode fallback (low-latency to match hw pipelines)
         gst_sw = (
-            f"rtspsrc location={self.rtsp_uri} latency=200 ! "
+            f"rtspsrc location={self.rtsp_uri} latency=0 ! "
+            f"rtpjitterbuffer drop-on-latency=true ! "
             f"rtph264depay ! h264parse ! avdec_h264 ! "
             f"videoconvert ! video/x-raw,format=BGR ! "
             f"appsink drop=true max-buffers=1 sync=false")
