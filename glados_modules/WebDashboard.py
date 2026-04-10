@@ -289,6 +289,8 @@ class RTSPFrameGrabber:
         self.frame_time: float = 0.0
         self.lock = Lock()
         self._running = True
+        self.logger = setup_logger(name=f"RTSPGrabber_{uri.split('/')[-1]}",
+                                    console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self._thread = Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
 
@@ -309,14 +311,19 @@ class RTSPFrameGrabber:
         while self._running:
             try:
                 if cap is None or not cap.isOpened():
-                    # RTSP server uses x264enc + rtph264pay, so decode with H.264
-                    gst_uri = (f"rtspsrc location={self.uri} latency=200 ! "
+                    # Decode H.264 RTSP stream (works with both x264enc and v4l2h264enc)
+                    # tcp-timeout and timeout prevent hanging for 30s on dead streams
+                    gst_uri = (f"rtspsrc location={self.uri} latency=200 "
+                               f"tcp-timeout=5000000 timeout=5000000 ! "
                                f"rtph264depay ! h264parse ! avdec_h264 ! "
                                f"videoconvert ! appsink drop=true max-buffers=1 sync=false")
                     cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                     if not cap.isOpened():
-                        # Fall back to default backend
+                        # Fall back to default backend with 5s timeout
                         cap = cv2.VideoCapture(self.uri)
+                        if cap.isOpened():
+                            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+                            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
                     if not cap.isOpened():
                         self._safe_release(cap)
                         cap = None
@@ -324,15 +331,22 @@ class RTSPFrameGrabber:
                         backoff = min(backoff * 1.5, max_backoff)
                         continue
                     backoff = 2.0  # reset on successful connect
+                    last_frame_time = time.time()
                 ret, frame = cap.read()
                 if ret:
                     with self.lock:
                         self.frame = frame
                         self.frame_time = time.time()
+                    last_frame_time = time.time()
                 else:
-                    self._safe_release(cap)
-                    cap = None
-                    time.sleep(1)
+                    # Check if stream went stale (connected but no frames)
+                    if time.time() - last_frame_time > 5.0:
+                        self.logger.debug(f"RTSP grabber: no frames for 5s, reconnecting {self.uri}")
+                        self._safe_release(cap)
+                        cap = None
+                        time.sleep(1)
+                        continue
+                    time.sleep(0.1)  # brief pause before retry, don't spin
             except Exception:
                 self._safe_release(cap)
                 cap = None
