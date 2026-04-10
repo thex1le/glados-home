@@ -61,30 +61,14 @@ if __name__ == "__main__":
     health.register("MLDetect", mv)
     health.register("AudioRX", stt_audio_rx)
     health.start()
-    # Start web dashboard (GPU: direct buffer for annotated + RTSP consumer for raw)
-    # Build annotated feeds from direct frame buffer
+    # Start web dashboard (GPU: direct buffer for both annotated + raw feeds)
+    # MachineVision stores both annotated and raw frames in RTSPServer buffer,
+    # so we use direct buffer access for all feeds — no RTSP round-trip needed.
     ai_feeds = {}
     for cam_name in mv.cam_configs.keys():
         label = cam_name.replace("camera_", "").replace("_", " ").title()
         ai_feeds[f"{label} (Annotated)"] = f"/{cam_name}"
-
-    # Build raw camera feeds from RTSP URIs in config (Pi4/Pi5 cameras)
-    cam_conf = config_p[CameraEnum.CONFIG_HEAD.value]
-    raw_feeds = {}
-    for cam_key, factory_key, ip_key, port_key in [
-        (CameraEnum.CAMERA_HEAD.value, CameraEnum.CAMERA_HEAD_FACTORY.value,
-         CameraEnum.CAMERA_HEAD_RTSP_IP.value, CameraEnum.CAMERA_HEAD_PORT.value),
-        (CameraEnum.CAMERA_LEFT.value, CameraEnum.CAMERA_LEFT_FACTORY.value,
-         CameraEnum.CAMERA_LEFT_RTSP_IP.value, CameraEnum.CAMERA_LEFT_PORT.value),
-        (CameraEnum.CAMERA_RIGHT.value, CameraEnum.CAMERA_RIGHT_FACTORY.value,
-         CameraEnum.CAMERA_RIGHT_RTSP_IP.value, CameraEnum.CAMERA_RIGHT_PORT.value),
-    ]:
-        cam_ip = cam_conf.get(ip_key, "")
-        cam_port = cam_conf.get(port_key, "8554")
-        cam_factory = cam_conf.get(factory_key, cam_key)
-        if cam_ip:
-            label = cam_key.replace("camera_", "").replace("_", " ").title()
-            raw_feeds[f"{label} (Raw)"] = f"rtsp://{cam_ip}:{cam_port}/{cam_factory}"
+        ai_feeds[f"{label} (Raw)"] = f"/{cam_name}_raw"
 
     dash_port = int(config_p.get(DashboardEnums.CONFIG_HEAD.value,
                                   DashboardEnums.DASHBOARD_PORT.value,
@@ -94,7 +78,6 @@ if __name__ == "__main__":
         health_monitor=health,
         rtsp_server=mv.rtsp,
         feeds=ai_feeds,
-        feed_uris=raw_feeds,
         motion_tracking=mv.motion_tracking,
         port=dash_port
     )
