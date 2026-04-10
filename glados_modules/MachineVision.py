@@ -135,16 +135,7 @@ class MLDetect(Thread, MQTTClient):
             self.send_command(status, self.status_topic)
             self.logger.info(msg)
 
-        # Add raw feed factories (same resolution/fps, separate buffer for unannotated frames)
-        raw_configs = {}
-        for key, conf in self.cam_configs.items():
-            raw_key = f"{key}_raw"
-            raw_configs[raw_key] = {
-                CameraEnum.MSG_RESOLUTION.value: conf[CameraEnum.MSG_RESOLUTION.value],
-                CameraEnum.MSG_FPS.value: conf[CameraEnum.MSG_FPS.value],
-            }
-        all_configs = {**self.cam_configs, **raw_configs}
-        self.rtsp = RTSPServer(all_configs)
+        self.rtsp = RTSPServer(self.cam_configs)
 
         # Face recognition (head camera only, toggleable via config)
         face_enabled = configfile.get(FaceEnums.CONFIG_HEAD.value,
@@ -387,11 +378,6 @@ class MLDetect(Thread, MQTTClient):
         image = image_dict[CameraEnum.MSG_RAW_IMAGE.value]
         width, height = image_dict[CameraEnum.MSG_RESOLUTION.value]
         camera_location = image_dict[CameraEnum.MSG_LOCATION_KEY.value]
-
-        # Store raw frame in buffer for dashboard (before any annotation)
-        raw_factory = f"{camera_location}_raw"
-        self.rtsp.send_data(raw_factory, image.copy())
-
         # Process the image using YOLO tracking
         results = d_model.track(source=image, device="cuda", tracker=self.tracker_yaml)
         self.logger.debug(f"Yolo processed image for camera {camera_location}")

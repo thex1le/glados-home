@@ -312,13 +312,24 @@ class RTSPFrameGrabber:
         while self._running:
             try:
                 if cap is None or not cap.isOpened():
-                    # Try GStreamer pipeline first (GPU server has GStreamer-enabled OpenCV)
-                    # latency=0 and drop=true minimize decode buffering
-                    gst_uri = (f"rtspsrc location={self.uri} latency=0 "
-                               f"tcp-timeout=5000000 timeout=5000000 ! "
-                               f"rtph264depay ! h264parse ! avdec_h264 ! "
-                               f"videoconvert ! appsink drop=true max-buffers=1 sync=false")
-                    cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
+                    # Try GStreamer pipelines in order: GPU hw decode → sw decode → FFmpeg
+                    gst_pipelines = [
+                        # GPU hardware decode (NVIDIA — matches RTSPClient pipeline)
+                        (f"rtspsrc location={self.uri} latency=0 ! "
+                         f"rtpjitterbuffer drop-on-latency=true ! "
+                         f"rtph264depay ! h264parse ! nvh264dec ! "
+                         f"videoconvert ! video/x-raw,format=BGR ! "
+                         f"appsink drop=true max-buffers=1 sync=false"),
+                        # Software decode fallback
+                        (f"rtspsrc location={self.uri} latency=0 ! "
+                         f"rtpjitterbuffer drop-on-latency=true ! "
+                         f"rtph264depay ! h264parse ! avdec_h264 ! "
+                         f"videoconvert ! appsink drop=true max-buffers=1 sync=false"),
+                    ]
+                    for gst_uri in gst_pipelines:
+                        cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
+                        if cap.isOpened():
+                            break
                     if not cap.isOpened():
                         # Fall back to FFmpeg with plain RTSP URL (Pi4/Pi5 without GStreamer OpenCV)
                         # Set low-latency flags, then restore env to avoid affecting other captures
