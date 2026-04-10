@@ -66,7 +66,6 @@ case "$SYSTEM" in
             "${COMMON_APT[@]}"
             python3-libcamera
             python3-picamera2
-            libatlas-base-dev
             i2c-tools
             libcap-dev
             # OpenCV source build deps (GStreamer support)
@@ -84,6 +83,12 @@ case "$SYSTEM" in
             libgstreamer1.0-dev
             libgstreamer-plugins-base1.0-dev
         )
+        # libatlas-base-dev on Bookworm, libopenblas-dev on Trixie+
+        if apt-cache show libatlas-base-dev &>/dev/null; then
+            APT_PACKAGES+=(libatlas-base-dev)
+        else
+            APT_PACKAGES+=(libopenblas-dev)
+        fi
         PIP_REQUIREMENTS="requirements_pi4.txt"
         ;;
     pi5)
@@ -91,7 +96,6 @@ case "$SYSTEM" in
             "${COMMON_APT[@]}"
             python3-libcamera
             python3-picamera2
-            libatlas-base-dev
             i2c-tools
             libasound2-dev
             portaudio19-dev
@@ -112,6 +116,12 @@ case "$SYSTEM" in
             libgstreamer1.0-dev
             libgstreamer-plugins-base1.0-dev
         )
+        # libatlas-base-dev on Bookworm, libopenblas-dev on Trixie+
+        if apt-cache show libatlas-base-dev &>/dev/null; then
+            APT_PACKAGES+=(libatlas-base-dev)
+        else
+            APT_PACKAGES+=(libopenblas-dev)
+        fi
         PIP_REQUIREMENTS="requirements_pi5.txt"
         ;;
     *)
