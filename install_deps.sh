@@ -42,7 +42,7 @@ COMMON_APT=(
 )
 
 # GObject Introspection dev headers: try 2.0 first (newer distros), fall back to 1.0
-if apt-cache show libgirepository-2.0-dev &>/dev/null; then
+if apt-get install --dry-run libgirepository-2.0-dev &>/dev/null; then
     COMMON_APT+=(libgirepository-2.0-dev)
 else
     COMMON_APT+=(libgirepository1.0-dev)
@@ -84,7 +84,7 @@ case "$SYSTEM" in
             libgstreamer-plugins-base1.0-dev
         )
         # libatlas-base-dev on Bookworm, libopenblas-dev on Trixie+
-        if apt-cache show libatlas-base-dev &>/dev/null; then
+        if apt-get install --dry-run libatlas-base-dev &>/dev/null; then
             APT_PACKAGES+=(libatlas-base-dev)
         else
             APT_PACKAGES+=(libopenblas-dev)
@@ -117,7 +117,7 @@ case "$SYSTEM" in
             libgstreamer-plugins-base1.0-dev
         )
         # libatlas-base-dev on Bookworm, libopenblas-dev on Trixie+
-        if apt-cache show libatlas-base-dev &>/dev/null; then
+        if apt-get install --dry-run libatlas-base-dev &>/dev/null; then
             APT_PACKAGES+=(libatlas-base-dev)
         else
             APT_PACKAGES+=(libopenblas-dev)
