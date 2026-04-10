@@ -47,6 +47,8 @@ class SystemEnums(Enum):
     CONFIG_HEAD_REACTIONS = "REACTIONS"
     VISION_CONFIDENCE = "VisionConfidence"
     SIDE_VISION_CONFIDENCE = "SideVisionConfidence"
+    # LLM provider selection
+    LLM_PROVIDER = "llm_provider"  # "openai" or "claude"
 
 
 class LEDShoulders(Enum):

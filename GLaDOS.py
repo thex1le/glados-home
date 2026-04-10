@@ -9,7 +9,6 @@ import sys
 import configparser
 
 # glados imports
-from glados_modules.ChatGPTConnector import GladosGPT
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
 from glados_modules.CameraModule import Camera, CameraWatchdog
@@ -39,6 +38,14 @@ if __name__ == "__main__":
         configp.read(args.conf[0])
     else:
         raise GladosException("Unable to load file {}".format(args.conf[0]))
+    # Select LLM provider from config (default: openai for backward compatibility)
+    llm_provider = configp.get(SystemEnums.CONFIG_HEAD_DEFAULT.value,
+                                SystemEnums.LLM_PROVIDER.value, fallback="openai").strip().lower()
+    if llm_provider == "claude":
+        from glados_modules.ClaudeConnector import GladosClaude as LLMConnector
+    else:
+        from glados_modules.ChatGPTConnector import GladosGPT as LLMConnector
+
     # start the IMU to track movement
     mqtt_c = configp[SystemEnums.CONFIG_HEAD_MQTT.value]
     # pull the MQTT server connection info from the config
@@ -46,7 +53,7 @@ if __name__ == "__main__":
     # pass it to the imu body module and start the IMU polling server
     imu = IMU(broker=mqtt_broker)
     imu.start()
-    gl = GladosLocal(configp, GladosGPT)
+    gl = GladosLocal(configp, LLMConnector)
     gl.start()
     # Greeting in background thread — retries if TTS isn't ready yet
     def _startup_greeting():
@@ -129,7 +136,7 @@ if __name__ == "__main__":
             gl.register_interaction()
             # Check for compliments (calms mood)
             gl.detect_compliment(prompt)
-            gladosgpt = GladosGPT(configp, prompt)
+            gladosgpt = LLMConnector(configp, prompt)
             gladosgpt.add_prompt(gl.get_seen_prompt())
             gladosgpt.start()
             time.sleep(0.2)

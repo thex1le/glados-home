@@ -1156,13 +1156,18 @@ if __name__ == "__main__":
     import sys
     import configparser
     from os import path
-    from glados_modules.ChatGPTConnector import GladosGPT
     configp = configparser.ConfigParser()
     if path.isfile(sys.argv[1]) is True:
         configp.read(sys.argv[1])
     else:
         raise GladosException("Unable to load file {}".format(sys.argv[1]))
-    gl = GladosLocal(configp, GladosGPT)
+    llm_provider = configp.get(SystemEnums.CONFIG_HEAD_DEFAULT.value,
+                                SystemEnums.LLM_PROVIDER.value, fallback="openai").strip().lower()
+    if llm_provider == "claude":
+        from glados_modules.ClaudeConnector import GladosClaude as LLMConnector
+    else:
+        from glados_modules.ChatGPTConnector import GladosGPT as LLMConnector
+    gl = GladosLocal(configp, LLMConnector)
     gl.start()
     gl.speak("Oh Its you! , , Its been a long time...")
     gl.play_ding_up()
