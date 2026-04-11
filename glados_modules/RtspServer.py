@@ -29,14 +29,18 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
             # Pi4 hardware H.264 encoding via bcm2835 V4L2 codec (/dev/video11)
             # Requires: bcm2835_codec kernel module, v4l2h264enc GStreamer element
             # Input: BGR from OpenCV → videoconvert to I420 → hardware encode
+            # extra-controls: force baseline profile (no B-frames), set GOP to 1s
+            # This minimizes encoder-internal buffering for low latency
             self.launch_string = (
                 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
                 'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 '
                 '! queue max-size-buffers=1 leaky=downstream '
                 '! videoconvert ! video/x-raw,format=I420 '
-                '! v4l2h264enc ! video/x-h264,level=(string)4 ! h264parse '
+                '! v4l2h264enc extra-controls="encode,h264_profile=0,h264_level=4,'
+                'video_bitrate=2000000,h264_i_frame_period={}" '
+                '! video/x-h264,level=(string)4 ! h264parse '
                 '! rtph264pay config-interval=1 name=pay0 pt=96'.format(
-                    self.cam_x, self.cam_y, fps))
+                    self.cam_x, self.cam_y, fps, fps))
         else:
             # Software H.264 encoding (CPU-based, works everywhere)
             self.launch_string = (
