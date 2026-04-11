@@ -293,7 +293,7 @@ class CameraFusionState:
         # Head camera stream may have dropped — force transition after staleness timeout
         if self._head_last_seen > 0:
             head_age = time.time() - self._head_last_seen
-            if head_age > FusionEnums.SIDE_CAMERA_STALENESS.value:
+            if head_age > FusionEnums.HEAD_CAMERA_DROPOUT_TIMEOUT.value:
                 self.state = FusionEnums.STATE_SIDE_ONLY.value
                 return True
 
@@ -1179,9 +1179,9 @@ class MotionTrack(MQTTClient):
         trace_id = vision_map[camera].get(TraceEnums.TRACE_ID.value)
         ts_vision = vision_map[camera].get(TraceEnums.TS_VISION.value)
 
-        # Target selection: attention model evaluates on ALL cameras so side drives
-        # have a valid _current_target even when the head camera isn't firing.
-        if self._attention and self._room_state:
+        # Target selection: attention model only evaluates on head camera.
+        # Side cameras must not switch targets — they follow whatever the head last chose.
+        if self._attention and self._room_state and camera == self.main_camera:
             now = time.time()
             dt = now - self._last_attention_time
             self._last_attention_time = now
