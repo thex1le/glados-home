@@ -30,7 +30,7 @@ rtmlib                           # RTMLib whole-body pose (133 keypoints)
 
 # AI / ML - Face recognition + emotion detection
 insightface>=0.7.3               # Face detection + ArcFace embedding
-onnxruntime-gpu                  # GPU-accelerated ONNX inference for InsightFace
+# onnxruntime-gpu — installed separately with CUDA 12 index (see install_deps.sh)
 hsemotion                        # Facial emotion classification (7 emotions)
 
 # AI / ML - Speech to text

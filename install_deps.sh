@@ -157,6 +157,15 @@ fi
 
 pip install -r "$PIP_REQUIREMENTS"
 
+# onnxruntime-gpu needs the CUDA 12 index — the default PyPI package ships without
+# CUDAExecutionProvider and silently falls back to CPU.
+if [ "$SYSTEM" = "gpu" ]; then
+    echo ""
+    echo "--- Installing onnxruntime-gpu with CUDA 12 support ---"
+    pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true
+    pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+fi
+
 # Remove pip opencv packages that might have been pulled in as dependencies
 # We build OpenCV from source with GStreamer on all systems
 pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true

@@ -353,14 +353,12 @@ class MLDetect(Thread, MQTTClient):
             with safe_globals([DetectionModel, Sequential, Conv]):
                 detection_model = YOLO(self.model_config)
             pose_model = None
-            # Pose estimation only needed on head camera (gesture recognition, nose-point tracking).
-            # Side cameras only use YOLO bounding boxes for world-angle estimation.
-            if pose_enabled and camera_key == CameraEnum.CAMERA_HEAD.value:
-                self.logger.debug("Creating Pose model for head camera")
+            if pose_enabled:
+                self.logger.debug(f"Creating Pose model for {camera_key}")
                 openpose_skeleton = False  # True for openpose-style, False for mmpose-style
                 backend = 'onnxruntime'  # opencv, onnxruntime, openvino
                 pose_model = Wholebody(to_openpose=openpose_skeleton, mode='balanced', backend=backend, device='cuda')
-            elif not pose_enabled:
+            else:
                 self.logger.info(f"Pose model disabled via config for {camera_key}")
             thread = Thread(target=self.run_tracker_for_camera, args=(camera_key,
                                                                        detection_model, pose_model), daemon=True)
@@ -390,47 +388,42 @@ class MLDetect(Thread, MQTTClient):
         self.logger.debug(f"Yolo processed image for camera {camera_location}")
         t_results = self.__translate_results(results)
 
-        # Full annotation only for head camera — side cameras just need YOLO results,
-        # not expensive per-detection drawing (saves ~10% CPU across 2 side camera streams).
-        is_head = camera_location == CameraEnum.CAMERA_HEAD.value
-        if is_head:
-            annotator = Annotator(image)
-            image_center = (int(width // 2), int(height // 2))
-            cv2.line(image, (image_center[0] - 10, image_center[1]),
-                     (image_center[0] + 10, image_center[1]), (0, 255, 0), 2)
-            cv2.line(image, (image_center[0], image_center[1] - 10),
-                     (image_center[0], image_center[1] + 10), (0, 255, 0), 2)
+        # Annotate all camera streams — CUDA-accelerated ONNX means GPU handles this easily
+        annotator = Annotator(image)
+        image_center = (int(width // 2), int(height // 2))
+        cv2.line(image, (image_center[0] - 10, image_center[1]),
+                 (image_center[0] + 10, image_center[1]), (0, 255, 0), 2)
+        cv2.line(image, (image_center[0], image_center[1] - 10),
+                 (image_center[0], image_center[1] + 10), (0, 255, 0), 2)
 
-            for r in results:
-                boxes = r.boxes
-                for box in boxes:
-                    b = box.xyxy[0]
-                    x1, y1, x2, y2 = map(int, b.tolist())
-                    c = box.cls
-                    conf = box.conf.item()
-                    label = f"{d_model.names[int(c)]} {conf:.2f}"
-                    annotator.box_label(b, label)
-                    self.logger.debug(f"Labeled image with {label}")
-                    center_x = int((x1 + x2) / 2)
-                    center_y = int((y1 + y2) / 2)
-                    object_center = (center_x, center_y)
-                    color_current = (0, 0, 255)
-                    cv2.circle(image, object_center, radius=5, color=color_current, thickness=-1)
-                    self.logger.debug(f"Drew circle at {object_center} (center of bounding box).")
-                    cv2.arrowedLine(image, object_center, image_center, color=(255, 0, 0), thickness=2)
-                    self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                b = box.xyxy[0]
+                x1, y1, x2, y2 = map(int, b.tolist())
+                c = box.cls
+                conf = box.conf.item()
+                label = f"{d_model.names[int(c)]} {conf:.2f}"
+                annotator.box_label(b, label)
+                self.logger.debug(f"Labeled image with {label}")
+                center_x = int((x1 + x2) / 2)
+                center_y = int((y1 + y2) / 2)
+                object_center = (center_x, center_y)
+                color_current = (0, 0, 255)
+                cv2.circle(image, object_center, radius=5, color=color_current, thickness=-1)
+                self.logger.debug(f"Drew circle at {object_center} (center of bounding box).")
+                cv2.arrowedLine(image, object_center, image_center, color=(255, 0, 0), thickness=2)
+                self.logger.debug(f"Drew arrow from {object_center} to {image_center}.")
 
-            a_image = annotator.result()
-            timestamp = datetime.now().isoformat(timespec='seconds')
-            yellow_orange_color = (0, 140, 255)
-            position = (10, a_image.shape[0] - 10)
-            cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale=1, color=yellow_orange_color, thickness=2)
-            position = (10, 10)
-            cv2.putText(a_image, camera_location, position, cv2.FONT_HERSHEY_SIMPLEX, fontScale=1,
-                        color=yellow_orange_color, thickness=2)
-        else:
-            a_image = image
+        a_image = annotator.result()
+        timestamp = datetime.now().isoformat(timespec='seconds')
+        yellow_orange_color = (0, 140, 255)
+        position = (10, a_image.shape[0] - 10)
+        cv2.putText(a_image, timestamp, position, cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=1, color=yellow_orange_color, thickness=2)
+        position = (10, 10)
+        cv2.putText(a_image, camera_location, position, cv2.FONT_HERSHEY_SIMPLEX, fontScale=1,
+                    color=yellow_orange_color, thickness=2)
 
         # Face recognition + emotion detection (head camera only, rate-limited)
         if camera_location == CameraEnum.CAMERA_HEAD.value and self.face_recognition:
