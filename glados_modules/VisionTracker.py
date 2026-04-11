@@ -1179,8 +1179,9 @@ class MotionTrack(MQTTClient):
         trace_id = vision_map[camera].get(TraceEnums.TRACE_ID.value)
         ts_vision = vision_map[camera].get(TraceEnums.TS_VISION.value)
 
-        # Target selection: attention model (if enabled) or legacy __select_target
-        if self._attention and self._room_state and camera == self.main_camera:
+        # Target selection: attention model evaluates on ALL cameras so side drives
+        # have a valid _current_target even when the head camera isn't firing.
+        if self._attention and self._room_state:
             now = time.time()
             dt = now - self._last_attention_time
             self._last_attention_time = now

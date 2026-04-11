@@ -279,5 +279,7 @@ class TestWorldSpaceSmoothing:
             smoothed = alpha * smoothed + (1 - alpha) * 90.0
         # Spike
         smoothed_after_spike = alpha * smoothed + (1 - alpha) * 180.0
-        # Should not jump all the way to 180
-        assert smoothed_after_spike < 120.0
+        # Should not jump all the way to 180 — dampened by (1-alpha) factor
+        max_expected = 90.0 + (1 - alpha) * 90.0  # smoothed + (1-alpha) * spike_delta
+        assert smoothed_after_spike <= max_expected + 0.1
+        assert smoothed_after_spike < 180.0

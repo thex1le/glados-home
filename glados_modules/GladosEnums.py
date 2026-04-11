@@ -525,7 +525,7 @@ class MotionProfile(Enum):
         (92, 100), (97, 110), (104, 120), (114, 130), (121, 140), (126, 150)
     ]
     # World-space tracking parameters
-    WORLD_SMOOTH_ALPHA = 0.7           # EMA factor for world-space angle smoothing
+    WORLD_SMOOTH_ALPHA = 0.4           # EMA factor for world-space angle smoothing (lower = more responsive)
     IDLE_DRIFT_INTERVAL = 0.5          # seconds between idle drift target sends
     IDLE_TIMEOUT = 5.0                 # seconds without target before idle drift starts
     DEFAULT_SERVO_CENTER = 90.0        # fallback center angle
@@ -552,10 +552,10 @@ class FusionEnums(Enum):
     HANDOFF_BLEND_DURATION = 0.5       # seconds to lerp during camera handoff
     HANDOFF_AGREEMENT_THRESHOLD = 8.0  # degrees — cameras agree within this
     SIDE_CAMERA_STALENESS = 1.0        # seconds before side detection is stale
-    CONFIRMED_SMOOTH_ALPHA = 0.5       # tighter EMA when head + side cameras agree
+    CONFIRMED_SMOOTH_ALPHA = 0.3       # tighter EMA when head + side cameras agree
     PREDICTION_LEAD_TIME = 0.75        # seconds to predict ahead for side cameras
     PREDICTION_MIN_VELOCITY = 15.0     # degrees/sec minimum to trigger prediction
-    SIDE_WORLD_SMOOTH_ALPHA = 0.6      # EMA alpha for fused side camera world angle smoothing
+    SIDE_WORLD_SMOOTH_ALPHA = 0.3      # EMA alpha for fused side camera world angle smoothing (lower = more responsive)
     PREDICTION_MAX_OFFSET = 15.0       # max degrees of pre-rotation
     PREDICTION_HISTORY_WINDOW = 1.0    # seconds of angle history for velocity estimate
 
