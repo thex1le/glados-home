@@ -1,7 +1,8 @@
 # native imports
 import os
 from typing import Optional, Dict
-from time import sleep
+from time import sleep, time
+from threading import Thread, Lock
 
 # 3rd party imports
 import cv2
@@ -19,6 +20,10 @@ class RtspConsumer:
     def __init__(self, uri: str, location: str, reconnect_delay: int = 5) -> None:
         """Initializes the RtspConsumer.
 
+        Runs a background thread that continuously reads frames and keeps
+        only the latest. get_frame() always returns the freshest frame,
+        never a stale buffered one.
+
         Args:
             uri: The RTSP URI of the stream.
             location: The location identifier for the consumer.
@@ -30,7 +35,13 @@ class RtspConsumer:
         self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.reconnect_delay = reconnect_delay
         self.cap: Optional[cv2.VideoCapture] = None
+        self._frame_lock = Lock()
+        self._latest_frame = None
+        self._latest_resolution = (0, 0)
+        self._running = True
         self.connect()
+        self._reader = Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
 
     def connect(self) -> None:
         """
@@ -98,42 +109,59 @@ class RtspConsumer:
 
             sleep(self.reconnect_delay)
 
+    def _read_loop(self) -> None:
+        """Background thread: continuously reads frames, keeps only the latest.
+
+        This prevents GStreamer decode buffers from building up when the
+        YOLO tracker thread can't consume frames as fast as they arrive.
+        """
+        while self._running:
+            try:
+                if not self.cap or not self.cap.isOpened():
+                    sleep(0.5)
+                    self.connect()
+                    continue
+                ret, frame = self.cap.read()
+                if ret and frame is not None:
+                    with self._frame_lock:
+                        self._latest_frame = frame
+                        self._latest_resolution = (
+                            self.cap.get(cv2.CAP_PROP_FRAME_WIDTH),
+                            self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                        )
+                else:
+                    self.logger.warning(f"Read failed, reconnecting {self.rtsp_uri}...")
+                    self.cap.release()
+                    self.cap = None
+                    sleep(self.reconnect_delay)
+            except Exception as e:
+                self.logger.error(f"Read loop error: {e}")
+                sleep(1.0)
+
     def get_frame(self) -> Dict[str, Optional[any]]:
-        """
-        Retrieves a frame from the RTSP stream. Blocks until a frame is successfully retrieved.
+        """Returns the latest frame from the background reader.
 
-        :return: A dictionary containing the location, raw image, and resolution.
-        :raises RtspConsumerError: If unable to retrieve a frame after multiple attempts.
+        Blocks until the first frame is available, then always returns
+        immediately with the freshest frame (never a stale buffered one).
         """
-        if not self.cap or not self.cap.isOpened():
-            self.logger.warning("VideoCapture not opened. Attempting to reconnect...")
-            self.connect()
-
-        image_dict = {
+        while self._running:
+            with self._frame_lock:
+                if self._latest_frame is not None:
+                    frame = self._latest_frame
+                    resolution = self._latest_resolution
+                    break
+            sleep(0.01)
+        return {
             CameraEnum.MSG_LOCATION_KEY.value: self.location,
-            CameraEnum.MSG_RAW_IMAGE.value: None,
-            CameraEnum.MSG_RESOLUTION.value: (
-                self.cap.get(cv2.CAP_PROP_FRAME_WIDTH),
-                self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            )
+            CameraEnum.MSG_RAW_IMAGE.value: frame,
+            CameraEnum.MSG_RESOLUTION.value: resolution,
         }
-
-        while True:
-            ret, frame = self.cap.read()
-            if ret and frame is not None:
-                image_dict[CameraEnum.MSG_RAW_IMAGE.value] = frame
-                return image_dict
-            else:
-                self.logger.warning(f"Failed to retrieve frame. Reconnecting...")
-                self.cap.release()
-                self.cap = None
-                sleep(self.reconnect_delay)
-                self.connect()
 
     def close(self) -> None:
         """
         Closes the VideoCapture resource and releases all connections.
         """
+        self._running = False
         if self.cap and self.cap.isOpened():
             self.cap.release()
             self.logger.info(f"{self.__name__} Resources released.")
