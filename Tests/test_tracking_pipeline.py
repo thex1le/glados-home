@@ -46,6 +46,7 @@ def _make_motion_track():
     mt.dms = MotionProfile.DEFAULT_TRACKING_SPEED.value
     mt._world_lr = None
     mt._world_ud = None
+    mt._world_ud_time = 0.0
     mt._world_smooth_alpha = MotionProfile.WORLD_SMOOTH_ALPHA.value
     mt._last_target_time = time.time()
     mt._idle_active = False

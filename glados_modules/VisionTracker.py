@@ -381,6 +381,7 @@ class MotionTrack(MQTTClient):
         # World-space angle estimates (smoothed)
         self._world_lr: float = None
         self._world_ud: float = None
+        self._world_ud_time: float = 0.0  # timestamp of last head camera world_ud update
         self._world_smooth_alpha: float = MotionProfile.WORLD_SMOOTH_ALPHA.value
 
         # Idle state tracking
@@ -1018,10 +1019,14 @@ class MotionTrack(MQTTClient):
                 f"SIDE_DRIVE: raw_lr={best_lr:.1f} smooth_lr={old_smooth:.1f}->{self._side_world_lr_smooth:.1f} "
                 f"alpha={alpha:.2f}")
 
-        # Side cameras can't measure pitch — use last known head camera value or neutral.
-        # Using FK pitch here creates a positive feedback loop: FK reads body_ud →
-        # IK targets higher body_ud → FK reads higher → runaway to 180°.
-        world_ud = self._world_ud if self._world_ud is not None else 0.0
+        # Side cameras can't measure pitch — use last head camera value if recent,
+        # otherwise default to mounting-appropriate downward pitch.
+        # Using FK pitch here creates a positive feedback loop (runaway to 180°).
+        head_ud_age = time.time() - self._world_ud_time if self._world_ud_time > 0 else float('inf')
+        if self._world_ud is not None and head_ud_age < 10.0:
+            world_ud = self._world_ud
+        else:
+            world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
         self.logger.debug(
             f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")
@@ -1283,6 +1288,7 @@ class MotionTrack(MQTTClient):
             if self._world_lr is None:
                 self._world_lr = world_lr
                 self._world_ud = world_ud
+                self._world_ud_time = time.time()
                 self.logger.debug(f"EMA: init world_lr={world_lr:.1f} world_ud={world_ud:.1f}")
             else:
                 alpha = self._world_smooth_alpha
@@ -1292,6 +1298,7 @@ class MotionTrack(MQTTClient):
                 old_lr, old_ud = self._world_lr, self._world_ud
                 self._world_lr = alpha * self._world_lr + (1 - alpha) * world_lr
                 self._world_ud = alpha * self._world_ud + (1 - alpha) * world_ud
+                self._world_ud_time = time.time()
                 self.logger.debug(
                     f"EMA: raw_lr={world_lr:.1f} raw_ud={world_ud:.1f} alpha={alpha:.2f} "
                     f"confirmed={confirmed} smooth_lr={old_lr:.1f}->{self._world_lr:.1f} "

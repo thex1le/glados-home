@@ -530,6 +530,10 @@ class MotionProfile(Enum):
     IDLE_TIMEOUT = 5.0                 # seconds without target before idle drift starts
     DEFAULT_SERVO_CENTER = 90.0        # fallback center angle
     BREATHING_AMPLITUDE = 0.3          # degrees of body_UD oscillation
+    # Default pitch when side cameras drive (no head camera data yet).
+    # Robot is mounted ~8ft high, people are ~5ft tall at ~6-10ft distance.
+    # Negative = looking down. Adjust if mounting height changes.
+    SIDE_DRIVE_DEFAULT_PITCH = -15.0
     BREATHING_FREQ = 0.2               # Hz (~12 breaths per minute)
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
