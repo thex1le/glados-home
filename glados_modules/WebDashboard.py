@@ -312,20 +312,30 @@ class RTSPFrameGrabber:
         while self._running:
             try:
                 if cap is None or not cap.isOpened():
-                    # Try GStreamer pipelines in order: GPU hw decode → sw decode → FFmpeg
-                    gst_pipelines = [
-                        # GPU hardware decode (NVIDIA — matches RTSPClient pipeline)
-                        (f"rtspsrc location={self.uri} latency=0 ! "
-                         f"rtpjitterbuffer drop-on-latency=true ! "
-                         f"rtph264depay ! h264parse ! nvh264dec ! "
-                         f"videoconvert ! video/x-raw,format=BGR ! "
-                         f"appsink drop=true max-buffers=1 sync=false"),
-                        # Software decode fallback
-                        (f"rtspsrc location={self.uri} latency=0 ! "
-                         f"rtpjitterbuffer drop-on-latency=true ! "
-                         f"rtph264depay ! h264parse ! avdec_h264 ! "
-                         f"videoconvert ! appsink drop=true max-buffers=1 sync=false"),
-                    ]
+                    # Build GStreamer pipeline list based on available decoders
+                    gst_pipelines = []
+                    # Check if NVIDIA hardware decoder is available (GPU server only)
+                    try:
+                        import gi
+                        gi.require_version('Gst', '1.0')
+                        from gi.repository import Gst as _Gst
+                        if not _Gst.is_initialized():
+                            _Gst.init(None)
+                        if _Gst.ElementFactory.find("nvh264dec"):
+                            gst_pipelines.append(
+                                f"rtspsrc location={self.uri} latency=0 ! "
+                                f"rtpjitterbuffer drop-on-latency=true ! "
+                                f"rtph264depay ! h264parse ! nvh264dec ! "
+                                f"videoconvert ! video/x-raw,format=BGR ! "
+                                f"appsink drop=true max-buffers=1 sync=false")
+                    except Exception:
+                        pass
+                    # Software decode (always available with GStreamer)
+                    gst_pipelines.append(
+                        f"rtspsrc location={self.uri} latency=0 ! "
+                        f"rtpjitterbuffer drop-on-latency=true ! "
+                        f"rtph264depay ! h264parse ! avdec_h264 ! "
+                        f"videoconvert ! appsink drop=true max-buffers=1 sync=false")
                     for gst_uri in gst_pipelines:
                         cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                         if cap.isOpened():
