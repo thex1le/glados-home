@@ -19,6 +19,7 @@ import argparse
 import json
 import sys
 import time
+from uuid import uuid4
 
 import paho.mqtt.client as mqtt
 
@@ -47,14 +48,14 @@ def main() -> None:
     client.loop_start()
 
     if args.stop:
-        client.publish(topic, json.dumps({"cmd": "stop_recording"}))
+        client.publish(topic, json.dumps({"cmd": "stop_recording", "uuid": str(uuid4())}))
         print("Stop command sent.")
         client.loop_stop()
         client.disconnect()
         return
 
     # Start recording
-    start_msg = {"cmd": "start_recording"}
+    start_msg = {"cmd": "start_recording", "uuid": str(uuid4())}
     if args.session:
         start_msg["session"] = args.session
     client.publish(topic, json.dumps(start_msg))
@@ -80,7 +81,7 @@ def main() -> None:
         except (KeyboardInterrupt, EOFError):
             print()
 
-    client.publish(topic, json.dumps({"cmd": "stop_recording"}))
+    client.publish(topic, json.dumps({"cmd": "stop_recording", "uuid": str(uuid4())}))
     print("Recording stopped.")
     print(f"\nCopy to dev machine:")
     print(f"  scp gpu-server:~/glados-home/recordings/{args.session or '*'}* ./recordings/")
