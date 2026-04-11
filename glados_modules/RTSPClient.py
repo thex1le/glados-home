@@ -123,8 +123,17 @@ class RtspConsumer:
         }
 
         while True:
+            # Drain buffered frames to get the latest one. cap.read() returns
+            # the NEXT buffered frame, not the latest. Without draining, frames
+            # queue up in GStreamer decoder/depayloader stages faster than YOLO
+            # can consume them, causing multi-second delay buildup.
             ret, frame = self.cap.read()
             if ret and frame is not None:
+                # Keep grabbing until buffer is empty — discard stale frames
+                while self.cap.grab():
+                    got, newer = self.cap.retrieve()
+                    if got and newer is not None:
+                        frame = newer
                 image_dict[CameraEnum.MSG_RAW_IMAGE.value] = frame
                 return image_dict
             else:
