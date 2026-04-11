@@ -20,6 +20,7 @@ from glados_modules.GladosEnums import (CameraEnum, ServoEnum, SystemEnums,
 from glados_modules.RobotKinematics import RobotKinematics
 from glados_modules.MotionRecorder import MotionRecorder, build_frame_record
 from glados_modules.TraceLog import TraceLog
+from glados_modules.PipelineDebug import PipelineDebug
 from glados_modules.RoomStateManager import RoomStateManager
 from glados_modules.AttentionModel import AttentionModel
 
@@ -79,6 +80,8 @@ class CameraFusionState:
     """
 
     def __init__(self) -> None:
+        self.logger = setup_logger(name="CameraFusionState",
+                                    console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.state: str = FusionEnums.STATE_SIDE_ONLY.value
         self._head_last_seen: float = 0.0
         self._head_count: int = 0
@@ -125,6 +128,7 @@ class CameraFusionState:
         self._head_last_seen = now
         if was_side_only:
             best_side = self.get_best_side_world_lr()
+            old_state = self.state
             if best_side is not None:
                 # Side camera had a recent detection — blend from its angle to head's
                 self.state = FusionEnums.STATE_HANDOFF_TO_HEAD.value
@@ -133,17 +137,20 @@ class CameraFusionState:
             else:
                 # No side camera data — go straight to head tracking (no blend needed)
                 self.state = FusionEnums.STATE_HEAD_TRACKING.value
+            self.logger.debug(f"FUSION: {old_state} -> {self.state} (side_lr={best_side})")
 
     def head_lost(self) -> None:
         """Signal that the head camera lost the target."""
         if self.state in (FusionEnums.STATE_HEAD_TRACKING.value,
                           FusionEnums.STATE_HANDOFF_TO_HEAD.value):
+            old_state = self.state
             best_side = self.get_best_side_world_lr()
             if best_side is not None:
                 self.state = FusionEnums.STATE_HANDOFF_TO_SIDE.value
                 self._handoff_start_time = time.time()
             else:
                 self.state = FusionEnums.STATE_SIDE_ONLY.value
+            self.logger.debug(f"FUSION: head_lost {old_state} -> {self.state} (side_lr={best_side})")
 
     def get_best_side_world_lr(self) -> float:
         """Return the most recent non-stale side camera world angle, or None."""
@@ -443,6 +450,11 @@ class MotionTrack(MQTTClient):
         # Pipeline tracing
         self._tracer = TraceLog()
 
+        # Pipeline debug (structured MQTT debug topic)
+        _debug_enabled = _toggle(FeatureToggles.CONFIG_HEAD.value,
+                                  FeatureToggles.PIPELINE_DEBUG_ENABLED.value, fallback=False)
+        self._pdebug = PipelineDebug(self, "ai_server", enabled=_debug_enabled)
+
         # Debug overlay state (read by MachineVision for RTSP stream annotation)
         self._debug_overlay: Dict[str, Any] = {
             "state": "INIT",
@@ -525,7 +537,23 @@ class MotionTrack(MQTTClient):
         for name, estimator in self._estimators.items():
             if name in angle_map:
                 servo_data = angle_map[name]
-                estimator.sync(float(servo_data.current), float(servo_data.velocity))
+                pre_pos = estimator.position
+                pre_vel = estimator.velocity
+                reported_pos = float(servo_data.current)
+                reported_vel = float(servo_data.velocity)
+                estimator.sync(reported_pos, reported_vel)
+                drift = abs(pre_pos - reported_pos)
+                if drift > 1.0:
+                    self.logger.debug(
+                        f"SYNC: {name} est={pre_pos:.1f} reported={reported_pos:.1f} "
+                        f"drift={drift:.1f} vel_est={pre_vel:.2f} vel_rep={reported_vel:.2f} "
+                        f"-> corrected={estimator.position:.1f}")
+                    self._pdebug.log("MotionTrack", "SYNC", {
+                        "servo": name, "est": round(pre_pos, 1),
+                        "reported": round(reported_pos, 1), "drift": round(drift, 1),
+                        "vel_est": round(pre_vel, 2), "vel_rep": round(reported_vel, 2),
+                        "corrected": round(estimator.position, 1),
+                    })
 
     def _get_estimated_position(self, servo_name: str) -> float:
         """Get the current estimated position from the spring-damper estimator."""
@@ -585,6 +613,18 @@ class MotionTrack(MQTTClient):
                 self.head_UD_name: self._get_estimated_position(self.head_UD_name),
             }
             yaw, pitch = self._kinematics.forward_kinematics(current_angles)
+            self.logger.debug(
+                f"FK state: body_lr={current_angles[self.body_LR_name]:.1f} "
+                f"body_ud={current_angles[self.body_UD_name]:.1f} "
+                f"head_lr={current_angles[self.head_LR_name]:.1f} "
+                f"head_ud={current_angles[self.head_UD_name]:.1f} -> yaw={yaw:.1f} pitch={pitch:.1f}")
+            self._pdebug.log("MotionTrack", "FK_STATE", {
+                "body_lr": round(current_angles[self.body_LR_name], 1),
+                "body_ud": round(current_angles[self.body_UD_name], 1),
+                "head_lr": round(current_angles[self.head_LR_name], 1),
+                "head_ud": round(current_angles[self.head_UD_name], 1),
+                "yaw": round(yaw, 1), "pitch": round(pitch, 1),
+            })
             if axis == ServoEnum.X_AXIS.value:
                 camera_world = yaw
             else:
@@ -600,6 +640,17 @@ class MotionTrack(MQTTClient):
 
         # World angle = where camera is pointing + offset from frame center
         world_angle = camera_world + angle_offset_deg
+        self.logger.debug(
+            f"PIX2WORLD: cam={camera} axis={axis} pixel={pixel_center:.0f}/{axis_size:.0f} "
+            f"offset_px={offset_from_center:.0f} fov={fov} focal={focal_length:.1f} "
+            f"angle_offset={angle_offset_deg:.2f} cam_world={camera_world:.1f} -> world={world_angle:.1f}")
+        self._pdebug.log("MotionTrack", "PIX2WORLD", {
+            "cam": camera, "axis": axis,
+            "pixel": round(pixel_center, 1), "axis_size": axis_size,
+            "offset_px": round(offset_from_center, 1),
+            "fov": fov, "angle_offset": round(angle_offset_deg, 2),
+            "cam_world": round(camera_world, 1), "world": round(world_angle, 1),
+        })
         return world_angle
 
     def _clamp(self, value: float, servo_name: str) -> float:
@@ -658,30 +709,73 @@ class MotionTrack(MQTTClient):
         body_lr_target = body_targets[self.body_LR_name]
         body_ud_target = body_targets[self.body_UD_name]
 
-        self.logger.debug(f"IK debug: world_lr={target_world_lr:.1f} world_ud={target_world_ud:.1f} "
-                          f"-> body_lr={body_lr_target:.1f} head_lr={head_lr_target:.1f}")
+        self.logger.debug(
+            f"IK input: world_lr={target_world_lr:.1f} world_ud={target_world_ud:.1f} "
+            f"cur_body_lr={current_body[self.body_LR_name]:.1f} "
+            f"cur_body_ud={current_body[self.body_UD_name]:.1f}")
+        self.logger.debug(
+            f"IK output: head_lr={head_lr_target:.1f} head_ud={head_ud_target:.1f} "
+            f"body_lr={body_lr_target:.1f} body_ud={body_ud_target:.1f}")
+        self._pdebug.log("MotionTrack", "IK_INPUT", {
+            "world_lr": round(target_world_lr, 1), "world_ud": round(target_world_ud, 1),
+            "cur_body_lr": round(current_body[self.body_LR_name], 1),
+            "cur_body_ud": round(current_body[self.body_UD_name], 1),
+        }, trace_id=trace_id)
+        self._pdebug.log("MotionTrack", "IK_OUTPUT", {
+            "head_lr": round(head_lr_target, 1), "head_ud": round(head_ud_target, 1),
+            "body_lr": round(body_lr_target, 1), "body_ud": round(body_ud_target, 1),
+        }, trace_id=trace_id)
 
         # Rate-limit body IK output to prevent frame-to-frame oscillation
         # between solver local minima (especially at steep pitch angles)
         max_lr = MotionProfile.BODY_LR_MAX_STEP_DEG.value
         max_ud = MotionProfile.BODY_UD_MAX_STEP_DEG.value
+        body_lr_pre_clamp = body_lr_target
+        body_ud_pre_clamp = body_ud_target
         if self._prev_body_lr_target is not None:
             delta = body_lr_target - self._prev_body_lr_target
             body_lr_target = self._prev_body_lr_target + max(-max_lr, min(max_lr, delta))
         if self._prev_body_ud_target is not None:
             delta = body_ud_target - self._prev_body_ud_target
             body_ud_target = self._prev_body_ud_target + max(-max_ud, min(max_ud, delta))
+        if body_lr_target != body_lr_pre_clamp or body_ud_target != body_ud_pre_clamp:
+            self.logger.debug(
+                f"IK rate-limit: body_lr {body_lr_pre_clamp:.1f}->{body_lr_target:.1f} "
+                f"body_ud {body_ud_pre_clamp:.1f}->{body_ud_target:.1f} "
+                f"(max_step lr={max_lr} ud={max_ud})")
+            self._pdebug.log("MotionTrack", "IK_RATE_LIMIT", {
+                "body_lr_pre": round(body_lr_pre_clamp, 1), "body_lr_post": round(body_lr_target, 1),
+                "body_ud_pre": round(body_ud_pre_clamp, 1), "body_ud_post": round(body_ud_target, 1),
+                "max_lr": max_lr, "max_ud": max_ud,
+            }, trace_id=trace_id)
         self._prev_body_lr_target = body_lr_target
         self._prev_body_ud_target = body_ud_target
 
         # Clamp all to physical ranges
         # Add breathing oscillation to body_UD
-        body_ud_target += self._get_breathing_offset()
+        breathing = self._get_breathing_offset()
+        if abs(breathing) > 0.01:
+            self.logger.debug(f"IK breathing: offset={breathing:.2f}")
+        body_ud_target += breathing
 
+        pre_clamp = (head_lr_target, head_ud_target, body_lr_target, body_ud_target)
         head_lr_target = self._clamp(head_lr_target, self.head_LR_name)
         head_ud_target = self._clamp(head_ud_target, self.head_UD_name)
         body_lr_target = self._clamp(body_lr_target, self.body_LR_name)
         body_ud_target = self._clamp(body_ud_target, self.body_UD_name)
+        post_clamp = (head_lr_target, head_ud_target, body_lr_target, body_ud_target)
+        if pre_clamp != post_clamp:
+            self.logger.debug(
+                f"IK clamp: head_lr {pre_clamp[0]:.1f}->{post_clamp[0]:.1f} "
+                f"head_ud {pre_clamp[1]:.1f}->{post_clamp[1]:.1f} "
+                f"body_lr {pre_clamp[2]:.1f}->{post_clamp[2]:.1f} "
+                f"body_ud {pre_clamp[3]:.1f}->{post_clamp[3]:.1f}")
+            self._pdebug.log("MotionTrack", "IK_CLAMP", {
+                "head_lr": f"{pre_clamp[0]:.1f}->{post_clamp[0]:.1f}",
+                "head_ud": f"{pre_clamp[1]:.1f}->{post_clamp[1]:.1f}",
+                "body_lr": f"{pre_clamp[2]:.1f}->{post_clamp[2]:.1f}",
+                "body_ud": f"{pre_clamp[3]:.1f}->{post_clamp[3]:.1f}",
+            }, trace_id=trace_id)
 
         # Build consolidated move_all message
         targets = {
@@ -717,6 +811,11 @@ class MotionTrack(MQTTClient):
             f"Targets sent: head_LR={head_lr_target:.1f} head_UD={head_ud_target:.1f} "
             f"body_LR={body_lr_target:.1f} body_UD={body_ud_target:.1f}"
         )
+        self._pdebug.log("MotionTrack", "TARGETS_SENT", {
+            "head_lr": round(head_lr_target, 1), "head_ud": round(head_ud_target, 1),
+            "body_lr": round(body_lr_target, 1), "body_ud": round(body_ud_target, 1),
+            "speed": self.dms, "movement": self._enable_movement,
+        }, trace_id=trace_id)
 
     def _generate_idle_drift(self) -> None:
         """Generate behavior based on the current state when no target is actively tracked.
@@ -891,7 +990,11 @@ class MotionTrack(MQTTClient):
         if self._side_world_lr_smooth is None:
             self._side_world_lr_smooth = best_lr
         else:
+            old_smooth = self._side_world_lr_smooth
             self._side_world_lr_smooth = alpha * self._side_world_lr_smooth + (1 - alpha) * best_lr
+            self.logger.debug(
+                f"SIDE_DRIVE: raw_lr={best_lr:.1f} smooth_lr={old_smooth:.1f}->{self._side_world_lr_smooth:.1f} "
+                f"alpha={alpha:.2f}")
 
         # Compute world_ud from current FK pitch (side cameras can't determine vertical)
         current_angles = {
@@ -902,6 +1005,13 @@ class MotionTrack(MQTTClient):
         }
         _, world_ud = self._kinematics.forward_kinematics(current_angles)
 
+        self.logger.debug(
+            f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")
+        self._pdebug.log("MotionTrack", "SIDE_DRIVE", {
+            "target_lr": round(self._side_world_lr_smooth, 1),
+            "world_ud": round(world_ud, 1),
+            "fusion_state": self._fusion.state,
+        })
         self._update_targets(self._side_world_lr_smooth, world_ud)
 
     def __select_target(self, seen_data: list, camera: str) -> dict:
@@ -942,6 +1052,8 @@ class MotionTrack(MQTTClient):
                 if p.get(confidence_key, 0) > highest:
                     highest = p[confidence_key]
                     best = p
+            self.logger.debug(f"SELECT: no prior target, picked highest conf={highest:.2f} "
+                              f"from {len(seen_data)} detections")
             return best
 
         has_face_history = self._last_tracked_face_id is not None
@@ -987,10 +1099,16 @@ class MotionTrack(MQTTClient):
                         score += height_ratio * 0.3
                 score += confidence * 0.2
 
+            self.logger.debug(
+                f"SELECT: candidate conf={confidence:.2f} face={face_id} score={score:.3f} "
+                f"(face_match={'Y' if face_id and face_id == self._last_tracked_face_id else 'N'})")
+
             if score > best_score:
                 best_score = score
                 best = p
 
+        self.logger.debug(f"SELECT: winner score={best_score:.3f} from {len(seen_data)} candidates "
+                          f"(has_face_history={has_face_history})")
         return best
 
     def handle_cmd(self, msg: MQTTMessage) -> None:
@@ -1052,12 +1170,21 @@ class MotionTrack(MQTTClient):
             self._last_attention_time = now
             roster = self._room_state.get_roster()
             attention_id, attention_reason = self._attention.select_target(roster, dt)
+            self.logger.debug(
+                f"ATTENTION: target={attention_id} reason={attention_reason} "
+                f"roster_size={len(roster)} detections={len(target_data.get(self.objects, []))}")
+            self._pdebug.log("MotionTrack", "ATTENTION", {
+                "target": attention_id, "reason": attention_reason,
+                "roster_size": len(roster),
+                "detections": len(target_data.get(self.objects, [])),
+            }, trace_id=trace_id)
             if attention_id:
                 # Find the detection matching the attention target
                 best_target = self._find_detection_for_person(
                     target_data[self.objects], attention_id, roster)
                 if not best_target:
                     # Attention target not in this frame — fall back to legacy
+                    self.logger.debug(f"ATTENTION: {attention_id} not found in detections, falling back to legacy")
                     best_target = self.__select_target(target_data[self.objects], camera)
                 # Update attention time on room roster
                 self._room_state.update_attention(attention_id, dt)
@@ -1117,6 +1244,9 @@ class MotionTrack(MQTTClient):
                 if self.pose_target in pose_data:
                     target_data_for_calc = pose_data[self.pose_target]
                     use_point = True
+            self.logger.debug(
+                f"TRACK: cam={camera} count={target_data.get(self.count, 0)} "
+                f"use_pose={use_point} data={target_data_for_calc}")
 
             # Convert to world-space angles
             world_lr = self._pixel_to_world_angle(target_data_for_calc, camera,
@@ -1135,12 +1265,24 @@ class MotionTrack(MQTTClient):
             if self._world_lr is None:
                 self._world_lr = world_lr
                 self._world_ud = world_ud
+                self.logger.debug(f"EMA: init world_lr={world_lr:.1f} world_ud={world_ud:.1f}")
             else:
                 alpha = self._world_smooth_alpha
-                if self._enable_confirmation and self._fusion.is_confirmed_by_side(world_lr):
+                confirmed = self._enable_confirmation and self._fusion.is_confirmed_by_side(world_lr)
+                if confirmed:
                     alpha = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
+                old_lr, old_ud = self._world_lr, self._world_ud
                 self._world_lr = alpha * self._world_lr + (1 - alpha) * world_lr
                 self._world_ud = alpha * self._world_ud + (1 - alpha) * world_ud
+                self.logger.debug(
+                    f"EMA: raw_lr={world_lr:.1f} raw_ud={world_ud:.1f} alpha={alpha:.2f} "
+                    f"confirmed={confirmed} smooth_lr={old_lr:.1f}->{self._world_lr:.1f} "
+                    f"smooth_ud={old_ud:.1f}->{self._world_ud:.1f}")
+                self._pdebug.log("MotionTrack", "EMA", {
+                    "raw_lr": round(world_lr, 1), "raw_ud": round(world_ud, 1),
+                    "alpha": round(alpha, 2), "confirmed": confirmed,
+                    "smooth_lr": round(self._world_lr, 1), "smooth_ud": round(self._world_ud, 1),
+                }, trace_id=trace_id)
 
             # Record frame BEFORE sending (captures inputs + will capture outputs)
             estimator_snapshot = self._get_estimator_snapshot() if self._recorder else None

@@ -336,10 +336,15 @@ class RTSPFrameGrabber:
                         f"rtpjitterbuffer drop-on-latency=true ! "
                         f"rtph264depay ! h264parse ! avdec_h264 ! "
                         f"videoconvert ! appsink drop=true max-buffers=1 sync=false")
-                    for gst_uri in gst_pipelines:
+                    gst_labels = ["nvh264dec (GPU HW)", "avdec_h264 (SW)"]
+                    connected_label = None
+                    for idx, gst_uri in enumerate(gst_pipelines):
                         cap = cv2.VideoCapture(gst_uri, cv2.CAP_GSTREAMER)
                         if cap.isOpened():
+                            connected_label = gst_labels[idx] if idx < len(gst_labels) else f"pipeline[{idx}]"
                             break
+                    if connected_label:
+                        self.logger.info(f"Connected to {self.uri} using {connected_label}")
                     if not cap.isOpened():
                         # Fall back to FFmpeg with plain RTSP URL (Pi4/Pi5 without GStreamer OpenCV)
                         # Set low-latency flags, then restore env to avoid affecting other captures
@@ -354,6 +359,7 @@ class RTSPFrameGrabber:
                         else:
                             os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
                         if cap.isOpened():
+                            self.logger.info(f"Connected to {self.uri} using FFmpeg (fallback)")
                             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
                             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)

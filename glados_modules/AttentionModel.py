@@ -92,6 +92,11 @@ class AttentionModel:
         if self._budget_remaining > 0:
             self._budget_remaining -= dt
 
+        self.logger.debug(
+            f"ATTENTION eval: current={self._current_target} budget={self._budget_remaining:.1f}s "
+            f"priority={self._current_priority.name if self._current_priority else 'None'} "
+            f"roster={list(roster.keys())}")
+
         # Evaluate all priorities — find the highest
         best_pid, best_priority, best_reason = self._evaluate_priorities(roster, now)
 
@@ -159,14 +164,19 @@ class AttentionModel:
         best_reason = ""
 
         for pid, person in roster.items():
+            person_priorities = []
+
             # --- NEW ARRIVAL (highest) ---
             time_in_room = now - person.first_seen
             if time_in_room < self._arrival_window:
+                person_priorities.append(f"NEW_ARRIVAL(t={time_in_room:.1f}s)")
                 if AttentionPriority.NEW_ARRIVAL.value > best_priority.value:
                     best_pid = pid
                     best_priority = AttentionPriority.NEW_ARRIVAL
                     best_reason = "new_arrival"
                     # Don't break — check if multiple arrivals, pick most recent
+                    self.logger.debug(
+                        f"PRIORITY: {pid} -> new_arrival (in room {time_in_room:.1f}s < {self._arrival_window}s)")
                     continue
 
             # --- GESTURE ---
@@ -180,6 +190,7 @@ class AttentionModel:
                     (now - self._speaker_time) < self._gesture_recency):
                 # Find person closest to speaker direction
                 angle_diff = abs(person.world_lr - self._speaker_world_lr)
+                person_priorities.append(f"SPEAKER(diff={angle_diff:.1f})")
                 if angle_diff < 15.0:  # within 15 degrees of speaker direction
                     if AttentionPriority.SPEAKER.value > best_priority.value:
                         best_pid = pid
@@ -189,6 +200,7 @@ class AttentionModel:
             # --- CONVERSATION PARTNER ---
             if (self._conversation_partner and
                     pid == self._conversation_partner):
+                person_priorities.append("CONVERSATION")
                 if AttentionPriority.CONVERSATION.value > best_priority.value:
                     best_pid = pid
                     best_priority = AttentionPriority.CONVERSATION
@@ -199,6 +211,7 @@ class AttentionModel:
                 last_look = self._last_looked_at.get(pid, person.first_seen)
                 neglect_time = now - last_look
                 if neglect_time > self._fatigue_threshold:
+                    person_priorities.append(f"FATIGUE(neglect={neglect_time:.0f}s)")
                     if AttentionPriority.FATIGUE_GLANCE.value > best_priority.value:
                         best_pid = pid
                         best_priority = AttentionPriority.FATIGUE_GLANCE
@@ -206,6 +219,10 @@ class AttentionModel:
                         self.logger.debug(
                             f"ATTENTION fatigue: glancing at {pid} "
                             f"neglected={neglect_time:.0f}s")
+
+            self.logger.debug(
+                f"PRIORITY: {pid} conf={person.confidence:.2f} world_lr={person.world_lr:.1f} "
+                f"checks=[{', '.join(person_priorities) if person_priorities else 'none'}]")
 
         # --- PROXIMITY fallback (with personality modifier) ---
         if best_pid is None:
@@ -221,7 +238,13 @@ class AttentionModel:
                 best_reason = "grudge"
             else:
                 best_reason = "proximity"
+            self.logger.debug(
+                f"PRIORITY: fallback to proximity -> {best_pid} "
+                f"score={_score(best_pid):.3f} grudge={self._personality_modifiers.get(best_pid, 0.0)}")
 
+        self.logger.debug(
+            f"PRIORITY result: {best_pid} priority={best_priority.name}({best_priority.value}) "
+            f"reason={best_reason} budget={self._budget_remaining:.1f}s")
         return best_pid, best_priority, best_reason
 
     def _get_budget(self, priority: AttentionPriority) -> float:

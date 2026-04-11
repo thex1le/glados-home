@@ -27,6 +27,7 @@ DEFAULT_TOPICS = [
     "vision/camera_response",  # vision detection results
     "system/mood",          # mood changes
     "system/room",          # room state (roster, arrivals, departures)
+    "system/debug",         # pipeline debug records from all systems
 ]
 
 # ANSI colors for readability
@@ -37,9 +38,42 @@ COLORS = {
     "vision/camera_response": "\033[95m",  # magenta
     "system/mood": "\033[91m",      # red
     "system/room": "\033[94m",      # blue
+    "system/debug": "\033[97m",     # white (bright)
 }
 RESET = "\033[0m"
 DIM = "\033[2m"
+BOLD = "\033[1m"
+
+# System name colors for pipeline debug
+SYSTEM_COLORS = {
+    "ai_server": "\033[95m",    # magenta
+    "body_server": "\033[93m",  # yellow
+    "glados": "\033[96m",       # cyan
+}
+
+# Stage colors for pipeline debug
+STAGE_COLORS = {
+    "DETECTION": "\033[92m",     # green
+    "PIX2WORLD": "\033[94m",     # blue
+    "FK_STATE": "\033[94m",      # blue
+    "EMA": "\033[36m",           # dark cyan
+    "SELECT": "\033[33m",        # dark yellow
+    "ATTENTION": "\033[35m",     # dark magenta
+    "IK_INPUT": "\033[91m",      # red
+    "IK_OUTPUT": "\033[91m",     # red
+    "IK_RATE_LIMIT": "\033[91m", # red
+    "IK_CLAMP": "\033[91m",      # red
+    "TARGETS_SENT": "\033[93m",  # yellow
+    "FUSION": "\033[96m",        # cyan
+    "SIDE_DRIVE": "\033[36m",    # dark cyan
+    "SYNC": "\033[34m",          # dark blue
+    "PHYSICS": "\033[93m",       # yellow
+    "MOVING": "\033[93m",        # yellow
+    "CLAMPED": "\033[91m",       # red
+    "SERVO_STATUS": "\033[96m",  # cyan
+    "ROOM_MATCH": "\033[94m",    # blue
+    "PRIORITY": "\033[35m",      # dark magenta
+}
 
 
 def color_for_topic(topic: str) -> str:
@@ -131,6 +165,40 @@ def format_room_state(data: dict) -> str:
     return " | ".join(parts[:3]) + ("\n" + "\n".join(parts[3:]) if len(parts) > 3 else "")
 
 
+def format_debug(data: dict) -> str:
+    """Format pipeline debug message with system/stage coloring."""
+    system = data.get("system", "?")
+    module = data.get("module", "?")
+    stage = data.get("stage", "?")
+    trace = data.get("trace_id", "")
+    debug_data = data.get("data", {})
+
+    sys_color = SYSTEM_COLORS.get(system, "")
+    stg_color = STAGE_COLORS.get(stage, "")
+
+    # Format the data values compactly
+    parts = []
+    for k, v in debug_data.items():
+        if isinstance(v, float):
+            parts.append(f"{k}={v:.1f}")
+        elif isinstance(v, dict):
+            # Nested dict — flatten one level
+            inner = " ".join(f"{ik}={iv:.1f}" if isinstance(iv, float) else f"{ik}={iv}"
+                             for ik, iv in v.items())
+            parts.append(f"{k}={{{inner}}}")
+        elif isinstance(v, list):
+            parts.append(f"{k}=[{len(v)}]")
+        else:
+            parts.append(f"{k}={v}")
+    data_str = " ".join(parts)
+
+    trace_str = f" trace={trace[:8]}" if trace else ""
+    return (f"{sys_color}{BOLD}{system}{RESET} "
+            f"{DIM}{module}{RESET} "
+            f"{stg_color}{stage}{RESET} "
+            f"{data_str}{DIM}{trace_str}{RESET}")
+
+
 def format_message(topic: str, data: dict) -> str:
     """Format a message based on its topic."""
     if topic == "body/servo":
@@ -141,6 +209,8 @@ def format_message(topic: str, data: dict) -> str:
         return format_vision(data)
     elif topic == "system/room":
         return format_room_state(data)
+    elif topic == "system/debug":
+        return format_debug(data)
     else:
         # Generic compact JSON
         compact = json.dumps(data, separators=(",", ":"))
@@ -156,6 +226,10 @@ def on_connect(client, userdata, flags, rc, properties=None):
     for topic in topics:
         client.subscribe(topic)
         print(f"  + {topic}")
+    # Auto-enable pipeline debug on all systems when system/debug is in our topics
+    if any("system/debug" in t for t in topics):
+        client.publish("system/debug/control", json.dumps({"enabled": True}), qos=0)
+        print(f"  {BOLD}> Pipeline debug ENABLED on all systems{RESET}")
     print(f"{DIM}--- Watching (Ctrl+C to stop) ---{RESET}")
     print()
 
@@ -215,7 +289,11 @@ def main():
     try:
         client.loop_forever()
     except KeyboardInterrupt:
-        print(f"\n{DIM}Disconnected.{RESET}")
+        # Disable pipeline debug before disconnecting so it doesn't keep running
+        if any("system/debug" in t for t in subscribe_topics):
+            client.publish("system/debug/control", json.dumps({"enabled": False}), qos=0)
+            print(f"\n  {BOLD}> Pipeline debug DISABLED on all systems{RESET}")
+        print(f"{DIM}Disconnected.{RESET}")
         client.disconnect()
 
 

@@ -49,6 +49,10 @@ def _make_threaded_gservo(location="head_left_right"):
     g.status_topic = ServoEnum.MQTT_STATUS_TOPIC.value
     g.axis = "x"
 
+    # Pipeline debug (no-op mock for tests)
+    from glados_modules.PipelineDebug import PipelineDebug
+    g._pdebug = PipelineDebug(g, "test")
+
     # Need send_status to work
     from glados_modules.MqttConnector import ServoMessageBuilder
     g.send_status = lambda: None  # no-op for test

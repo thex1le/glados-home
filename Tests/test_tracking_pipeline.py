@@ -128,6 +128,10 @@ def _make_motion_track():
     mt._tracer = MagicMock()
     mt._tracer._active = {}
 
+    # Pipeline debug (no-op for tests)
+    from glados_modules.PipelineDebug import PipelineDebug
+    mt._pdebug = PipelineDebug(mt, "test")
+
     # Vision tracker (mock)
     mt.vision_tracker = MagicMock()
     mt.servo_status = MagicMock()

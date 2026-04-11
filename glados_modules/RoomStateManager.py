@@ -114,13 +114,16 @@ class RoomStateManager:
             for person in self._roster.values():
                 person.cameras.discard(camera)
 
-            for detection in detections:
+            for det_idx, detection in enumerate(detections):
                 conf = detection.get("confidence", 0.0)
                 if conf < 0.3:
+                    self.logger.debug(
+                        f"ROOM: cam={camera} det[{det_idx}] rejected conf={conf:.2f} < 0.3")
                     continue
 
                 box = detection.get("box", {})
                 if not box:
+                    self.logger.debug(f"ROOM: cam={camera} det[{det_idx}] rejected no bbox")
                     continue
 
                 # Extract detection features
@@ -221,12 +224,19 @@ class RoomStateManager:
                      self._height_weight * height_sim +
                      self._camera_weight * cam_bonus)
 
+            self.logger.debug(
+                f"MATCH: {pid} angle_diff={angle_diff:.1f} prox={proximity:.2f} "
+                f"height_sim={height_sim:.2f} cam_bonus={cam_bonus} "
+                f"score={score:.3f} (thresh={self._match_threshold})")
+
             if score > best_score:
                 best_score = score
                 best_id = pid
 
         if best_score >= self._match_threshold:
+            self.logger.debug(f"MATCH: winner={best_id} score={best_score:.3f}")
             return best_id
+        self.logger.debug(f"MATCH: no match (best={best_score:.3f} < thresh={self._match_threshold})")
         return None
 
     def tick(self) -> Tuple[List[str], List[str]]:

@@ -28,6 +28,7 @@ from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQ
 from glados_modules.MqttConnector import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
                                           TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
 from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations, PWMLedAnimations
+from glados_modules.PipelineDebug import PipelineDebug
 
 
 class GladosLCD(Thread, MQTTClient):
@@ -689,6 +690,10 @@ class Gservo(MQTTClient, Thread):
 
         # Call the superclass constructor to initialize MQTTClient and the lock
         MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+
+        # Pipeline debug (structured MQTT debug topic)
+        self._pdebug = PipelineDebug(self, "body_server")
+
         # Set hardware to initial position
         self.servo.angle = self.position
         self.send_status()
@@ -761,6 +766,10 @@ class Gservo(MQTTClient, Thread):
         vel_thresh = MotionProfile.MOVING_VELOCITY_THRESHOLD.value
         pos_thresh = MotionProfile.MOVING_POSITION_THRESHOLD.value
 
+        _prev_moving = False
+        _prev_clamped = False
+        _physics_log_counter = 0
+
         while not self.stop:
             # Read state under lock
             with self._lock:
@@ -777,14 +786,17 @@ class Gservo(MQTTClient, Thread):
             pos += vel * dt
 
             # Clamp to physical servo range
+            clamped = False
             if pos <= self.servo_range.min:
                 pos = float(self.servo_range.min)
                 if vel < 0:
                     vel = 0.0
+                clamped = True
             elif pos >= self.servo_range.max:
                 pos = float(self.servo_range.max)
                 if vel > 0:
                     vel = 0.0
+                clamped = True
 
             # Write to hardware
             self.servo.angle = pos
@@ -793,9 +805,47 @@ class Gservo(MQTTClient, Thread):
             with self._lock:
                 self.position = pos
                 self.velocity = vel
-                self.moving = abs(vel) > vel_thresh or abs(error) > pos_thresh
+                now_moving = abs(vel) > vel_thresh or abs(error) > pos_thresh
+                self.moving = now_moving
                 # Keep backward-compatible aliases in sync
                 self.current_angle = pos
+
+            # Log moving state transitions
+            if now_moving != _prev_moving:
+                self.logger.debug(
+                    f"SERVO {self.location}: moving={'START' if now_moving else 'STOP'} "
+                    f"pos={pos:.2f} target={target:.2f} vel={vel:.2f} error={error:.2f}")
+                self._pdebug.log(self.__name__, "MOVING", {
+                    "state": "START" if now_moving else "STOP",
+                    "pos": round(pos, 2), "target": round(target, 2),
+                    "vel": round(vel, 2), "error": round(error, 2),
+                })
+                _prev_moving = now_moving
+
+            # Log physics state every ~1s (every 50 ticks at 50Hz) when moving
+            _physics_log_counter += 1
+            if now_moving and _physics_log_counter % 50 == 0:
+                self.logger.debug(
+                    f"SERVO {self.location}: pos={pos:.2f} target={target:.2f} "
+                    f"vel={vel:.2f} accel={accel:.2f} error={error:.2f} "
+                    f"omega={omega:.1f} zeta={zeta:.2f} clamped={clamped}")
+                self._pdebug.log(self.__name__, "PHYSICS", {
+                    "pos": round(pos, 2), "target": round(target, 2),
+                    "vel": round(vel, 2), "accel": round(accel, 2),
+                    "error": round(error, 2), "omega": round(omega, 1),
+                    "zeta": round(zeta, 2), "clamped": clamped,
+                })
+
+            if clamped and not _prev_clamped:
+                self.logger.debug(
+                    f"SERVO {self.location}: CLAMPED at "
+                    f"{'min=' + str(self.servo_range.min) if pos <= self.servo_range.min else 'max=' + str(self.servo_range.max)} "
+                    f"target={target:.2f}")
+                self._pdebug.log(self.__name__, "CLAMPED", {
+                    "pos": round(pos, 2), "target": round(target, 2),
+                    "limit": self.servo_range.min if pos <= self.servo_range.min else self.servo_range.max,
+                })
+            _prev_clamped = clamped
 
             # Periodic MQTT status broadcast (~5Hz)
             self._tick_count += 1

@@ -190,6 +190,8 @@ class MQTTEnums(Enum):
     SYSTEM_LOG_LEVEL_TOPIC = "system/log_level"
     PERSONALITY_MODIFIER_TOPIC = "system/personality"
     ATTENTION_CONVERSATION_TOPIC = "system/attention/conversation"
+    PIPELINE_DEBUG_TOPIC = "system/debug"
+    PIPELINE_DEBUG_CONTROL_TOPIC = "system/debug/control"
 
 
 class DashboardEnums(Enum):
@@ -616,6 +618,7 @@ class FeatureToggles(Enum):
     GESTURE_RECOGNITION = "gesture_recognition"
     ROOM_STATE_ENABLED = "room_state_enabled"
     ATTENTION_MODEL_ENABLED = "attention_model_enabled"
+    PIPELINE_DEBUG_ENABLED = "pipeline_debug_enabled"
     # Video recording
     RECORD_VIDEO = "record_video"
     RECORDING_PATH = "recording_path"

@@ -10,6 +10,7 @@ from cachetools import TTLCache
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttConnector import MQTTClient, TargetMessageBuilder, ServoMessageBuilder
+from glados_modules.PipelineDebug import PipelineDebug
 from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
     LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums
@@ -85,6 +86,8 @@ class ServoLocation(MQTTClient):
         self.st = SensorTracker(broker=broker)
         # Call the superclass constructor for MQTT client initialization
         super().__init__(ip=broker.ip, port=broker.port)
+        # Pipeline debug (receives servo status from Pi4, runs on GPU)
+        self._pdebug = PipelineDebug(self, "ai_server")
 
     def update_servo_status(self) -> None:
         """Trigger servo message status update.
@@ -154,7 +157,19 @@ class ServoLocation(MQTTClient):
         elif ServoEnum.MSG_LOCATION_KEY.value in j_msg:
             location = j_msg.get(ServoEnum.MSG_LOCATION_KEY.value)
             results = j_msg.get(ServoEnum.MSG_RESULTS.value, {})
-            self.logger.debug(f"Received servo status for {location}: {results}")
+            self.logger.debug(
+                f"SERVO_STATUS: {location} pos={results.get(self.current_angle)} "
+                f"target={results.get(self.last_angle)} vel={results.get(self.velocity, 0.0)} "
+                f"moving={results.get(self.moving)} "
+                f"range=[{results.get(self.min)},{results.get(self.max)}] "
+                f"center={results.get(self.middle)}")
+            self._pdebug.log("ServoLocation", "SERVO_STATUS", {
+                "servo": location,
+                "pos": results.get(self.current_angle),
+                "target": results.get(self.last_angle),
+                "vel": results.get(self.velocity, 0.0),
+                "moving": results.get(self.moving),
+            })
             with self._lock:
                 self.body_map[location] = self.ServoTuple(
                     results.get(self.current_angle),
