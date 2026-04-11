@@ -78,15 +78,11 @@ class RtspConsumer:
                     (gst_original, "nvh264dec"),
                     (gst_hw_cuda, "nvh264dec+cudadownload"),
                     (gst_sw, "avdec_h264"),
-                    (self.rtsp_uri, "default backend"),
                 ]
                 for pipeline, label in pipelines:
                     self.logger.info(f"Connecting to RTSP at {self.rtsp_uri} "
                                      f"(attempt {attempt}, {label})...")
-                    if label == "default backend":
-                        self.cap = cv2.VideoCapture(pipeline)
-                    else:
-                        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+                    self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
                     if self.cap.isOpened():
                         self.logger.info(f"Connected to {self.rtsp_uri} using {label}.")
                         return
@@ -95,7 +91,7 @@ class RtspConsumer:
                     sleep(0.5)
 
                 self.logger.warning(
-                    f"All decode methods failed for {self.rtsp_uri}. "
+                    f"GStreamer pipelines failed for {self.rtsp_uri}. "
                     f"Retrying in {self.reconnect_delay}s...")
             except Exception as e:
                 self.logger.error(f"Exception occurred while connecting: {e}")
@@ -123,17 +119,8 @@ class RtspConsumer:
         }
 
         while True:
-            # Drain buffered frames to get the latest one. cap.read() returns
-            # the NEXT buffered frame, not the latest. Without draining, frames
-            # queue up in GStreamer decoder/depayloader stages faster than YOLO
-            # can consume them, causing multi-second delay buildup.
             ret, frame = self.cap.read()
             if ret and frame is not None:
-                # Keep grabbing until buffer is empty — discard stale frames
-                while self.cap.grab():
-                    got, newer = self.cap.retrieve()
-                    if got and newer is not None:
-                        frame = newer
                 image_dict[CameraEnum.MSG_RAW_IMAGE.value] = frame
                 return image_dict
             else:
