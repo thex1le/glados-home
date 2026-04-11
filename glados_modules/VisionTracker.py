@@ -394,6 +394,7 @@ class MotionTrack(MQTTClient):
         # Camera fusion state machine
         self._fusion = CameraFusionState()
         self._side_world_lr_smooth: float = None
+        self._side_drive_last_send: float = 0.0  # throttle side drive to Pi4's 50Hz physics rate
 
         # IK rate limiting (prevents body target oscillation between solver minima)
         self._prev_body_lr_target: float = None
@@ -1029,6 +1030,14 @@ class MotionTrack(MQTTClient):
             world_ud = self._world_ud
         else:
             world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+
+        # Throttle servo commands to match Pi4's 50Hz physics loop.
+        # Without this, 100+ commands/sec from alternating L/R cameras flood the Pi4
+        # and the spring-damper can't build momentum (body doesn't rotate).
+        now = time.time()
+        if now - self._side_drive_last_send < 0.05:
+            return
+        self._side_drive_last_send = now
 
         self.logger.debug(
             f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")

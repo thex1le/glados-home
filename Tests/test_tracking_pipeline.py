@@ -60,6 +60,7 @@ def _make_motion_track():
     from glados_modules.VisionTracker import CameraFusionState
     mt._fusion = CameraFusionState()
     mt._side_world_lr_smooth = None
+    mt._side_drive_last_send = 0.0
     mt._prev_body_lr_target = None
     mt._prev_body_ud_target = None
     mt._room_state = None
