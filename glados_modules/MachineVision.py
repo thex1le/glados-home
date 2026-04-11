@@ -279,10 +279,23 @@ class MLDetect(Thread, MQTTClient):
                                      uri=self.cam_configs[camera_key][CameraEnum.MSG_RTSP_URI.value])
         consecutive_errors = 0
         MAX_BACKOFF = 30  # seconds
+        # Rate limit: enforce minimum interval between frames to match camera fps.
+        # Without this, the tracker thread processes duplicate/stale frames from
+        # GStreamer's decode buffer, wasting GPU cycles and starving other cameras.
+        cam_fps = int(self.cam_configs[camera_key].get(CameraEnum.MSG_FPS.value, 15))
+        min_frame_interval = 1.0 / cam_fps
+        last_process_time = 0.0
         while True:
             try:
                 image_dict = image_get.get_frame()
                 wall_time = time()
+
+                # Enforce frame rate — sleep if we're processing faster than the camera produces
+                elapsed = wall_time - last_process_time
+                if elapsed < min_frame_interval:
+                    sleep(min_frame_interval - elapsed)
+                    wall_time = time()
+                last_process_time = wall_time
 
                 # Frame timing probe — log latency from camera capture to GPU receive
                 if self._frame_timing_enabled and camera_key in self._frame_timing_cache:
