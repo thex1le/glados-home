@@ -35,6 +35,7 @@ COMMON_APT=(
     gstreamer1.0-plugins-base
     gstreamer1.0-plugins-good
     gstreamer1.0-plugins-bad
+    gstreamer1.0-libav
     gstreamer1.0-rtsp
     gir1.2-gst-rtsp-server-1.0
     python3-dev

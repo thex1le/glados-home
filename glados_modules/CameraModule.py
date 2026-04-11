@@ -12,7 +12,7 @@ from picamera2 import Picamera2, MappedArray, Preview
 # glados imports
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
-from glados_modules.GladosEnums import CameraEnum, SystemEnums
+from glados_modules.GladosEnums import CameraEnum, SystemEnums, FeatureToggles
 from glados_modules.RtspServer import RTSPServer
 
 # Timeout for capture_array — if Picamera2 blocks longer than this,
@@ -75,6 +75,10 @@ class Camera(Process):
         # Per-camera 180 degree flip (for upside-down mounted cameras)
         flip_key = f"{self.location}_flip"
         self._flip_180 = cam_conf.get(flip_key, "False").strip().lower() == "true"
+        self._frame_timing_enabled = configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.FRAME_TIMING_ENABLED.value,
+            fallback="False").strip().lower() == "true"
         self.logger = setup_logger(name=self.__name__)
 
     def run(self):
@@ -114,9 +118,11 @@ class Camera(Process):
             self.logger.debug("Starting main camera loop...")
 
             frame_count = 0
+            frame_seq = 0
             last_log_time = time()
             last_successful_capture = time()
             LOG_INTERVAL = 10.0  # log stats every 10 seconds
+            timing_topic = FeatureToggles.FRAME_TIMING_TOPIC.value
 
             # Single watchdog thread that detects capture hangs.
             # Escalation: kernel module reset -> hard process exit.
@@ -194,6 +200,15 @@ class Camera(Process):
                     if t_send > 1.0:
                         self.logger.warning(f"rtsp send_data blocked for {t_send:.2f}s")
 
+                    # Frame timing probe — publish capture timestamp so GPU can measure latency
+                    if self._frame_timing_enabled:
+                        self._mqtt.send_command({
+                            "camera": self.location,
+                            "seq": frame_seq,
+                            "ts_capture": t0,
+                        }, timing_topic, qos=0)
+                    frame_seq += 1
+
                     frame_count += 1
                     now = time()
                     if now - last_log_time >= LOG_INTERVAL:
@@ -260,6 +275,7 @@ class Camera(Process):
         new_cam._flip_180 = self._flip_180
         new_cam._hw_encode = self._hw_encode
         new_cam._camera_format = self._camera_format
+        new_cam._frame_timing_enabled = self._frame_timing_enabled
         new_cam.logger = self.logger
         return new_cam
 

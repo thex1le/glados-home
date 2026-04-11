@@ -628,6 +628,9 @@ class FeatureToggles(Enum):
     ROOM_STATE_ENABLED = "room_state_enabled"
     ATTENTION_MODEL_ENABLED = "attention_model_enabled"
     PIPELINE_DEBUG_ENABLED = "pipeline_debug_enabled"
+    # Frame timing probe: camera publishes capture timestamps, GPU measures latency
+    FRAME_TIMING_ENABLED = "frame_timing_enabled"
+    FRAME_TIMING_TOPIC = "system/frame_timing"
     # Video recording
     RECORD_VIDEO = "record_video"
     RECORDING_PATH = "recording_path"

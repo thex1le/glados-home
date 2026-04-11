@@ -80,9 +80,16 @@ class MLDetect(Thread, MQTTClient):
         broker = self.configfile[mh][SystemEnums.MQTT_SERVER_IP.value]
         port = self.configfile[mh][SystemEnums.MQTT_PORT.value]
         # Pre-populate topic_handler before MQTT connects (subscribes on_connect)
+        self._frame_timing_enabled = configfile.get(
+            FeatureToggles.CONFIG_HEAD.value,
+            FeatureToggles.FRAME_TIMING_ENABLED.value,
+            fallback="False").strip().lower() == "true"
+        self._frame_timing_cache: Dict[str, float] = {}  # camera -> latest ts_capture
         self.topic_handler = {
             FeatureToggles.MQTT_RECORDING_TOPIC.value: self._handle_recording_command,
         }
+        if self._frame_timing_enabled:
+            self.topic_handler[FeatureToggles.FRAME_TIMING_TOPIC.value] = self._handle_frame_timing
         MQTTClient.__init__(self, broker, port)
         self.cmd_topic: str = CameraEnum.MQTT_RESPONSE_TOPIC.value
         self.status_topic: str = CameraEnum.MQTT_STATUS_TOPIC.value
@@ -276,6 +283,14 @@ class MLDetect(Thread, MQTTClient):
             try:
                 image_dict = image_get.get_frame()
                 wall_time = time()
+
+                # Frame timing probe — log latency from camera capture to GPU receive
+                if self._frame_timing_enabled and camera_key in self._frame_timing_cache:
+                    ts_capture = self._frame_timing_cache[camera_key]
+                    latency_ms = (wall_time - ts_capture) * 1000
+                    self.logger.info(
+                        f"FRAME_TIMING: {camera_key} latency={latency_ms:.0f}ms "
+                        f"(capture={ts_capture:.3f} receive={wall_time:.3f})")
 
                 # Signal recording gate that this camera is producing frames
                 if self._recording_gate and not self._recording_session:
@@ -665,6 +680,18 @@ class MLDetect(Thread, MQTTClient):
         # The actual work happens in the tracker threads spawned above.
         while True:
             sleep(1)
+
+    def _handle_frame_timing(self, msg: Any) -> None:
+        """Cache frame capture timestamps from camera processes for latency measurement."""
+        from json import loads
+        try:
+            j_msg = loads(msg.payload.decode())
+        except Exception:
+            return
+        camera = j_msg.get("camera", "")
+        ts_capture = j_msg.get("ts_capture", 0)
+        if camera and ts_capture:
+            self._frame_timing_cache[camera] = ts_capture
 
     def _handle_recording_command(self, msg: Any) -> None:
         """Handle start/stop recording commands from MQTT.
