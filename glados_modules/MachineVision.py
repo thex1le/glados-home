@@ -40,7 +40,6 @@ from glados_modules.RTSPClient import RtspConsumer
 from glados_modules.RtspServer import RTSPServer
 from glados_modules.MqttConnector import MQTTClient, CameraMessageBuilder
 from glados_modules.GladosEnums import CameraEnum, VisionResultsEnum, SystemEnums, LoggingEnums, TraceEnums, FaceEnums, FeatureToggles
-from glados_modules.MqttConsumerModules import ServoLocation
 from glados_modules.VisionTracker import MotionTrack
 from glados_modules.TraceLog import TraceLog
 from glados_modules.VideoRecorder import RecordingSession, RecordingGate
@@ -90,8 +89,9 @@ class MLDetect(Thread, MQTTClient):
         cam_conf = self.configfile[CameraEnum.CONFIG_HEAD.value]
         # track servo movement, only process images from head camera when we're not moving
         bt = MQTTClient.broker_tuple(broker, port)
-        self.servos = ServoLocation(bt)
         self.motion_tracking = MotionTrack(broker=bt, camera_resolution=head_cam_resolution)
+        # Reuse MotionTrack's ServoLocation — avoids duplicate MQTT subscriptions
+        self.servos = self.motion_tracking.servo_status
         # Camera configurations for each camera
         self.cam_configs = {
             cam_conf[CameraEnum.CAMERA_HEAD_FACTORY.value]: {

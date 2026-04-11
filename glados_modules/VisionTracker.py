@@ -84,6 +84,7 @@ class CameraFusionState:
                                     console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
         self.state: str = FusionEnums.STATE_SIDE_ONLY.value
         self._head_last_seen: float = 0.0
+        self._head_miss_count: int = 0
         self._head_count: int = 0
         self._left_last_seen: float = 0.0
         self._right_last_seen: float = 0.0
@@ -126,6 +127,7 @@ class CameraFusionState:
         was_side_only = self.state in (FusionEnums.STATE_SIDE_ONLY.value,
                                        FusionEnums.STATE_HANDOFF_TO_SIDE.value)
         self._head_last_seen = now
+        self._head_miss_count = 0
         if was_side_only:
             best_side = self.get_best_side_world_lr()
             old_state = self.state
@@ -140,9 +142,17 @@ class CameraFusionState:
             self.logger.debug(f"FUSION: {old_state} -> {self.state} (side_lr={best_side})")
 
     def head_lost(self) -> None:
-        """Signal that the head camera lost the target."""
+        """Signal that the head camera lost the target.
+
+        Requires 3 consecutive misses before transitioning back to side-only.
+        A single zero-detection frame (common with YOLO) should not reset tracking.
+        """
         if self.state in (FusionEnums.STATE_HEAD_TRACKING.value,
                           FusionEnums.STATE_HANDOFF_TO_HEAD.value):
+            self._head_miss_count += 1
+            if self._head_miss_count < 3:
+                self.logger.debug(f"FUSION: head_lost miss {self._head_miss_count}/3, holding {self.state}")
+                return
             old_state = self.state
             best_side = self.get_best_side_world_lr()
             if best_side is not None:
@@ -150,6 +160,7 @@ class CameraFusionState:
                 self._handoff_start_time = time.time()
             else:
                 self.state = FusionEnums.STATE_SIDE_ONLY.value
+            self._head_miss_count = 0
             self.logger.debug(f"FUSION: head_lost {old_state} -> {self.state} (side_lr={best_side})")
 
     def get_best_side_world_lr(self) -> float:
@@ -969,13 +980,24 @@ class MotionTrack(MQTTClient):
     def _drive_from_room_state(self) -> None:
         """Single decision point for side-camera-driven servo movement.
 
-        Reads the fused room state (best of left/right side cameras),
-        applies EMA smoothing, computes world_ud from current FK pitch,
-        and issues one _update_targets() call. This replaces the previous
-        per-camera _update_targets() calls that caused oscillation when
-        both side cameras detected people simultaneously.
+        Uses the attention model's current target (if available) to pick
+        a specific person's world_lr from the room roster. Falls back to
+        the best side camera angle if attention model is disabled or the
+        target isn't in the roster. This prevents oscillation when left
+        and right cameras see different people.
         """
-        best_lr = self._fusion.get_best_side_world_lr()
+        best_lr = None
+
+        # Prefer attention model target — prevents oscillation between people
+        if self._attention and self._room_state:
+            roster = self._room_state.get_roster()
+            target_id = self._attention._current_target
+            if target_id and target_id in roster:
+                best_lr = roster[target_id].world_lr
+
+        # Fall back to raw side camera angle
+        if best_lr is None:
+            best_lr = self._fusion.get_best_side_world_lr()
         if best_lr is None:
             return
 
@@ -996,14 +1018,10 @@ class MotionTrack(MQTTClient):
                 f"SIDE_DRIVE: raw_lr={best_lr:.1f} smooth_lr={old_smooth:.1f}->{self._side_world_lr_smooth:.1f} "
                 f"alpha={alpha:.2f}")
 
-        # Compute world_ud from current FK pitch (side cameras can't determine vertical)
-        current_angles = {
-            self.body_LR_name: self._get_estimated_position(self.body_LR_name),
-            self.body_UD_name: self._get_estimated_position(self.body_UD_name),
-            self.head_LR_name: self._get_estimated_position(self.head_LR_name),
-            self.head_UD_name: self._get_estimated_position(self.head_UD_name),
-        }
-        _, world_ud = self._kinematics.forward_kinematics(current_angles)
+        # Side cameras can't measure pitch — use last known head camera value or neutral.
+        # Using FK pitch here creates a positive feedback loop: FK reads body_ud →
+        # IK targets higher body_ud → FK reads higher → runaway to 180°.
+        world_ud = self._world_ud if self._world_ud is not None else 0.0
 
         self.logger.debug(
             f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")

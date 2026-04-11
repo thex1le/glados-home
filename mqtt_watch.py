@@ -109,14 +109,17 @@ def format_servo_cmd(data: dict) -> str:
 
 def format_servo_status(data: dict) -> str:
     """Compact format for servo status."""
-    results = data.get("results", data)
+    # Location is at top level, angle data is inside "results"
+    loc = data.get("location", "?")
+    results = data.get("results", {})
     if isinstance(results, dict):
-        loc = results.get("location", "?")
         current = results.get("current_angle", "?")
         moving = results.get("moving", "?")
         vel = results.get("velocity", "?")
+        target = results.get("last_angle", "")
         short = loc.replace("head_", "h_").replace("body_", "b_").replace("left_right", "lr").replace("up_down", "ud")
-        return f"{short}: angle={current} moving={moving} vel={vel}"
+        target_str = f" target={target}" if target != "" else ""
+        return f"{short}: angle={current}{target_str} moving={moving} vel={vel}"
     return json.dumps(data, separators=(",", ":"))
 
 
