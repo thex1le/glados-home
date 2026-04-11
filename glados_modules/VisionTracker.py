@@ -604,9 +604,18 @@ class MotionTrack(MQTTClient):
         else:
             fov = 54.0
 
-        # Compute angular offset using arctan and focal length
-        focal_length = (axis_size / 2) / tan(radians(fov) / 2)
-        angle_offset_deg = degrees(atan(offset_from_center / focal_length))
+        # Compute angular offset from pixel displacement.
+        # Wide-angle fisheye lenses (>120° FOV) use equidistant projection (r = f*θ),
+        # which is a linear pixel-to-angle mapping. Narrow lenses use rectilinear (r = f*tan(θ)).
+        # Using rectilinear on fisheye over-estimates angles at the edges by ~20°,
+        # causing left and right cameras to disagree on the same person's position.
+        if fov > 120:
+            # Equidistant fisheye: angle is proportional to pixel offset
+            angle_offset_deg = offset_from_center * (fov / axis_size)
+        else:
+            # Rectilinear (standard lens): use arctan projection
+            focal_length = (axis_size / 2) / tan(radians(fov) / 2)
+            angle_offset_deg = degrees(atan(offset_from_center / focal_length))
 
         # Compute camera's current world-space pointing direction
         if camera == CameraEnum.CAMERA_HEAD.value:
@@ -647,7 +656,7 @@ class MotionTrack(MQTTClient):
         world_angle = camera_world + angle_offset_deg
         self.logger.debug(
             f"PIX2WORLD: cam={camera} axis={axis} pixel={pixel_center:.0f}/{axis_size:.0f} "
-            f"offset_px={offset_from_center:.0f} fov={fov} focal={focal_length:.1f} "
+            f"offset_px={offset_from_center:.0f} fov={fov} "
             f"angle_offset={angle_offset_deg:.2f} cam_world={camera_world:.1f} -> world={world_angle:.1f}")
         self._pdebug.log("MotionTrack", "PIX2WORLD", {
             "cam": camera, "axis": axis,
