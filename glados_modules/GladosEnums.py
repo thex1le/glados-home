@@ -504,7 +504,7 @@ class MotionProfile(Enum):
     BODY_PARAMS = {
         1: (1.5, 1.0),     # Calm: very slow, critically damped
         2: (2.0, 1.0),     # Neutral: slow, critically damped
-        3: (2.5, 1.0),     # Attentive: moderate, critically damped
+        3: (3.0, 0.95),    # Attentive: moderate, slight overshoot for weight
         4: (3.5, 0.95),    # Angry: faster, nearly critically damped
         5: (4.5, 0.90),    # Frustrated: fast follow, tiny overshoot
     }
@@ -530,17 +530,21 @@ class MotionProfile(Enum):
     IDLE_TIMEOUT = 5.0                 # seconds without target before idle drift starts
     DEFAULT_SERVO_CENTER = 90.0        # fallback center angle
     BREATHING_AMPLITUDE = 0.3          # degrees of body_UD oscillation
+    BREATHING_FREQ = 0.2               # Hz (~12 breaths per minute)
+    # LR idle sway: incommensurate with breathing so the pattern never repeats (Lissajous)
+    SWAY_LR_AMPLITUDE = 0.4            # degrees of body_LR oscillation
+    SWAY_LR_FREQ = 0.13                # Hz — irrational ratio to breathing freq
+    SWAY_HEAD_LR_AMPLITUDE = 0.2       # degrees of head_LR counter-sway (half body, opposite phase)
     # Default pitch when side cameras drive (no head camera data yet).
     # Robot is mounted ~8ft high, people are ~5ft tall at ~6-10ft distance.
     # Negative = looking down. Adjust if mounting height changes.
     SIDE_DRIVE_DEFAULT_PITCH = -15.0
-    BREATHING_FREQ = 0.2               # Hz (~12 breaths per minute)
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
     # IK rate limiting: max degrees body targets can change per frame
-    BODY_LR_MAX_STEP_DEG = 15.0
-    BODY_UD_MAX_STEP_DEG = 10.0
+    BODY_LR_MAX_STEP_DEG = 25.0
+    BODY_UD_MAX_STEP_DEG = 15.0
 
 
 class FusionEnums(Enum):

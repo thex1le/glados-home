@@ -23,7 +23,7 @@ inflect                          # number-to-words conversion for TTS
 unidecode                        # Unicode-to-ASCII transliteration for TTS
 
 # AI / ML - Object detection
-ultralytics                      # YOLOv8
+ultralytics                      # YOLO11
 
 # AI / ML - Pose estimation
 rtmlib                           # RTMLib whole-body pose (133 keypoints)

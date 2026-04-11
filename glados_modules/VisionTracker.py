@@ -449,6 +449,9 @@ class MotionTrack(MQTTClient):
         # Breathing parameters
         self._breathing_freq: float = MotionProfile.BREATHING_FREQ.value * 2 * pi
         self._breathing_amplitude: float = MotionProfile.BREATHING_AMPLITUDE.value
+        self._sway_lr_freq: float = MotionProfile.SWAY_LR_FREQ.value * 2 * pi
+        self._sway_lr_amplitude: float = MotionProfile.SWAY_LR_AMPLITUDE.value
+        self._sway_head_lr_amplitude: float = MotionProfile.SWAY_HEAD_LR_AMPLITUDE.value
 
         # Motion recording (set to None to disable, or call enable_recording())
         self._recorder: MotionRecorder = None
@@ -478,8 +481,19 @@ class MotionTrack(MQTTClient):
         self.debug_overlay_enabled: bool = True
 
     def enable_recording(self, session_name: str = None, output_dir: str = "./recordings") -> str:
-        """Enable motion frame recording. Returns the recording file path."""
-        self._recorder = MotionRecorder(session_name=session_name, output_dir=output_dir)
+        """Enable motion frame recording. Returns the recording file path.
+
+        Captures the current smoothing and IK rate-limit state so replay
+        can restore it for deterministic frame-1 output.
+        """
+        initial_state = {
+            "smooth_lr": self._world_lr,
+            "smooth_ud": self._world_ud,
+            "prev_body_lr_target": self._prev_body_lr_target,
+            "prev_body_ud_target": self._prev_body_ud_target,
+        }
+        self._recorder = MotionRecorder(session_name=session_name, output_dir=output_dir,
+                                         initial_state=initial_state)
         self.logger.info(f"Motion recording enabled: {self._recorder.filepath}")
         return self._recorder.filepath
 
@@ -694,6 +708,35 @@ class MotionTrack(MQTTClient):
 
         return amplitude * sin(self._breathing_freq * time.time())
 
+    def _get_sway_offsets(self) -> tuple:
+        """Compute LR idle sway offsets for body and head.
+
+        Uses a frequency incommensurate with breathing so the combined
+        motion traces a Lissajous curve that never exactly repeats.
+        Head counter-sways at half amplitude (opposite phase) so the
+        camera stays roughly stable while the body drifts.
+
+        Returns:
+            Tuple of (body_lr_offset, head_lr_offset) in degrees.
+        """
+        if not self._enable_breathing:
+            return 0.0, 0.0
+        if self._behavior_state == BehaviorEnums.STATE_ASLEEP.value:
+            return 0.0, 0.0
+
+        body_amp = self._sway_lr_amplitude
+        head_amp = self._sway_head_lr_amplitude
+        if self._behavior_state == BehaviorEnums.STATE_DROWSY.value:
+            elapsed = time.time() - self._drowsy_start_time
+            duration = BehaviorEnums.DROWSY_TO_SLEEP_DURATION.value
+            factor = max(0.0, 1.0 - elapsed / duration)
+            body_amp *= factor
+            head_amp *= factor
+
+        t = time.time()
+        sway = sin(self._sway_lr_freq * t)
+        return body_amp * sway, -head_amp * sway
+
     def _update_targets(self, target_world_lr: float, target_world_ud: float,
                          trace_id: str = None) -> None:
         """Compute head and body servo targets from world-space angles and send one MQTT message.
@@ -766,12 +809,14 @@ class MotionTrack(MQTTClient):
         self._prev_body_lr_target = body_lr_target
         self._prev_body_ud_target = body_ud_target
 
-        # Clamp all to physical ranges
-        # Add breathing oscillation to body_UD
+        # Add organic micro-motion: breathing (UD) + sway (LR)
+        # Applied after IK rate limiting but before clamping so they
+        # don't interfere with the IK solver or accumulate in prev targets.
         breathing = self._get_breathing_offset()
-        if abs(breathing) > 0.01:
-            self.logger.debug(f"IK breathing: offset={breathing:.2f}")
+        sway_body_lr, sway_head_lr = self._get_sway_offsets()
         body_ud_target += breathing
+        body_lr_target += sway_body_lr
+        head_lr_target += sway_head_lr
 
         pre_clamp = (head_lr_target, head_ud_target, body_lr_target, body_ud_target)
         head_lr_target = self._clamp(head_lr_target, self.head_LR_name)
@@ -1025,8 +1070,10 @@ class MotionTrack(MQTTClient):
         # Side cameras can't measure pitch — use last head camera value if recent,
         # otherwise default to mounting-appropriate downward pitch.
         # Using FK pitch here creates a positive feedback loop (runaway to 180°).
+        # Short timeout (2s): after body rotates, old head camera pitch is wrong
+        # for the new body orientation and causes IK to produce wild body_lr targets.
         head_ud_age = time.time() - self._world_ud_time if self._world_ud_time > 0 else float('inf')
-        if self._world_ud is not None and head_ud_age < 10.0:
+        if self._world_ud is not None and head_ud_age < 2.0:
             world_ud = self._world_ud
         else:
             world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value

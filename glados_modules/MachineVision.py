@@ -126,7 +126,7 @@ class MLDetect(Thread, MQTTClient):
         self.kpt_threshold = float(configfile.get("YOLO", "keypoint_threshold",
                                                    fallback=str(VisionResultsEnum.KEYPOINT_DRAW_THRESHOLD.value)))
 
-        self.logger.debug(f"YOLOv8 model started with {self.model_config}")
+        self.logger.debug(f"YOLO11 model started with {self.model_config}")
 
         # Start RTSP servers
         for key in self.cam_configs.keys():
@@ -345,7 +345,7 @@ class MLDetect(Thread, MQTTClient):
         """
         Start a separate tracking thread for each camera.
         """
-        self.logger.debug(f"YOLOv8 model started with {self.model_config}")
+        self.logger.debug(f"YOLO11 model started with {self.model_config}")
         pose_enabled = self.configfile.get(FeatureToggles.CONFIG_HEAD.value,
                                             FeatureToggles.POSE_MODEL_ENABLED.value,
                                             fallback="True").strip().lower() == "true"
@@ -704,12 +704,18 @@ class MLDetect(Thread, MQTTClient):
             self._recording_gate = RecordingGate(cam_names, self._recording_timeout)
             self._record_enabled = True
             self.logger.info("Recording requested via MQTT — waiting for cameras")
+            # Start motion recording alongside video recording
+            session_name = j_msg.get("session")
+            motion_path = self.motion_tracking.enable_recording(session_name=session_name)
+            self.logger.info(f"Motion recording started: {motion_path}")
         elif cmd == FeatureToggles.RECORDING_CMD_STOP.value:
             if self._recording_session and self._recording_session.is_active:
                 self._recording_session.stop()
                 self._recording_session = None
                 self.logger.info("Recording stopped via MQTT")
             self._record_enabled = False
+            # Stop motion recording alongside video recording
+            self.motion_tracking.disable_recording()
 
     def _handle_face_command(self, msg: Any) -> None:
         """Handle face enrollment/forget commands from MQTT.

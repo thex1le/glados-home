@@ -81,6 +81,9 @@ def _make_motion_track():
     mt._drowsy_start_time = 0.0
     mt._breathing_freq = MotionProfile.BREATHING_FREQ.value * 2 * pi
     mt._breathing_amplitude = MotionProfile.BREATHING_AMPLITUDE.value
+    mt._sway_lr_freq = MotionProfile.SWAY_LR_FREQ.value * 2 * pi
+    mt._sway_lr_amplitude = MotionProfile.SWAY_LR_AMPLITUDE.value
+    mt._sway_head_lr_amplitude = MotionProfile.SWAY_HEAD_LR_AMPLITUDE.value
 
     # Feature toggles (all enabled for tests)
     mt._enable_movement = True

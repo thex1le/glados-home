@@ -100,3 +100,62 @@ class TestRecorderReplayRoundtrip:
             # Diff may not be 0 because replay re-runs the smoothing from scratch
             # while the recording captured pre-smoothed outputs. Verify it's bounded.
             assert report["max_diff_degrees"] < 15.0, f"Too much diff: {report['max_diff_degrees']}"
+
+    def test_warm_start_reduces_initial_divergence(self):
+        """Recording with initial_state should produce tighter replay diffs.
+
+        Without initial_state, replay cold-starts the EMA (first frame = raw value).
+        With initial_state, replay restores the smoothing state from before frame 1,
+        so frame 1 output matches the original recording much more closely.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Cold start: no initial_state in header
+            rec_cold = MotionRecorder(session_name="cold", output_dir=tmpdir)
+            for i in range(10):
+                # Move bbox left-to-right so smoothing matters
+                rec_cold.log_frame(self._make_frame(i, bbox_x=200 + i * 30))
+            rec_cold.close()
+
+            # Warm start: initial_state captures pre-existing smoothing
+            warm_state = {
+                "smooth_lr": 95.0,  # pre-warmed smooth value (not None)
+                "smooth_ud": 92.0,
+                "prev_body_lr_target": 90.0,
+                "prev_body_ud_target": 100.0,
+            }
+            rec_warm = MotionRecorder(session_name="warm", output_dir=tmpdir,
+                                      initial_state=warm_state)
+            for i in range(10):
+                rec_warm.log_frame(self._make_frame(i, bbox_x=200 + i * 30))
+            rec_warm.close()
+
+            cold_path = os.path.join(tmpdir, "cold.jsonl")
+            warm_path = os.path.join(tmpdir, "warm.jsonl")
+
+            results_cold = MotionReplay.replay(cold_path)
+            results_warm = MotionReplay.replay(warm_path)
+
+            # Both should produce 10 frames
+            assert len(results_cold) == 10
+            assert len(results_warm) == 10
+
+            # Warm replay should start from the initial smooth_lr, not raw
+            # Frame 0: cold starts at raw world_lr, warm starts blended with 95.0
+            assert results_cold[0]["smoothed_world_lr"] != results_warm[0]["smoothed_world_lr"], \
+                "Warm start should produce different frame-0 smoothing than cold start"
+
+    def test_initial_state_stored_in_header(self):
+        """Recording header should contain the initial pipeline state."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = {"smooth_lr": 100.0, "smooth_ud": 85.0,
+                     "prev_body_lr_target": 95.0, "prev_body_ud_target": 102.0}
+            rec = MotionRecorder(session_name="state_check", output_dir=tmpdir,
+                                  initial_state=state)
+            rec.close()
+
+            filepath = os.path.join(tmpdir, "state_check.jsonl")
+            with open(filepath) as f:
+                header = json.loads(f.readline())
+            assert header["type"] == "header"
+            assert header["initial_state"]["smooth_lr"] == 100.0
+            assert header["initial_state"]["prev_body_lr_target"] == 95.0

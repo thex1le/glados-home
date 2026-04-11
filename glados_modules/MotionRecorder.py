@@ -30,7 +30,17 @@ class MotionRecorder:
     reproduce the calculation, plus the outputs for comparison.
     """
 
-    def __init__(self, session_name: str = None, output_dir: str = "./recordings") -> None:
+    def __init__(self, session_name: str = None, output_dir: str = "./recordings",
+                 initial_state: Dict[str, Any] = None) -> None:
+        """Create a new recording session.
+
+        Args:
+            session_name: Name for the recording file. Auto-generated if None.
+            output_dir: Directory to write recordings to.
+            initial_state: Snapshot of smoothing/IK state at recording start.
+                Keys: smooth_lr, smooth_ud, prev_body_lr_target, prev_body_ud_target.
+                Enables deterministic replay by restoring this state before frame 1.
+        """
         os.makedirs(output_dir, exist_ok=True)
         if session_name is None:
             session_name = datetime.now().strftime("session_%Y%m%d_%H%M%S")
@@ -38,13 +48,16 @@ class MotionRecorder:
         self._file = open(self.filepath, 'a')
         self._frame_count = 0
         self._start_time = time.time()
-        # Write header line
-        self._file.write(json.dumps({
+        # Write header line with initial pipeline state for deterministic replay
+        header = {
             "type": "header",
             "session": session_name,
             "start_time": self._start_time,
             "start_iso": datetime.now().isoformat(),
-        }) + "\n")
+        }
+        if initial_state:
+            header["initial_state"] = initial_state
+        self._file.write(json.dumps(header) + "\n")
         self._file.flush()
 
     def log_frame(self, frame_data: dict) -> None:
@@ -127,15 +140,26 @@ class MotionReplay:
     """
 
     @staticmethod
-    def load_session(filepath: str) -> List[dict]:
-        """Load a recorded session and return only frame records."""
+    def load_session(filepath: str) -> tuple:
+        """Load a recorded session, returning (header, frames).
+
+        Args:
+            filepath: Path to the JSONL recording file.
+
+        Returns:
+            Tuple of (header_dict, list_of_frame_dicts). Header may be empty
+            for old recordings that didn't include initial_state.
+        """
+        header = {}
         frames = []
         with open(filepath, 'r') as f:
             for line in f:
                 record = json.loads(line.strip())
-                if record.get("type") == "frame":
+                if record.get("type") == "header":
+                    header = record
+                elif record.get("type") == "frame":
                     frames.append(record)
-        return frames
+        return header, frames
 
     @staticmethod
     def replay(filepath: str, world_smooth_alpha: float = 0.7) -> List[dict]:
@@ -146,18 +170,31 @@ class MotionReplay:
         kinematics and Jacobian IK. Returns a list of result records that
         can be compared against the original recording or other code versions.
 
+        If the recording header contains initial_state (smoothing + IK rate
+        limit state from recording start), replay restores it for deterministic
+        output from frame 1. Old recordings without initial_state fall back to
+        cold-start behavior.
+
         Args:
             filepath: Path to the JSONL recording file.
             world_smooth_alpha: EMA smoothing factor for world-space angles.
         """
-        from glados_modules.GladosEnums import ServoEnum
+        from glados_modules.GladosEnums import ServoEnum, MotionProfile
         from glados_modules.RobotKinematics import RobotKinematics
 
-        frames = MotionReplay.load_session(filepath)
+        header, frames = MotionReplay.load_session(filepath)
         results = []
 
-        smoothed_lr = None
-        smoothed_ud = None
+        # Restore initial pipeline state from recording header (deterministic replay)
+        init = header.get("initial_state", {})
+        smoothed_lr = init.get("smooth_lr")
+        smoothed_ud = init.get("smooth_ud")
+        prev_body_lr = init.get("prev_body_lr_target")
+        prev_body_ud = init.get("prev_body_ud_target")
+
+        # IK rate limits (match live pipeline)
+        max_lr_step = MotionProfile.BODY_LR_MAX_STEP_DEG.value
+        max_ud_step = MotionProfile.BODY_UD_MAX_STEP_DEG.value
 
         for frame in frames:
             camera = frame["camera"]
@@ -203,11 +240,24 @@ class MotionReplay:
             # Body IK: find where body should go (head at middle)
             body_targets = kin.inverse_kinematics_body(smoothed_lr, smoothed_ud)
 
+            body_lr_target = body_targets[body_lr_name]
+            body_ud_target = body_targets[body_ud_name]
+
+            # IK rate limiting (matches VisionTracker._update_targets)
+            if prev_body_lr is not None:
+                delta = body_lr_target - prev_body_lr
+                body_lr_target = prev_body_lr + max(-max_lr_step, min(max_lr_step, delta))
+            if prev_body_ud is not None:
+                delta = body_ud_target - prev_body_ud
+                body_ud_target = prev_body_ud + max(-max_ud_step, min(max_ud_step, delta))
+            prev_body_lr = body_lr_target
+            prev_body_ud = body_ud_target
+
             # Clamp
             head_lr_target = max(mins[head_lr_name], min(maxs[head_lr_name], head_targets[head_lr_name]))
             head_ud_target = max(mins[head_ud_name], min(maxs[head_ud_name], head_targets[head_ud_name]))
-            body_lr_target = max(mins[body_lr_name], min(maxs[body_lr_name], body_targets[body_lr_name]))
-            body_ud_target = max(mins[body_ud_name], min(maxs[body_ud_name], body_targets[body_ud_name]))
+            body_lr_target = max(mins[body_lr_name], min(maxs[body_lr_name], body_lr_target))
+            body_ud_target = max(mins[body_ud_name], min(maxs[body_ud_name], body_ud_target))
 
             result = {
                 "frame_number": frame["frame_number"],
@@ -238,7 +288,7 @@ class MotionReplay:
         Returns:
             Dict with comparison metrics and per-frame diffs.
         """
-        original_frames = MotionReplay.load_session(original_file)
+        _, original_frames = MotionReplay.load_session(original_file)
         diffs = []
         max_diff = 0.0
         total_diff = 0.0
