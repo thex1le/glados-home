@@ -124,22 +124,15 @@ class CameraFusionState:
     def update_head_detection(self) -> None:
         """Signal that the head camera has a detection this frame."""
         now = time.time()
-        was_side_only = self.state in (FusionEnums.STATE_SIDE_ONLY.value,
-                                       FusionEnums.STATE_HANDOFF_TO_SIDE.value)
+        old_state = self.state
         self._head_last_seen = now
         self._head_miss_count = 0
-        if was_side_only:
-            best_side = self.get_best_side_world_lr()
-            old_state = self.state
-            if best_side is not None:
-                # Side camera had a recent detection — blend from its angle to head's
-                self.state = FusionEnums.STATE_HANDOFF_TO_HEAD.value
-                self._handoff_start_time = now
-                self._handoff_start_lr = best_side
-            else:
-                # No side camera data — go straight to head tracking (no blend needed)
-                self.state = FusionEnums.STATE_HEAD_TRACKING.value
-            self.logger.debug(f"FUSION: {old_state} -> {self.state} (side_lr={best_side})")
+        # Go directly to HEAD_TRACKING. Side cameras must stop driving immediately
+        # when the head camera has a detection — the head camera's FK-based world
+        # angles are far more accurate than the side camera's fixed-mount estimates.
+        if self.state != FusionEnums.STATE_HEAD_TRACKING.value:
+            self.state = FusionEnums.STATE_HEAD_TRACKING.value
+            self.logger.debug(f"FUSION: {old_state} -> {self.state}")
 
     def head_lost(self) -> None:
         """Signal that the head camera lost the target.

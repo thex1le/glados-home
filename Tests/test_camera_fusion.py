@@ -27,21 +27,19 @@ class TestCameraFusionState:
         fusion.update_head_detection()
         assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
 
-    def test_head_detection_with_side_triggers_handoff(self):
-        """If side camera had a recent detection, start blending."""
+    def test_head_detection_goes_straight_to_head_tracking(self):
+        """Head detection should go directly to HEAD_TRACKING to stop side drives."""
         fusion = CameraFusionState()
         fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 40.0, 1)
         fusion.update_head_detection()
-        assert fusion.state == FusionEnums.STATE_HANDOFF_TO_HEAD.value
+        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
 
-    def test_handoff_blend_at_start_favors_side(self):
-        """At t=0 of handoff, blended angle should be close to side camera's angle."""
+    def test_head_detection_blocks_side_drives(self):
+        """After head detection, side cameras should not drive servos."""
         fusion = CameraFusionState()
         fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 40.0, 1)
         fusion.update_head_detection()
-        blended = fusion.get_blended_world_lr(90.0)
-        # At t≈0, should be very close to the side angle (40.0)
-        assert blended == pytest.approx(40.0, abs=5.0)
+        assert not fusion.side_can_drive_servos()
 
     def test_handoff_blend_completes_to_head(self):
         """After blend duration, should return head's angle and transition to HEAD_TRACKING."""
