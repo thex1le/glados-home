@@ -404,6 +404,11 @@ class MotionTrack(MQTTClient):
         self._last_tracked_world_lr: float = None
         self._last_tracked_bbox_height: float = None
         self._last_tracked_face_id: str = None
+        # Nose/bbox hysteresis — prevent rapid switching between nose keypoint and
+        # bbox center which causes 10-20° angle jumps per switch.
+        self._nose_miss_count: int = 0
+        self._nose_min_confidence: float = 0.4
+        self._nose_miss_threshold: int = 3
         # Last known positions for memory glances (face_id -> world_lr)
         self._last_known_positions: Dict[str, float] = {}
 
@@ -1318,17 +1323,36 @@ class MotionTrack(MQTTClient):
             self._fusion.update_head_detection()
             self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
 
-            # Check for pose data (prefer nose point over bounding box)
+            # Check for pose data (prefer nose point over bounding box).
+            # Hysteresis prevents rapid switching: once on nose, stay until 3
+            # consecutive misses; once on bbox, require confidence ≥ threshold.
             use_point = False
             target_data_for_calc = best_target.get(TrackingEnums.KEY_BOX.value, {})
+            nose_available = False
+            nose_conf = 0.0
             if TrackingEnums.KEY_POSE.value in best_target:
                 pose_data = best_target[TrackingEnums.KEY_POSE.value]
                 if self.pose_target in pose_data:
-                    target_data_for_calc = pose_data[self.pose_target]
+                    nose_available = True
+                    nose_conf = pose_data[self.pose_target].get("confidence", 0.0)
+
+            if nose_available:
+                if self._nose_miss_count > 0 or nose_conf >= self._nose_min_confidence:
+                    # Already tracking nose (miss_count > 0 means we were on nose), or
+                    # new nose detection meets confidence threshold
+                    target_data_for_calc = best_target[TrackingEnums.KEY_POSE.value][self.pose_target]
                     use_point = True
+                    self._nose_miss_count = 0
+            else:
+                if self._nose_miss_count < self._nose_miss_threshold:
+                    # Nose missing but within tolerance — keep using last bbox
+                    # (don't switch back to bbox center yet)
+                    self._nose_miss_count += 1
+
             self.logger.debug(
                 f"TRACK: cam={camera} count={target_data.get(self.count, 0)} "
-                f"use_pose={use_point} data={target_data_for_calc}")
+                f"use_pose={use_point} nose_conf={nose_conf:.2f} nose_miss={self._nose_miss_count} "
+                f"data={target_data_for_calc}")
 
             # Convert to world-space angles
             world_lr = self._pixel_to_world_angle(target_data_for_calc, camera,
@@ -1449,6 +1473,29 @@ class MotionTrack(MQTTClient):
 
         # Side cameras: drive servos from fused room state (single decision point)
         elif camera in (self.left_camera, self.right_camera):
+            # Log side camera frames to recorder for debugging fusion
+            if self._recorder:
+                side_bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
+                if side_bbox:
+                    side_snap = self._get_estimator_snapshot()
+                    side_lr = self._pixel_to_world_angle(side_bbox, camera, ServoEnum.X_AXIS.value)
+                    side_record = build_frame_record(
+                        camera=camera,
+                        detection=side_bbox,
+                        use_point=False,
+                        estimator_state=side_snap,
+                        servo_middles=self._servo_middles.copy(),
+                        servo_mins=self._servo_mins.copy(),
+                        servo_maxs=self._servo_maxs.copy(),
+                        cam_resolution=(self.cam_x, self.cam_y),
+                        raw_world_lr=side_lr,
+                        raw_world_ud=0.0,
+                        smoothed_world_lr=self._side_world_lr_smooth or side_lr,
+                        smoothed_world_ud=0.0,
+                        output_targets={},
+                        fusion_state=self._fusion.state,
+                    )
+                    self._recorder.log_frame(side_record)
             if self._fusion.side_can_drive_servos():
                 self._drive_from_room_state()
 

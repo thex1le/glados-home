@@ -72,6 +72,9 @@ def _make_motion_track():
     mt._last_tracked_bbox_height = None
     mt._last_tracked_face_id = None
     mt._last_known_positions = {}
+    mt._nose_miss_count = 0
+    mt._nose_min_confidence = 0.4
+    mt._nose_miss_threshold = 3
 
     # Behavior state machine
     from glados_modules.GladosEnums import BehaviorEnums

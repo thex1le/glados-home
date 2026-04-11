@@ -270,7 +270,6 @@ class MLDetect(Thread, MQTTClient):
         else:
             image_get = RtspConsumer(location=camera_key,
                                      uri=self.cam_configs[camera_key][CameraEnum.MSG_RTSP_URI.value])
-        skip_counter = 0
         consecutive_errors = 0
         MAX_BACKOFF = 30  # seconds
         while True:
@@ -298,16 +297,6 @@ class MLDetect(Thread, MQTTClient):
                     if raw_frame is not None:
                         self._recording_session.record_frame(
                             camera_key, raw_frame, wall_time)
-
-                # During movement, process every 3rd frame instead of skipping entirely.
-                # This keeps the world-angle estimate warm on the tracking side.
-                if camera_key == CameraEnum.CAMERA_HEAD.value:
-                    if self.servos.check_movement() is True:
-                        skip_counter += 1
-                        if skip_counter % 3 != 0:
-                            continue
-                    else:
-                        skip_counter = 0
 
                 self.logger.debug(f"Processing image from {camera_key}")
                 # Generate trace ID for this frame
