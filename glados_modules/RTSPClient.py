@@ -38,6 +38,8 @@ class RtspConsumer:
         self._frame_lock = Lock()
         self._latest_frame = None
         self._latest_resolution = (0, 0)
+        self._frame_seq = 0  # incremented by reader thread on each new frame
+        self._consumed_seq = 0  # last sequence returned by get_frame()
         self._running = True
         self.connect()
         self._reader = Thread(target=self._read_loop, daemon=True)
@@ -125,6 +127,7 @@ class RtspConsumer:
                 if ret and frame is not None:
                     with self._frame_lock:
                         self._latest_frame = frame
+                        self._frame_seq += 1
                         self._latest_resolution = (
                             self.cap.get(cv2.CAP_PROP_FRAME_WIDTH),
                             self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -139,18 +142,20 @@ class RtspConsumer:
                 sleep(1.0)
 
     def get_frame(self) -> Dict[str, Optional[any]]:
-        """Returns the latest frame from the background reader.
+        """Returns the next NEW frame from the background reader.
 
-        Blocks until the first frame is available, then always returns
-        immediately with the freshest frame (never a stale buffered one).
+        Blocks until a frame arrives that hasn't been returned before.
+        This naturally throttles the caller to the camera's actual fps,
+        preventing duplicate processing that wastes GPU cycles.
         """
         while self._running:
             with self._frame_lock:
-                if self._latest_frame is not None:
+                if self._latest_frame is not None and self._frame_seq != self._consumed_seq:
                     frame = self._latest_frame
                     resolution = self._latest_resolution
+                    self._consumed_seq = self._frame_seq
                     break
-            sleep(0.01)
+            sleep(0.001)
         return {
             CameraEnum.MSG_LOCATION_KEY.value: self.location,
             CameraEnum.MSG_RAW_IMAGE.value: frame,
