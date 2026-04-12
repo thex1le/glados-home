@@ -120,8 +120,11 @@ class Camera(Process):
             frame_count = 0
             frame_seq = 0
             last_log_time = time()
+            last_fps_publish_time = time()
+            fps_publish_frame_count = 0
             last_successful_capture = time()
-            LOG_INTERVAL = 10.0  # log stats every 10 seconds
+            LOG_INTERVAL = 10.0  # console log stats every 10 seconds
+            FPS_PUBLISH_INTERVAL = 2.0  # MQTT FPS telemetry every 2 seconds
             timing_topic = FeatureToggles.FRAME_TIMING_TOPIC.value
 
             # Single watchdog thread that detects capture hangs.
@@ -210,12 +213,17 @@ class Camera(Process):
                     frame_seq += 1
 
                     frame_count += 1
+                    fps_publish_frame_count += 1
                     now = time()
                     if now - last_log_time >= LOG_INTERVAL:
                         fps = frame_count / (now - last_log_time)
                         self.logger.info(f"{self.location}: {fps:.1f} FPS, "
                                          f"last capture={t_capture*1000:.0f}ms send={t_send*1000:.0f}ms")
-                        # Publish FPS telemetry so dashboards and monitors can track camera health
+                        frame_count = 0
+                        last_log_time = now
+                    # Publish FPS telemetry at a faster rate for real-time monitoring
+                    if now - last_fps_publish_time >= FPS_PUBLISH_INTERVAL:
+                        fps = fps_publish_frame_count / (now - last_fps_publish_time)
                         self._mqtt.send_command({
                             CameraEnum.MSG_LOCATION_KEY.value: self.location,
                             CameraEnum.MSG_ACTUAL_FPS.value: round(fps, 1),
@@ -223,8 +231,8 @@ class Camera(Process):
                             CameraEnum.MSG_CAPTURE_MS.value: round(t_capture * 1000, 1),
                             CameraEnum.MSG_SEND_MS.value: round(t_send * 1000, 1),
                         }, CameraEnum.MQTT_FPS_TOPIC.value, qos=0)
-                        frame_count = 0
-                        last_log_time = now
+                        fps_publish_frame_count = 0
+                        last_fps_publish_time = now
 
                     sleep(0.01)
                 except Exception as e:

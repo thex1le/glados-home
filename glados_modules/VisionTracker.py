@@ -598,6 +598,28 @@ class MotionTrack(MQTTClient):
             return self._estimators[servo_name].get_position()
         return self._servo_middles.get(servo_name, MotionProfile.DEFAULT_SERVO_CENTER.value)
 
+    def _head_is_settling(self) -> bool:
+        """Check if head servos are still slewing above the settling threshold.
+
+        Implements saccadic suppression: head camera detections are unreliable
+        during fast servo motion because the camera sees motion blur and
+        clutter instead of the target. Returns True if the head should NOT
+        process camera input yet.
+
+        Returns:
+            True if head servo velocity exceeds the settling threshold.
+        """
+        if self.head_LR_name not in self._estimators:
+            return False
+        head_lr_vel = abs(self._estimators[self.head_LR_name].velocity)
+        head_ud_vel = abs(self._estimators[self.head_UD_name].velocity)
+        settling = max(head_lr_vel, head_ud_vel) > MotionProfile.SETTLING_VELOCITY_THRESHOLD.value
+        if settling:
+            self.logger.debug(
+                f"HEAD_GATE: settling (lr_vel={head_lr_vel:.1f} ud_vel={head_ud_vel:.1f} "
+                f"thresh={MotionProfile.SETTLING_VELOCITY_THRESHOLD.value})")
+        return settling
+
     def _pixel_to_world_angle(self, bbox: dict, camera: str, axis: str, point: bool = False) -> float:
         """Convert a pixel detection to an absolute world-space angle.
 
@@ -1177,6 +1199,12 @@ class MotionTrack(MQTTClient):
         box_key = TrackingEnums.KEY_BOX.value
         face_key = VisionResultsEnum.VISION_RESULTS_FACE_KEY.value
         face_id_key = VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value
+
+        # Confidence floor: filter out low-confidence phantoms before scoring.
+        # VisionTracker gates entire frames, but multi-detection frames can
+        # smuggle low-confidence co-detections past the gate.
+        min_conf = MotionProfile.TARGET_MIN_CONFIDENCE.value
+        seen_data = [d for d in seen_data if d.get(confidence_key, 0) >= min_conf]
         if not seen_data:
             return {}
 
@@ -1204,36 +1232,37 @@ class MotionTrack(MQTTClient):
             face_id = face_data.get(face_id_key) if face_data else None
 
             if has_face_history:
-                # Face ID match: strong signal (40%)
+                # Face ID match: strong signal (35%)
                 if face_id and face_id == self._last_tracked_face_id:
-                    score += 0.4
-                # Proximity (30%)
+                    score += 0.35
+                # Proximity (25%)
                 if bbox:
                     world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
                     angle_diff = abs(world_lr - self._last_tracked_world_lr)
                     proximity = max(0.0, 1.0 - angle_diff / 90.0)
-                    score += proximity * 0.3
+                    score += proximity * 0.25
                 # Height similarity (15%)
                 if bbox and self._last_tracked_bbox_height and self._last_tracked_bbox_height > 0:
                     height = bbox.get('y2', 0) - bbox.get('y1', 0)
                     if height > 0:
                         height_ratio = min(height, self._last_tracked_bbox_height) / max(height, self._last_tracked_bbox_height)
                         score += height_ratio * 0.15
-                # Confidence (15%)
-                score += confidence * 0.15
+                # Confidence (25%) — high weight prevents phantoms from winning
+                score += confidence * 0.25
             else:
                 # No face history — use position-based scoring
                 if bbox:
                     world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
                     angle_diff = abs(world_lr - self._last_tracked_world_lr)
                     proximity = max(0.0, 1.0 - angle_diff / 90.0)
-                    score += proximity * 0.5
+                    score += proximity * 0.35
                 if bbox and self._last_tracked_bbox_height and self._last_tracked_bbox_height > 0:
                     height = bbox.get('y2', 0) - bbox.get('y1', 0)
                     if height > 0:
                         height_ratio = min(height, self._last_tracked_bbox_height) / max(height, self._last_tracked_bbox_height)
-                        score += height_ratio * 0.3
-                score += confidence * 0.2
+                        score += height_ratio * 0.25
+                # Confidence (40%) — dominant factor when no face history
+                score += confidence * 0.40
 
             self.logger.debug(
                 f"SELECT: candidate conf={confidence:.2f} face={face_id} score={score:.3f} "
@@ -1267,6 +1296,13 @@ class MotionTrack(MQTTClient):
 
         # Periodically sync estimators from MQTT status
         self._sync_estimators_from_status()
+
+        # Saccadic suppression: skip head camera during fast servo motion.
+        # The camera sees motion blur and clutter during slews, producing
+        # phantom detections that drive the feedback loop. Side cameras are
+        # ceiling-mounted and unaffected by servo motion.
+        if camera == self.main_camera and self._head_is_settling():
+            return
 
         vision_map = self.vision_tracker.get_vision_map()
         if camera not in vision_map:
@@ -1305,6 +1341,22 @@ class MotionTrack(MQTTClient):
         trace_id = vision_map[camera].get(TraceEnums.TRACE_ID.value)
         ts_vision = vision_map[camera].get(TraceEnums.TS_VISION.value)
 
+        # Per-detection confidence re-filter. VisionTracker gates entire frames
+        # by the highest confidence detection, but low-confidence co-detections
+        # (phantoms from clutter) ride along. Re-filter each detection individually.
+        confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+        conf_threshold = (self.confidence if camera == self.main_camera
+                          else self.vision_tracker.side_confidence_score)
+        all_objects = target_data.get(self.objects, [])
+        filtered_objects = [d for d in all_objects
+                           if d.get(confidence_key, 0) >= conf_threshold]
+        if not filtered_objects:
+            if camera == self.main_camera:
+                self._fusion.head_lost()
+            if self._room_state:
+                self._room_state.clear_camera(camera)
+            return
+
         # Target selection: attention model only evaluates on head camera.
         # Side cameras must not switch targets — they follow whatever the head last chose.
         if self._attention and self._room_state and camera == self.main_camera:
@@ -1315,39 +1367,39 @@ class MotionTrack(MQTTClient):
             attention_id, attention_reason = self._attention.select_target(roster, dt)
             self.logger.debug(
                 f"ATTENTION: target={attention_id} reason={attention_reason} "
-                f"roster_size={len(roster)} detections={len(target_data.get(self.objects, []))}")
+                f"roster_size={len(roster)} detections={len(filtered_objects)}")
             self._pdebug.log("MotionTrack", "ATTENTION", {
                 "target": attention_id, "reason": attention_reason,
                 "roster_size": len(roster),
-                "detections": len(target_data.get(self.objects, [])),
+                "detections": len(filtered_objects),
             }, trace_id=trace_id)
             if attention_id:
                 # Find the detection matching the attention target
                 best_target = self._find_detection_for_person(
-                    target_data[self.objects], attention_id, roster)
+                    filtered_objects, attention_id, roster)
                 if not best_target:
                     # Attention target not in this frame — fall back to legacy
                     self.logger.debug(f"ATTENTION: {attention_id} not found in detections, falling back to legacy")
-                    best_target = self.__select_target(target_data[self.objects], camera)
+                    best_target = self.__select_target(filtered_objects, camera)
                 # Update attention time on room roster
                 self._room_state.update_attention(attention_id, dt)
             else:
-                best_target = self.__select_target(target_data[self.objects], camera)
+                best_target = self.__select_target(filtered_objects, camera)
         else:
-            best_target = self.__select_target(target_data[self.objects], camera)
+            best_target = self.__select_target(filtered_objects, camera)
         if not best_target:
             # Still update room roster even without a tracking target — other
             # people in the frame should be tracked in the roster
             if self._room_state:
                 self._room_state.update_from_vision(
-                    camera, target_data[self.objects],
+                    camera, filtered_objects,
                     lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
             return
 
-        # Update room roster with ALL detections from this camera (not just best target)
+        # Update room roster with filtered detections from this camera
         if self._room_state:
             self._room_state.update_from_vision(
-                camera, target_data[self.objects],
+                camera, filtered_objects,
                 lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
 
             # Periodically publish room state and process arrivals/departures

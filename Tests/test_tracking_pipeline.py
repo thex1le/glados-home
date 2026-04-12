@@ -150,6 +150,7 @@ def _make_motion_track():
 
     # Vision tracker (mock)
     mt.vision_tracker = MagicMock()
+    mt.vision_tracker.side_confidence_score = 0.4
     mt.servo_status = MagicMock()
 
     return mt
