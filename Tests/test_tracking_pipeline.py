@@ -148,6 +148,11 @@ def _make_motion_track():
     from glados_modules.PipelineDebug import PipelineDebug
     mt._pdebug = PipelineDebug(mt, "test")
 
+    # Camera readiness (all cameras online for tests)
+    mt._cameras_ready = {mt.main_camera, mt.left_camera, mt.right_camera}
+    mt._all_cameras = {mt.main_camera, mt.left_camera, mt.right_camera}
+    mt._cameras_online = True
+
     # Vision tracker (mock)
     mt.vision_tracker = MagicMock()
     mt.vision_tracker.side_confidence_score = 0.4

@@ -371,6 +371,13 @@ class MotionTrack(MQTTClient):
         self.vision_tracker = VisionTracker(broker=broker, target=self.target,
                                             confidence=self.confidence, tracker_callback=self.track_loop)
 
+        # Camera readiness gate: hold all movement until every camera has reported
+        # at least one detection. Prevents chasing phantoms during the multi-minute
+        # camera startup sequence.
+        self._cameras_ready: set = set()
+        self._all_cameras = {self.main_camera, self.left_camera, self.right_camera}
+        self._cameras_online = False
+
         # World-space angle estimates (smoothed)
         self._world_lr: float = None
         self._world_ud: float = None
@@ -1293,6 +1300,19 @@ class MotionTrack(MQTTClient):
         if not self._init_estimators():
             self.logger.debug("Waiting for servo status to initialize estimators")
             return
+
+        # Camera readiness gate: track which cameras have come online and hold
+        # all movement until all three are reporting. This prevents the robot
+        # from chasing single-camera phantoms during the startup sequence.
+        if not self._cameras_online:
+            self._cameras_ready.add(camera)
+            if self._cameras_ready >= self._all_cameras:
+                self._cameras_online = True
+                self.logger.info(f"All cameras online: {self._cameras_ready}")
+            else:
+                missing = self._all_cameras - self._cameras_ready
+                self.logger.debug(f"Waiting for cameras: {missing}")
+                return
 
         # Periodically sync estimators from MQTT status
         self._sync_estimators_from_status()
