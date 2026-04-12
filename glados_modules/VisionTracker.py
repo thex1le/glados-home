@@ -1272,6 +1272,9 @@ class MotionTrack(MQTTClient):
         if camera not in vision_map:
             if camera == self.main_camera:
                 self._fusion.head_lost()
+            # Clear stale camera from roster so fuzzy matching isn't poisoned
+            if self._room_state:
+                self._room_state.clear_camera(camera)
             if time.time() - self._last_target_time > self._idle_timeout:
                 if self._enable_idle_drift:
                     self._generate_idle_drift()
@@ -1281,6 +1284,9 @@ class MotionTrack(MQTTClient):
         if target_data.get(self.count, 0) == 0:
             if camera == self.main_camera:
                 self._fusion.head_lost()
+            # Clear stale camera from roster so fuzzy matching isn't poisoned
+            if self._room_state:
+                self._room_state.clear_camera(camera)
             if time.time() - self._last_target_time > self._idle_timeout:
                 if self._enable_idle_drift:
                     self._generate_idle_drift()
@@ -1330,6 +1336,12 @@ class MotionTrack(MQTTClient):
         else:
             best_target = self.__select_target(target_data[self.objects], camera)
         if not best_target:
+            # Still update room roster even without a tracking target — other
+            # people in the frame should be tracked in the roster
+            if self._room_state:
+                self._room_state.update_from_vision(
+                    camera, target_data[self.objects],
+                    lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
             return
 
         # Update room roster with ALL detections from this camera (not just best target)

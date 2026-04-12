@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Tuple, Set, Callable, Optional
 
 # glados imports
-from glados_modules.GladosEnums import RoomStateEnums
+from glados_modules.GladosEnums import RoomStateEnums, VisionResultsEnum
 from glados_modules.GlogConfig import setup_logger
 
 
@@ -47,6 +47,8 @@ class RoomPerson:
     bbox_height: float = 0.0
     face_id: str = "unknown"
     attention_time: float = 0.0
+    # Per-camera ByteTrack IDs for temporal identity continuity
+    track_ids: Dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Serialize to a JSON-compatible dict for MQTT publishing."""
@@ -94,6 +96,20 @@ class RoomStateManager:
         self._camera_weight = RoomStateEnums.MATCH_CAMERA_WEIGHT.value
         self._proximity_max = RoomStateEnums.MATCH_PROXIMITY_MAX_DEG.value
 
+    def clear_camera(self, camera: str) -> None:
+        """Remove a camera from all roster entries when it reports no detections.
+
+        Must be called on frames where update_from_vision() is skipped (early
+        returns in track_loop) so that stale camera associations don't persist
+        and break fuzzy matching on subsequent frames.
+
+        Args:
+            camera: Camera name to clear from all roster entries.
+        """
+        with self._lock:
+            for person in self._roster.values():
+                person.cameras.discard(camera)
+
     def update_from_vision(self, camera: str, detections: list,
                            world_lr_fn: Callable) -> None:
         """Update the room roster from a camera's detection results.
@@ -131,6 +147,7 @@ class RoomStateManager:
                 face_id = face_data.get("face_id", "unknown") if face_data else "unknown"
                 emotion = face_data.get("emotion", "neutral") if face_data else "neutral"
                 bbox_height = float(box.get("y2", 0) - box.get("y1", 0))
+                track_id = detection.get(VisionResultsEnum.VISION_RESULTS_TRACK_ID_KEY.value)
 
                 # Compute world angle
                 try:
@@ -139,7 +156,8 @@ class RoomStateManager:
                     continue
 
                 # Try to match to existing roster entry
-                matched_id = self._match_detection(face_id, world_lr, bbox_height, camera)
+                matched_id = self._match_detection(
+                    face_id, world_lr, bbox_height, camera, track_id, now)
 
                 if matched_id:
                     # Update existing entry
@@ -149,6 +167,8 @@ class RoomStateManager:
                     person.cameras.add(camera)
                     person.last_seen = now
                     person.bbox_height = bbox_height
+                    if track_id is not None:
+                        person.track_ids[camera] = track_id
                     if face_id != "unknown":
                         person.face_id = face_id
                         # Upgrade person_id from unknown_N to face_id
@@ -161,7 +181,7 @@ class RoomStateManager:
                         person.emotion = emotion
                     self.logger.debug(
                         f"ROOM_ROSTER update: {matched_id} cam={camera} "
-                        f"world_lr={world_lr:.1f} conf={conf:.2f}")
+                        f"world_lr={world_lr:.1f} conf={conf:.2f} track_id={track_id}")
                 else:
                     # New person — create entry
                     if face_id != "unknown":
@@ -170,6 +190,7 @@ class RoomStateManager:
                         self._unknown_counter += 1
                         person_id = f"unknown_{self._unknown_counter}"
 
+                    initial_track_ids = {camera: track_id} if track_id is not None else {}
                     person = RoomPerson(
                         person_id=person_id,
                         world_lr=world_lr,
@@ -180,29 +201,46 @@ class RoomStateManager:
                         emotion=emotion,
                         bbox_height=bbox_height,
                         face_id=face_id,
+                        track_ids=initial_track_ids,
                     )
                     self._roster[person_id] = person
                     self._pending_arrivals.append(person_id)
                     self.logger.debug(f"ROOM_ROSTER arrival: {person_id}")
 
     def _match_detection(self, face_id: str, world_lr: float,
-                         bbox_height: float, camera: str) -> Optional[str]:
+                         bbox_height: float, camera: str,
+                         track_id: Optional[int] = None,
+                         now: float = 0.0) -> Optional[str]:
         """Find the best matching roster entry for a detection.
+
+        Match priority:
+        1. Exact face_id (highest — face recognition is authoritative)
+        2. ByteTrack track_id continuity (same camera, same track = same person)
+        3. Fuzzy match (proximity + height + camera + cross-camera bonus)
 
         Args:
             face_id: Face recognition ID ("unknown" if not recognized).
             world_lr: Detection world yaw angle.
             bbox_height: Detection bounding box height.
             camera: Camera name.
+            track_id: ByteTrack track ID from YOLO (None if unavailable).
+            now: Current timestamp for cross-camera recency checks.
 
         Returns:
             person_id of best match, or None if no match found.
         """
-        # Exact face_id match (highest priority)
+        # Tier 1: Exact face_id match (highest priority)
         if face_id != "unknown" and face_id in self._roster:
             return face_id
 
-        # Fuzzy matching by proximity + height + camera
+        # Tier 2: ByteTrack track_id continuity on the same camera
+        if track_id is not None:
+            for pid, person in self._roster.items():
+                if person.track_ids.get(camera) == track_id:
+                    self.logger.debug(f"MATCH: track_id hit {pid} cam={camera} tid={track_id}")
+                    return pid
+
+        # Tier 3: Fuzzy matching by proximity + height + camera + cross-camera bonus
         best_score = 0.0
         best_id = None
 
@@ -223,6 +261,13 @@ class RoomStateManager:
             score = (self._proximity_weight * proximity +
                      self._height_weight * height_sim +
                      self._camera_weight * cam_bonus)
+
+            # Cross-camera bonus: same person seen by a different camera recently
+            # at a similar angle (handles the overlap zone between side cameras)
+            if camera not in person.cameras and person.cameras:
+                time_since_seen = now - person.last_seen if now > 0 else 0
+                if time_since_seen < 2.0 and angle_diff < 20.0:
+                    score += 0.2
 
             self.logger.debug(
                 f"MATCH: {pid} angle_diff={angle_diff:.1f} prox={proximity:.2f} "

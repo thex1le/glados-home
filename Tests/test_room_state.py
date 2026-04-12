@@ -73,8 +73,9 @@ class TestRoomRoster:
     def test_different_positions_create_separate_entries(self):
         """Two unknowns at very different positions should be separate."""
         rm = RoomStateManager()
-        det_left = _make_detection(face_id="unknown", x1=10, x2=60)
-        det_right = _make_detection(face_id="unknown", x1=500, x2=600)
+        # Far apart + different heights so fuzzy match fails
+        det_left = _make_detection(face_id="unknown", x1=10, x2=60, y2=400)
+        det_right = _make_detection(face_id="unknown", x1=500, x2=600, y2=150)
 
         rm.update_from_vision("camera_head", [det_left, det_right], _world_lr_fn)
 
@@ -84,8 +85,8 @@ class TestRoomRoster:
     def test_unique_unknown_ids(self):
         """Each new unknown person gets a unique ID."""
         rm = RoomStateManager()
-        det_left = _make_detection(face_id="unknown", x1=10, x2=60)
-        det_right = _make_detection(face_id="unknown", x1=500, x2=600)
+        det_left = _make_detection(face_id="unknown", x1=10, x2=60, y2=400)
+        det_right = _make_detection(face_id="unknown", x1=500, x2=600, y2=150)
 
         rm.update_from_vision("camera_head", [det_left, det_right], _world_lr_fn)
 

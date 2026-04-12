@@ -264,6 +264,8 @@ class VisionResultsEnum(Enum):
     VISION_RESULTS_FACE_CONFIDENCE_KEY = "face_confidence"
     VISION_RESULTS_FACE_BOX_KEY = "face_box"
     VISION_RESULTS_EMOTION_KEY = "emotion"
+    # ByteTrack track_id (per-camera, assigned by YOLO .track())
+    VISION_RESULTS_TRACK_ID_KEY = "track_id"
     VISION_RESULTS_EMOTION_SCORES_KEY = "emotion_scores"
 
     VISION_POSE_KEY_POINTS_COCO_WHOLE_BODY = {
@@ -695,10 +697,10 @@ class RoomStateEnums(Enum):
     DEPARTURE_TIMEOUT = 5.0            # seconds before person is considered gone
     PUBLISH_INTERVAL = 1.0             # seconds between MQTT room state publishes
     MATCH_SCORE_THRESHOLD = 0.5        # minimum score to match detection to existing person
-    MATCH_PROXIMITY_WEIGHT = 0.6       # weight for world_lr proximity in matching
-    MATCH_HEIGHT_WEIGHT = 0.3          # weight for bbox height similarity in matching
-    MATCH_CAMERA_WEIGHT = 0.1          # weight for camera overlap in matching
-    MATCH_PROXIMITY_MAX_DEG = 30.0     # degrees beyond which proximity score = 0
+    MATCH_PROXIMITY_WEIGHT = 0.5       # weight for world_lr proximity in matching
+    MATCH_HEIGHT_WEIGHT = 0.25         # weight for bbox height similarity in matching
+    MATCH_CAMERA_WEIGHT = 0.25         # weight for camera overlap in matching
+    MATCH_PROXIMITY_MAX_DEG = 40.0     # degrees beyond which proximity score = 0
 
 
 class BehaviorEnums(Enum):
