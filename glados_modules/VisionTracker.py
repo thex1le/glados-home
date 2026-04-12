@@ -376,6 +376,7 @@ class MotionTrack(MQTTClient):
         self._world_ud: float = None
         self._world_ud_time: float = 0.0  # timestamp of last head camera world_ud update
         self._world_smooth_alpha: float = MotionProfile.WORLD_SMOOTH_ALPHA.value
+        self._eye_ud_offset: float = MotionProfile.EYE_UD_OFFSET.value
 
         # Idle state tracking
         self._last_target_time: float = time.time()
@@ -1359,6 +1360,10 @@ class MotionTrack(MQTTClient):
                                                    ServoEnum.X_AXIS.value, point=use_point)
             world_ud = self._pixel_to_world_angle(target_data_for_calc, camera,
                                                    ServoEnum.Y_AXIS.value, point=use_point)
+
+            # Compensate for camera being below the eye — tilt up so the eye
+            # looks at the person's face instead of their chest/floor
+            world_ud -= self._eye_ud_offset
 
             # Apply handoff blending if transitioning from side camera
             if self._enable_blending:
