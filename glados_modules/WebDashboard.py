@@ -574,6 +574,19 @@ class WebDashboard(Thread):
         app = Flask(__name__)
         dashboard = self
 
+        @app.after_request
+        def set_no_cache(response):
+            """Prevent browser caching of API responses and dashboard HTML.
+
+            Without this, browsers cache JSON API responses and serve stale
+            data on page load — health/sensors/tracking panels appear empty
+            until a hard refresh.
+            """
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+
         @app.route('/')
         def index():
             return render_template_string(DASHBOARD_HTML,

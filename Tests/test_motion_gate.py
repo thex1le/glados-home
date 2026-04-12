@@ -72,7 +72,7 @@ class TestHeadIsSettling:
     def test_settling_when_ud_velocity_high(self):
         mt = self._make_motion_track()
         mt._estimators["head_left_right"].velocity = 0.0
-        mt._estimators["head_up_down"].velocity = 15.0
+        mt._estimators["head_up_down"].velocity = 30.0
         assert mt._head_is_settling()
 
     def test_settled_when_velocity_below_threshold(self):
