@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#ve !/usr/bin/env python3
 """Start/stop a recording session via MQTT.
 
 Starts both video recording (JPEG frames) and motion recording (tracking
