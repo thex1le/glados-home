@@ -535,6 +535,11 @@ class MotionProfile(Enum):
     SWAY_LR_AMPLITUDE = 0.4            # degrees of body_LR oscillation
     SWAY_LR_FREQ = 0.13                # Hz — irrational ratio to breathing freq
     SWAY_HEAD_LR_AMPLITUDE = 0.2       # degrees of head_LR counter-sway (half body, opposite phase)
+    # Eye-to-camera UD offset: the camera lens sits ~3-4mm below the eye center.
+    # Without correction, centering the nose in frame makes GLaDOS look at the
+    # person's chest/floor instead of their face. Positive = tilt head up.
+    # Tuned at 6ft distance — adjust if camera mounting changes.
+    EYE_UD_OFFSET = 10.0
     # Default pitch when side cameras drive (no head camera data yet).
     # Robot is mounted ~8ft high, people are ~5ft tall at ~6-10ft distance.
     # Negative = looking down. Adjust if mounting height changes.

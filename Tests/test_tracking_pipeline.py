@@ -48,6 +48,7 @@ def _make_motion_track():
     mt._world_ud = None
     mt._world_ud_time = 0.0
     mt._world_smooth_alpha = MotionProfile.WORLD_SMOOTH_ALPHA.value
+    mt._eye_ud_offset = MotionProfile.EYE_UD_OFFSET.value
     mt._last_target_time = time.time()
     mt._idle_active = False
     mt._idle_interval = MotionProfile.IDLE_DRIFT_INTERVAL.value
