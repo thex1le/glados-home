@@ -1454,14 +1454,40 @@ class MotionTrack(MQTTClient):
 
             # Dead zone: skip _update_targets if world angles haven't moved enough.
             # Keeps GLaDOS still between repositions — only breathing/sway moves.
+            in_dead_zone = False
             if self._last_commanded_lr is not None:
                 lr_delta = abs(self._world_lr - self._last_commanded_lr)
                 ud_delta = abs(self._world_ud - self._last_commanded_ud)
                 if lr_delta < MotionProfile.DEAD_ZONE_LR.value and ud_delta < MotionProfile.DEAD_ZONE_UD.value:
-                    return
+                    in_dead_zone = True
 
-            # Record frame BEFORE sending (captures inputs + will capture outputs)
+            # Record frame even during dead zone (for lock-on analysis)
             estimator_snapshot = self._get_estimator_snapshot() if self._recorder else None
+
+            if in_dead_zone:
+                # Still log the frame to the recorder so we can measure lock-on duration
+                if self._recorder and estimator_snapshot is not None:
+                    output_targets = {
+                        self.head_LR_name: {"angle": round(self._estimators[self.head_LR_name].target, 2)},
+                        self.head_UD_name: {"angle": round(self._estimators[self.head_UD_name].target, 2)},
+                        self.body_LR_name: {"angle": round(self._estimators[self.body_LR_name].target, 2)},
+                        self.body_UD_name: {"angle": round(self._estimators[self.body_UD_name].target, 2)},
+                    }
+                    record = build_frame_record(
+                        camera=camera, detection=target_data_for_calc,
+                        use_point=use_point, estimator_state=estimator_snapshot,
+                        servo_middles=self._servo_middles.copy(),
+                        servo_mins=self._servo_mins.copy(),
+                        servo_maxs=self._servo_maxs.copy(),
+                        cam_resolution=(self.cam_x, self.cam_y),
+                        raw_world_lr=world_lr, raw_world_ud=world_ud,
+                        smoothed_world_lr=self._world_lr,
+                        smoothed_world_ud=self._world_ud,
+                        output_targets=output_targets,
+                        fusion_state="dead_zone",
+                    )
+                    self._recorder.log_frame(record)
+                return
 
             # Trace: mark tracking start
             ts_track_start = time.time()
