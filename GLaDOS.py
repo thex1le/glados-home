@@ -15,6 +15,7 @@ from glados_modules.CameraModule import Camera, CameraWatchdog
 from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums
 from glados_modules.BodyControlModules import IMU
 from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
 
 
@@ -94,9 +95,11 @@ if __name__ == "__main__":
     dash_port = int(configp.get(DashboardEnums.CONFIG_HEAD.value,
                                  DashboardEnums.DASHBOARD_PORT.value,
                                  fallback=DashboardEnums.DEFAULT_PORT.value))
+    sensor_tracker = SensorTracker(mqtt_broker)
     dashboard = WebDashboard(
         system_name="glados_main",
         health_monitor=health,
+        sensor_tracker=sensor_tracker,
         feed_uris={
             "Left Eye (Raw)": f"rtsp://localhost:{left_port}/{left_camera_location}",
             "Right Eye (Raw)": f"rtsp://localhost:{right_port}/{right_camera_location}",

@@ -504,6 +504,8 @@ class SensorTracker(MQTTClient):
         self.tof_status: dict = {}
         self.mox_status: dict = {}
         self.th_status: dict = {}
+        # Timestamps for data freshness (used by dashboard sensor panel)
+        self._last_update: Dict[str, float] = {}
 
     def _handle_status(
         self,
@@ -524,6 +526,7 @@ class SensorTracker(MQTTClient):
         elif sensor_key in data:
             self.logger.debug(f"Received {sensor_name} status message")
             setattr(self, sensor_key, data[sensor_key])
+            self._last_update[sensor_key] = time()
 
     def tof_handle_cmd(self, msg: MQTTMessage) -> None:
         """Handle incoming TOF status messages.

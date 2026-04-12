@@ -163,6 +163,13 @@ DASHBOARD_HTML = """
                     <div style="color:#555">Waiting for heartbeats...</div>
                 </div>
             </div>
+
+            <div class="card">
+                <h2>Hardware Sensors</h2>
+                <div id="sensors">
+                    <div style="color:#555">Waiting for sensor data...</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -269,10 +276,48 @@ DASHBOARD_HTML = """
             } catch(e) {}
         }
 
+        async function updateSensors() {
+            try {
+                const r = await fetch('/api/sensors');
+                const d = await r.json();
+                const div = document.getElementById('sensors');
+                if (!Object.keys(d).length) { div.innerHTML = '<div style="color:#555">No sensors</div>'; return; }
+                let html = '';
+                const labels = {imu: 'BNO055 IMU', tof: 'VL53L4CX TOF', th: 'SHT40 Temp/Hum', mox: 'ENS160 Air'};
+                for (const [key, info] of Object.entries(d)) {
+                    const live = info.age_ms >= 0 && info.age_ms < 2000;
+                    const dot = '<span style="color:' + (live ? '#00ff00' : '#ff0000') + '">&#9679;</span> ';
+                    const age = info.age_ms >= 0 ? (info.age_ms/1000).toFixed(1) + 's' : '---';
+                    let vals = '';
+                    const s = info.data || {};
+                    if (key === 'imu') {
+                        const e = s.euler || [0,0,0];
+                        const c = s.calibration_status || [0,0,0,0];
+                        vals = 'R:'+e[0].toFixed(0)+' P:'+e[1].toFixed(0)+' Y:'+e[2].toFixed(0)
+                             + ' cal:'+c.join('/') + ' '+s.temperature+'C';
+                    } else if (key === 'th') {
+                        vals = (s.fahrenheit||0).toFixed(1)+'F '+(s.humidity||0).toFixed(0)+'%';
+                    } else if (key === 'tof') {
+                        const dist = typeof s === 'object' ? JSON.stringify(s).substring(0,30) : s+'mm';
+                        vals = dist;
+                    } else if (key === 'mox') {
+                        vals = 'AQI:'+(s['AQI (1-5):'||'']||'?')+' TVOC:'+(s['TVOC (ppb):'||'']||'?')+' CO2:'+(s['eCO2 (ppm):'||'']||'?');
+                    }
+                    html += '<div class="thread-row">' + dot
+                          + '<span class="thread-name">' + (labels[key]||key) + '</span>'
+                          + '<span style="color:#aaa;font-size:11px">' + vals + '</span>'
+                          + '<span style="color:#555;font-size:10px;margin-left:4px">(' + age + ')</span></div>';
+                }
+                div.innerHTML = html;
+            } catch(e) {}
+        }
+
         updateHealth();
         updateTracking();
+        updateSensors();
         setInterval(updateHealth, 2000);
         setInterval(updateTracking, 500);
+        setInterval(updateSensors, 1000);
     </script>
 </body>
 </html>
@@ -419,6 +464,7 @@ class WebDashboard(Thread):
                  rtsp_server=None, feeds: Dict[str, str] = None,
                  feed_uris: Dict[str, str] = None,
                  motion_tracking=None,
+                 sensor_tracker=None,
                  port: int = 8080) -> None:
         Thread.__init__(self)
         self.daemon = True
@@ -428,6 +474,7 @@ class WebDashboard(Thread):
         self.health_monitor = health_monitor
         self.rtsp_server = rtsp_server  # direct buffer (GPU server)
         self.motion_tracking = motion_tracking  # MotionTrack for tracking state API
+        self.sensor_tracker = sensor_tracker  # SensorTracker for live sensor data
         self.feeds = feeds or {}        # {label: factory_path} for direct buffer
         self.feed_uris = feed_uris or {}  # {label: rtsp_uri} for RTSP consumer
         self.port = port
@@ -523,6 +570,28 @@ class WebDashboard(Thread):
                     result["room"] = mt._room_state.get_room_summary()
                 if hasattr(mt, '_attention') and mt._attention:
                     result["attention"] = mt._attention.get_state()
+            return jsonify(result)
+
+        @app.route('/api/sensors')
+        def sensors_api():
+            """Return current sensor readings and data freshness."""
+            st = dashboard.sensor_tracker
+            if not st:
+                return jsonify({})
+            now = time.time()
+            result = {}
+            sensors = {
+                "imu": {"attr": "imu_status", "key": "imu_status"},
+                "tof": {"attr": "tof_status", "key": "tof_status"},
+                "th": {"attr": "th_status", "key": "th_status"},
+                "mox": {"attr": "mox_status", "key": "mox_status"},
+            }
+            for name, info in sensors.items():
+                data = getattr(st, info["attr"], {})
+                last = st._last_update.get(info["key"], 0)
+                age_ms = int((now - last) * 1000) if last > 0 else -1
+                if data:
+                    result[name] = {"data": data, "age_ms": age_ms}
             return jsonify(result)
 
         return app

@@ -158,6 +158,7 @@ class TestSensorTrackerParsing:
         st.tof_status = {}
         st.th_status = {}
         st.mox_status = {}
+        st._last_update = {}
         st.topic_handler = {}
         return st
 

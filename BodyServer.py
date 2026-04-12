@@ -16,6 +16,7 @@ from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, Gla
 from glados_modules.CameraModule import GLaDOSServerException, Camera, CameraWatchdog
 from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums
 from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
 
 
@@ -120,9 +121,12 @@ if __name__ == "__main__":
     dash_port = int(config_p.get(DashboardEnums.CONFIG_HEAD.value,
                                   DashboardEnums.DASHBOARD_PORT.value,
                                   fallback=DashboardEnums.DEFAULT_PORT.value))
+    # Subscribe to sensor MQTT topics for dashboard display
+    sensor_tracker = SensorTracker(mqtt_connect)
     dashboard = WebDashboard(
         system_name="body_server",
         health_monitor=health,
+        sensor_tracker=sensor_tracker,
         feed_uris={"Head Camera (Raw)": f"rtsp://localhost:{head_cam_rtsp_port}/{head_cam_factory}"},
         port=dash_port
     )
