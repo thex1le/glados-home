@@ -48,6 +48,7 @@ def _make_motion_track():
     mt._world_ud = None
     mt._world_ud_time = 0.0
     mt._world_smooth_alpha = MotionProfile.WORLD_SMOOTH_ALPHA.value
+    mt._world_smooth_alpha_ud = MotionProfile.WORLD_SMOOTH_ALPHA_UD.value
     mt._eye_ud_offset = MotionProfile.EYE_UD_OFFSET.value
     mt._last_target_time = time.time()
     mt._idle_active = False
@@ -64,6 +65,12 @@ def _make_motion_track():
     mt._side_drive_last_send = 0.0
     mt._prev_body_lr_target = None
     mt._prev_body_ud_target = None
+    mt._last_commanded_lr = None
+    mt._last_commanded_ud = None
+    mt._ud_search_active = False
+    mt._ud_search_direction = 1
+    mt._ud_search_origin = 0.0
+    mt._ud_search_pitch = 0.0
     mt._room_state = None
     mt._enable_room_state = False
     mt._attention = None

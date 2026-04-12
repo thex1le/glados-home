@@ -550,6 +550,29 @@ class MotionProfile(Enum):
     # IK rate limiting: max degrees body targets can change per frame
     BODY_LR_MAX_STEP_DEG = 25.0
     BODY_UD_MAX_STEP_DEG = 15.0
+    BODY_UD_MAX_STEP_DEG_URGENT = 25.0  # wider limit when head UD is near its physical limit
+    # Dead zone: don't reposition for changes smaller than this (reduces fidgeting)
+    DEAD_ZONE_LR = 1.5
+    DEAD_ZONE_UD = 2.0
+    # Saccadic movement: fast head snap for large repositions
+    SACCADE_THRESHOLD = 10.0       # degrees — head delta above this triggers fast snap
+    SACCADE_SPEED = 5              # speed level for snaps (omega=14, zeta=0.70)
+    # Separate UD smoothing — vertical is noisier than horizontal
+    WORLD_SMOOTH_ALPHA_UD = 0.55   # UD-specific EMA (higher = more smoothing, LR stays at 0.4)
+    # UD search sweep when side cameras see someone but head camera can't find them
+    UD_SEARCH_SWEEP_SPEED = 3.0    # degrees per update cycle
+    UD_SEARCH_SWEEP_RANGE = 30.0   # degrees above and below origin
+    UD_SEARCH_START_DELAY = 1.5    # seconds after side handoff before sweeping
+    # Body UD urgency: head UD within this margin of its limit triggers faster body follow
+    BODY_UD_URGENCY_MARGIN = 15.0
+    # Emotion-driven tracking speed: personality mood -> spring-damper speed level
+    MOOD_SPEED_MAP = {
+        "calm": 1,
+        "neutral": 2,
+        "default": 3,
+        "annoyed": 4,
+        "angry": 5,
+    }
 
 
 class FusionEnums(Enum):

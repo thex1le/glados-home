@@ -376,6 +376,7 @@ class MotionTrack(MQTTClient):
         self._world_ud: float = None
         self._world_ud_time: float = 0.0  # timestamp of last head camera world_ud update
         self._world_smooth_alpha: float = MotionProfile.WORLD_SMOOTH_ALPHA.value
+        self._world_smooth_alpha_ud: float = MotionProfile.WORLD_SMOOTH_ALPHA_UD.value
         self._eye_ud_offset: float = MotionProfile.EYE_UD_OFFSET.value
 
         # Idle state tracking
@@ -400,6 +401,16 @@ class MotionTrack(MQTTClient):
         # IK rate limiting (prevents body target oscillation between solver minima)
         self._prev_body_lr_target: float = None
         self._prev_body_ud_target: float = None
+
+        # Dead zone: skip _update_targets when world angles haven't moved enough
+        self._last_commanded_lr: float = None
+        self._last_commanded_ud: float = None
+
+        # UD search sweep: scan vertically when side cameras see someone but head can't
+        self._ud_search_active: bool = False
+        self._ud_search_direction: int = 1  # 1 = up, -1 = down
+        self._ud_search_origin: float = 0.0
+        self._ud_search_pitch: float = 0.0
 
         # Last tracked target state for multi-person selection
         self._last_tracked_world_lr: float = None
@@ -790,10 +801,27 @@ class MotionTrack(MQTTClient):
             "body_lr": round(body_lr_target, 1), "body_ud": round(body_ud_target, 1),
         }, trace_id=trace_id)
 
+        # Saccadic movement: detect large head repositions and use fast speed
+        est_head_lr = self._get_estimated_position(self.head_LR_name)
+        est_head_ud = self._get_estimated_position(self.head_UD_name)
+        head_delta = max(abs(head_lr_target - est_head_lr), abs(head_ud_target - est_head_ud))
+        saccade = head_delta > MotionProfile.SACCADE_THRESHOLD.value
+        head_speed = MotionProfile.SACCADE_SPEED.value if saccade else self.dms
+        if saccade:
+            self.logger.debug(f"SACCADE: head_delta={head_delta:.1f} -> speed {head_speed}")
+
+        # Body UD urgency: when head UD is near its physical limit, speed up body UD
+        # and widen the rate limit so the body can catch up
+        head_ud_margin = min(
+            abs(head_ud_target - self._servo_mins[self.head_UD_name]),
+            abs(head_ud_target - self._servo_maxs[self.head_UD_name]))
+        body_ud_urgent = head_ud_margin < MotionProfile.BODY_UD_URGENCY_MARGIN.value
+        body_ud_speed = min(self.dms + 1, 5) if body_ud_urgent else self.dms
+
         # Rate-limit body IK output to prevent frame-to-frame oscillation
         # between solver local minima (especially at steep pitch angles)
         max_lr = MotionProfile.BODY_LR_MAX_STEP_DEG.value
-        max_ud = MotionProfile.BODY_UD_MAX_STEP_DEG.value
+        max_ud = MotionProfile.BODY_UD_MAX_STEP_DEG_URGENT.value if body_ud_urgent else MotionProfile.BODY_UD_MAX_STEP_DEG.value
         body_lr_pre_clamp = body_lr_target
         body_ud_pre_clamp = body_ud_target
         if self._prev_body_lr_target is not None:
@@ -843,16 +871,16 @@ class MotionTrack(MQTTClient):
                 "body_ud": f"{pre_clamp[3]:.1f}->{post_clamp[3]:.1f}",
             }, trace_id=trace_id)
 
-        # Build consolidated move_all message
+        # Build consolidated move_all message with per-servo speeds
         targets = {
             self.head_LR_name: {ServoEnum.MSG_ANGLE.value: round(head_lr_target),
-                                ServoEnum.MSG_SPEED.value: self.dms},
+                                ServoEnum.MSG_SPEED.value: head_speed},
             self.head_UD_name: {ServoEnum.MSG_ANGLE.value: round(head_ud_target),
-                                ServoEnum.MSG_SPEED.value: self.dms},
+                                ServoEnum.MSG_SPEED.value: head_speed},
             self.body_LR_name: {ServoEnum.MSG_ANGLE.value: round(body_lr_target),
                                 ServoEnum.MSG_SPEED.value: self.dms},
             self.body_UD_name: {ServoEnum.MSG_ANGLE.value: round(body_ud_target),
-                                ServoEnum.MSG_SPEED.value: self.dms},
+                                ServoEnum.MSG_SPEED.value: body_ud_speed},
         }
 
         msg = ServoMessageBuilder.move_all(targets)
@@ -864,14 +892,14 @@ class MotionTrack(MQTTClient):
         else:
             self.logger.debug(f"Movement disabled — would send: {targets}")
 
-        # Update local estimators to match what we just commanded
-        speed = self.dms
-        head_omega, head_zeta = MotionProfile.HEAD_PARAMS.value[speed]
-        body_omega, body_zeta = MotionProfile.BODY_PARAMS.value[speed]
+        # Update local estimators with matching per-servo spring-damper params
+        head_omega, head_zeta = MotionProfile.HEAD_PARAMS.value[head_speed]
+        body_omega, body_zeta = MotionProfile.BODY_PARAMS.value[self.dms]
+        body_ud_omega, body_ud_zeta = MotionProfile.BODY_PARAMS.value[body_ud_speed]
         self._estimators[self.head_LR_name].set_target(head_lr_target, head_omega, head_zeta)
         self._estimators[self.head_UD_name].set_target(head_ud_target, head_omega, head_zeta)
         self._estimators[self.body_LR_name].set_target(body_lr_target, body_omega, body_zeta)
-        self._estimators[self.body_UD_name].set_target(body_ud_target, body_omega, body_zeta)
+        self._estimators[self.body_UD_name].set_target(body_ud_target, body_ud_omega, body_ud_zeta)
 
         self.logger.debug(
             f"Targets sent: head_LR={head_lr_target:.1f} head_UD={head_ud_target:.1f} "
@@ -1081,8 +1109,26 @@ class MotionTrack(MQTTClient):
         head_ud_age = time.time() - self._world_ud_time if self._world_ud_time > 0 else float('inf')
         if self._world_ud is not None and head_ud_age < 2.0:
             world_ud = self._world_ud
+            self._ud_search_active = False
         else:
-            world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+            # No recent head camera pitch data — start UD search sweep
+            # to find the person the side cameras know is there
+            if not self._ud_search_active:
+                if head_ud_age > MotionProfile.UD_SEARCH_START_DELAY.value:
+                    self._ud_search_active = True
+                    self._ud_search_origin = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+                    self._ud_search_pitch = self._ud_search_origin
+                    self._ud_search_direction = -1  # start by looking down
+                    self.logger.info("UD search sweep started")
+                world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+            else:
+                # Sweep up and down searching for the person
+                self._ud_search_pitch += self._ud_search_direction * MotionProfile.UD_SEARCH_SWEEP_SPEED.value
+                sweep_range = MotionProfile.UD_SEARCH_SWEEP_RANGE.value
+                if abs(self._ud_search_pitch - self._ud_search_origin) > sweep_range:
+                    self._ud_search_direction *= -1
+                    self._ud_search_pitch = self._ud_search_origin + self._ud_search_direction * sweep_range
+                world_ud = self._ud_search_pitch
 
         # Throttle servo commands to match Pi4's 50Hz physics loop.
         # Without this, 100+ commands/sec from alternating L/R cameras flood the Pi4
@@ -1323,6 +1369,7 @@ class MotionTrack(MQTTClient):
             # Signal head detection to fusion state machine
             self._fusion.update_head_detection()
             self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
+            self._ud_search_active = False  # head found target, stop UD sweep
 
             # Check for pose data (prefer nose point over bounding box).
             # Hysteresis prevents rapid switching: once on nose, stay until 3
@@ -1372,30 +1419,43 @@ class MotionTrack(MQTTClient):
             # Update head person count for room-level awareness
             self._fusion.update_head_count(target_data.get(self.count, 0))
 
-            # Smooth in world space — tighter alpha when side camera confirms
+            # Smooth in world space — separate alphas for LR and UD (UD is noisier)
+            # Tighter alpha when side camera confirms the detection
             if self._world_lr is None:
                 self._world_lr = world_lr
                 self._world_ud = world_ud
                 self._world_ud_time = time.time()
                 self.logger.debug(f"EMA: init world_lr={world_lr:.1f} world_ud={world_ud:.1f}")
             else:
-                alpha = self._world_smooth_alpha
+                alpha_lr = self._world_smooth_alpha
+                alpha_ud = self._world_smooth_alpha_ud
                 confirmed = self._enable_confirmation and self._fusion.is_confirmed_by_side(world_lr)
                 if confirmed:
-                    alpha = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
+                    alpha_lr = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
+                    alpha_ud = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
                 old_lr, old_ud = self._world_lr, self._world_ud
-                self._world_lr = alpha * self._world_lr + (1 - alpha) * world_lr
-                self._world_ud = alpha * self._world_ud + (1 - alpha) * world_ud
+                self._world_lr = alpha_lr * self._world_lr + (1 - alpha_lr) * world_lr
+                self._world_ud = alpha_ud * self._world_ud + (1 - alpha_ud) * world_ud
                 self._world_ud_time = time.time()
                 self.logger.debug(
-                    f"EMA: raw_lr={world_lr:.1f} raw_ud={world_ud:.1f} alpha={alpha:.2f} "
+                    f"EMA: raw_lr={world_lr:.1f} raw_ud={world_ud:.1f} "
+                    f"alpha_lr={alpha_lr:.2f} alpha_ud={alpha_ud:.2f} "
                     f"confirmed={confirmed} smooth_lr={old_lr:.1f}->{self._world_lr:.1f} "
                     f"smooth_ud={old_ud:.1f}->{self._world_ud:.1f}")
                 self._pdebug.log("MotionTrack", "EMA", {
                     "raw_lr": round(world_lr, 1), "raw_ud": round(world_ud, 1),
-                    "alpha": round(alpha, 2), "confirmed": confirmed,
+                    "alpha_lr": round(alpha_lr, 2), "alpha_ud": round(alpha_ud, 2),
+                    "confirmed": confirmed,
                     "smooth_lr": round(self._world_lr, 1), "smooth_ud": round(self._world_ud, 1),
                 }, trace_id=trace_id)
+
+            # Dead zone: skip _update_targets if world angles haven't moved enough.
+            # Keeps GLaDOS still between repositions — only breathing/sway moves.
+            if self._last_commanded_lr is not None:
+                lr_delta = abs(self._world_lr - self._last_commanded_lr)
+                ud_delta = abs(self._world_ud - self._last_commanded_ud)
+                if lr_delta < MotionProfile.DEAD_ZONE_LR.value and ud_delta < MotionProfile.DEAD_ZONE_UD.value:
+                    return
 
             # Record frame BEFORE sending (captures inputs + will capture outputs)
             estimator_snapshot = self._get_estimator_snapshot() if self._recorder else None
@@ -1404,6 +1464,8 @@ class MotionTrack(MQTTClient):
             ts_track_start = time.time()
 
             self._update_targets(self._world_lr, self._world_ud, trace_id=trace_id)
+            self._last_commanded_lr = self._world_lr
+            self._last_commanded_ud = self._world_ud
 
             # Save tracking state for multi-person target selection scoring
             self._last_tracked_world_lr = self._world_lr
@@ -1505,20 +1567,29 @@ class MotionTrack(MQTTClient):
                 self._drive_from_room_state()
 
     def _handle_personality_modifier(self, msg: MQTTMessage) -> None:
-        """Handle personality modifier from GLaDOSLocal (grudge tracking).
+        """Handle personality modifier from GLaDOSLocal (grudge + mood speed).
 
         When GLaDOS gets angry at someone (e.g., middle finger), this message
         arrives so the attention model watches that person more closely.
+        Also updates tracking speed based on mood for physically aggressive movement.
         """
-        if not self._attention:
-            return
         j_msg = loads(msg.payload.decode())
-        person_id = j_msg.get("person_id", "")
-        modifier = j_msg.get("modifier", 0.0)
-        if person_id and modifier:
-            self._attention.add_personality_modifier(person_id, modifier)
-            self.logger.debug(
-                f"ATTENTION grudge: {person_id} bonus={modifier}")
+        # Grudge tracking (attention model)
+        if self._attention:
+            person_id = j_msg.get("person_id", "")
+            modifier = j_msg.get("modifier", 0.0)
+            if person_id and modifier:
+                self._attention.add_personality_modifier(person_id, modifier)
+                self.logger.debug(
+                    f"ATTENTION grudge: {person_id} bonus={modifier}")
+        # Mood-driven tracking speed
+        mood = j_msg.get("mood", "")
+        if mood:
+            speed_map = MotionProfile.MOOD_SPEED_MAP.value
+            new_speed = speed_map.get(mood, speed_map.get("default", 3))
+            if new_speed != self.dms:
+                self.logger.info(f"Mood speed: {mood} -> speed {new_speed} (was {self.dms})")
+                self.dms = new_speed
 
     def _handle_conversation_partner(self, msg: MQTTMessage) -> None:
         """Handle conversation partner from GLaDOSLocal.
