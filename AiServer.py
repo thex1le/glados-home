@@ -12,6 +12,7 @@ from glados_modules.MachineVision import MLDetect, GLaDOSServerException
 from glados_modules.WhisperXSpeech2Text import AudioServerRX, LocalSTTtx
 from glados_modules.GladosEnums import STTEnums, SystemEnums, DashboardEnums, CameraEnum
 from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
 
 # gladosTTS is an external repo cloned into the project -- its internal imports
@@ -89,9 +90,12 @@ if __name__ == "__main__":
     dash_port = int(config_p.get(DashboardEnums.CONFIG_HEAD.value,
                                   DashboardEnums.DASHBOARD_PORT.value,
                                   fallback=DashboardEnums.DEFAULT_PORT.value))
+    # Subscribe to sensor MQTT topics so dashboard can display Pi sensors + camera FPS
+    sensor_tracker = SensorTracker(mqtt_b)
     dashboard = WebDashboard(
         system_name="ai_server",
         health_monitor=health,
+        sensor_tracker=sensor_tracker,
         rtsp_server=mv.rtsp,
         feeds=ai_feeds,
         feed_uris=raw_feeds,
