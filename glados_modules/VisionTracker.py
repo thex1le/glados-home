@@ -801,10 +801,13 @@ class MotionTrack(MQTTClient):
             "body_lr": round(body_lr_target, 1), "body_ud": round(body_ud_target, 1),
         }, trace_id=trace_id)
 
-        # Saccadic movement: detect large head repositions and use fast speed
-        est_head_lr = self._get_estimated_position(self.head_LR_name)
-        est_head_ud = self._get_estimated_position(self.head_UD_name)
-        head_delta = max(abs(head_lr_target - est_head_lr), abs(head_ud_target - est_head_ud))
+        # Saccadic movement: detect large head repositions and use fast speed.
+        # Compare against last COMMANDED target, not estimated position — the
+        # estimator lags during convergence, which would falsely trigger saccades
+        # on every frame while the spring-damper is still settling.
+        prev_head_lr = self._estimators[self.head_LR_name].target
+        prev_head_ud = self._estimators[self.head_UD_name].target
+        head_delta = max(abs(head_lr_target - prev_head_lr), abs(head_ud_target - prev_head_ud))
         saccade = head_delta > MotionProfile.SACCADE_THRESHOLD.value
         head_speed = MotionProfile.SACCADE_SPEED.value if saccade else self.dms
         if saccade:

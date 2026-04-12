@@ -552,8 +552,8 @@ class MotionProfile(Enum):
     BODY_UD_MAX_STEP_DEG = 15.0
     BODY_UD_MAX_STEP_DEG_URGENT = 25.0  # wider limit when head UD is near its physical limit
     # Dead zone: don't reposition for changes smaller than this (reduces fidgeting)
-    DEAD_ZONE_LR = 1.5
-    DEAD_ZONE_UD = 2.0
+    DEAD_ZONE_LR = 3.0
+    DEAD_ZONE_UD = 4.0
     # Saccadic movement: fast head snap for large repositions
     SACCADE_THRESHOLD = 10.0       # degrees — head delta above this triggers fast snap
     SACCADE_SPEED = 5              # speed level for snaps (omega=14, zeta=0.70)
