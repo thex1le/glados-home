@@ -15,7 +15,7 @@ from cachetools import TTLCache
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, CameraEnum, TrackingEnums, LoggingEnums,
                                         STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead,
-                                        MQTTEnums)
+                                        MQTTEnums, SocTempEnums)
 
 
 class MQTTClient:
@@ -130,6 +130,12 @@ class TOFMessageBuilder:
     @staticmethod
     def send_tof_status_message(message):
         return {TOFEnums.TOF_STATUS_KEY.value: message}
+
+
+class SocTempMessageBuilder:
+    @staticmethod
+    def send_soc_temp_message(message):
+        return {SocTempEnums.SOC_TEMP_KEY.value: message}
 
 
 class LEDMessageBuilder:

@@ -13,7 +13,8 @@ from glados_modules.MqttConnector import MQTTClient, TargetMessageBuilder, Servo
 from glados_modules.PipelineDebug import PipelineDebug
 from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
-    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums
+    LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums,
+    SocTempEnums
 )
 
 
@@ -497,13 +498,19 @@ class SensorTracker(MQTTClient):
             MQTTEnums.IMU_STATUS_TOPIC.value: self.imu_handle_cmd,
             MQTTEnums.TOF_STATUS_TOPIC.value: self.tof_handle_cmd,
             MQTTEnums.TH_STATUS_TOPIC.value: self.th_handle_cmd,
-            MQTTEnums.MOX_STATUS_TOPIC.value: self.mox_handle_cmd
+            MQTTEnums.MOX_STATUS_TOPIC.value: self.mox_handle_cmd,
+            CameraEnum.MQTT_FPS_TOPIC.value: self.camera_fps_handle_cmd,
+            SocTempEnums.SOC_TEMP_TOPIC.value: self.soc_temp_handle_cmd,
         }
         super().__init__(ip=broker.ip, port=broker.port)
         self.imu_status: dict = {}
         self.tof_status: dict = {}
         self.mox_status: dict = {}
         self.th_status: dict = {}
+        # Per-camera FPS telemetry, keyed by camera location (e.g. "camera_head")
+        self.camera_fps: Dict[str, dict] = {}
+        # Per-hostname SoC temperature, keyed by hostname (e.g. "pi4")
+        self.soc_temp: Dict[str, dict] = {}
         # Timestamps for data freshness (used by dashboard sensor panel)
         self._last_update: Dict[str, float] = {}
 
@@ -579,6 +586,43 @@ class SensorTracker(MQTTClient):
             sensor_key=THEnums.TH_STATUS_KEY.value,
             sensor_name=THEnums.SENSOR_NAME.value
         )
+
+    def camera_fps_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming camera FPS telemetry messages.
+
+        Stores per-camera FPS data keyed by camera location.
+
+        Args:
+            msg: The MQTT message containing camera FPS data.
+        """
+        data: Dict[str, Any] = self.__load_message(msg)
+        if not data:
+            self.logger.error("Failed to decode camera FPS message")
+            return
+        location = data.get(CameraEnum.MSG_LOCATION_KEY.value)
+        if location:
+            self.camera_fps[location] = data
+            self._last_update[f"camera_fps_{location}"] = time()
+            self.logger.debug(f"Camera FPS update: {location} = {data.get(CameraEnum.MSG_ACTUAL_FPS.value)} FPS")
+
+    def soc_temp_handle_cmd(self, msg: MQTTMessage) -> None:
+        """Handle incoming SoC temperature messages.
+
+        Stores per-hostname temperature data.
+
+        Args:
+            msg: The MQTT message containing SoC temperature data.
+        """
+        data: Dict[str, Any] = self.__load_message(msg)
+        if not data:
+            self.logger.error("Failed to decode SoC temp message")
+            return
+        inner = data.get(SocTempEnums.SOC_TEMP_KEY.value, {})
+        hostname = inner.get(SocTempEnums.HOSTNAME_KEY.value)
+        if hostname:
+            self.soc_temp[hostname] = inner
+            self._last_update[f"soc_temp_{hostname}"] = time()
+            self.logger.debug(f"SoC temp update: {hostname} = {inner.get(SocTempEnums.CELSIUS_KEY.value)}C")
 
     def __load_message(self, json_message: MQTTMessage) -> Dict[str, Any]:
         """Decode a JSON message from MQTT.

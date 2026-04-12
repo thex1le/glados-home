@@ -24,9 +24,10 @@ from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, SystemEnums, LoggingEnums, MQTTEnums,
                                         IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead,
                                         LEDLampStrip8, LEDShoulders, MotionProfile, TraceEnums,
-                                        LCDEnums)
+                                        LCDEnums, SocTempEnums)
 from glados_modules.MqttConnector import (MQTTClient, ServoMessageBuilder, IMUMessageBuilder,
-                                          TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder)
+                                          TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder,
+                                          SocTempMessageBuilder)
 from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations, PWMLedAnimations
 from glados_modules.PipelineDebug import PipelineDebug
 
@@ -484,6 +485,75 @@ class TempHumSensor(MQTTClient, Thread):
             status = THMessageBuilder.send_th_status_message(self.get_sensor())
             self.send_command(topic=MQTTEnums.TH_STATUS_TOPIC.value, command=status)
             sleep(0.1)
+
+
+class SocTemp(MQTTClient, Thread):
+    """SoC chip temperature sensor for Raspberry Pi thermal monitoring.
+
+    Reads the CPU/SoC temperature from the Linux thermal zone sysfs interface
+    and publishes it over MQTT. Intended for fan speed control and thermal
+    monitoring on the dashboard.
+
+    On non-Linux systems (dev machines), publishes -1 so the class is
+    importable and testable everywhere without crashing.
+
+    Attributes:
+        hostname (str): System hostname, included in each MQTT message.
+        poll_interval (float): Seconds between temperature reads (default 2.0).
+    """
+
+    THERMAL_ZONE_PATH = "/sys/class/thermal/thermal_zone0/temp"
+
+    def __init__(self, broker: Any, poll_interval: float = 2.0) -> None:
+        """Initialize the SoC temperature sensor.
+
+        Args:
+            broker: MQTT broker namedtuple with ip and port.
+            poll_interval: Seconds between temperature reads.
+        """
+        import socket
+        self.__name__ = self.__class__.__name__
+        Thread.__init__(self)
+        self.daemon = True
+        self.hostname = socket.gethostname()
+        self.poll_interval = poll_interval
+        self.logger = setup_logger(name=self.__name__, console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
+        MQTTClient.__init__(self, ip=broker.ip, port=broker.port)
+        self._available = path.exists(self.THERMAL_ZONE_PATH)
+        if not self._available:
+            self.logger.warning(f"Thermal zone not found at {self.THERMAL_ZONE_PATH} "
+                                f"— SoC temp will publish -1")
+
+    def get_celsius(self) -> float:
+        """Read the SoC temperature in degrees Celsius.
+
+        Returns:
+            Temperature in Celsius, or -1.0 if the thermal zone is unavailable.
+        """
+        if not self._available:
+            return -1.0
+        try:
+            with open(self.THERMAL_ZONE_PATH, "r") as f:
+                millidegrees = int(f.read().strip())
+            return round(millidegrees / 1000.0, 1)
+        except (OSError, ValueError) as e:
+            self.logger.error(f"Failed to read SoC temp: {e}")
+            return -1.0
+
+    def run(self) -> None:
+        """Thread loop to publish SoC temperature at the configured interval."""
+        self.logger.info(f"SoC temperature polling started (interval={self.poll_interval}s)")
+        while True:
+            celsius = self.get_celsius()
+            message = {
+                SocTempEnums.HOSTNAME_KEY.value: self.hostname,
+                SocTempEnums.CELSIUS_KEY.value: celsius,
+                SocTempEnums.TIMESTAMP_KEY.value: time(),
+            }
+            status = SocTempMessageBuilder.send_soc_temp_message(message)
+            self.send_command(topic=SocTempEnums.SOC_TEMP_TOPIC.value, command=status)
+            self.logger.debug(f"SoC temp: {celsius}C")
+            sleep(self.poll_interval)
 
 
 class IMU(MQTTClient, Thread):

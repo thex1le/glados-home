@@ -285,11 +285,50 @@ DASHBOARD_HTML = """
                 let html = '';
                 const labels = {imu: 'BNO055 IMU', tof: 'VL53L4CX TOF', th: 'SHT40 Temp/Hum', mox: 'ENS160 Air'};
                 for (const [key, info] of Object.entries(d)) {
-                    const live = info.age_ms >= 0 && info.age_ms < 2000;
-                    const dot = '<span style="color:' + (live ? '#00ff00' : '#ff0000') + '">&#9679;</span> ';
                     const age = info.age_ms >= 0 ? (info.age_ms/1000).toFixed(1) + 's' : '---';
                     let vals = '';
+                    let dotColor = '#ff0000';
                     const s = info.data || {};
+                    if (key.startsWith('cam_')) {
+                        // Camera FPS telemetry — color based on actual vs target FPS
+                        const actual = s.actual_fps || 0;
+                        const target = s.target_fps || 1;
+                        const ratio = actual / target;
+                        const stale = info.age_ms < 0 || info.age_ms > 15000;
+                        if (stale) dotColor = '#ff0000';
+                        else if (ratio >= 0.7) dotColor = '#00ff00';
+                        else if (ratio >= 0.5) dotColor = '#ffaa00';
+                        else dotColor = '#ff0000';
+                        const loc = (s.camera || key.substring(4)).replace('camera_', '');
+                        vals = actual.toFixed(1) + '/' + target + ' FPS'
+                             + ' (cap:' + (s.capture_ms||0).toFixed(0) + 'ms'
+                             + ' send:' + (s.send_ms||0).toFixed(0) + 'ms)';
+                        html += '<div class="thread-row">'
+                              + '<span style="color:' + dotColor + '">&#9679;</span> '
+                              + '<span class="thread-name">Camera ' + loc + '</span>'
+                              + '<span style="color:#aaa;font-size:11px">' + vals + '</span>'
+                              + '<span style="color:#555;font-size:10px;margin-left:4px">(' + age + ')</span></div>';
+                        continue;
+                    } else if (key.startsWith('soc_')) {
+                        // SoC chip temperature — color based on thermal thresholds
+                        const celsius = s.celsius;
+                        const stale = info.age_ms < 0 || info.age_ms > 10000;
+                        if (stale || celsius < 0) dotColor = '#ff0000';
+                        else if (celsius < 65) dotColor = '#00ff00';
+                        else if (celsius < 80) dotColor = '#ffaa00';
+                        else dotColor = '#ff0000';
+                        const host = s.hostname || key.substring(4);
+                        vals = (celsius >= 0 ? celsius.toFixed(1) + 'C' : 'N/A');
+                        html += '<div class="thread-row">'
+                              + '<span style="color:' + dotColor + '">&#9679;</span> '
+                              + '<span class="thread-name">SoC ' + host + '</span>'
+                              + '<span style="color:#aaa;font-size:11px">' + vals + '</span>'
+                              + '<span style="color:#555;font-size:10px;margin-left:4px">(' + age + ')</span></div>';
+                        continue;
+                    }
+                    // Standard sensors — green if fresh, red if stale
+                    const live = info.age_ms >= 0 && info.age_ms < 2000;
+                    dotColor = live ? '#00ff00' : '#ff0000';
                     if (key === 'imu') {
                         const e = s.euler || [0,0,0];
                         const c = s.calibration_status || [0,0,0,0];
@@ -303,7 +342,8 @@ DASHBOARD_HTML = """
                     } else if (key === 'mox') {
                         vals = 'AQI:'+(s['AQI (1-5):'||'']||'?')+' TVOC:'+(s['TVOC (ppb):'||'']||'?')+' CO2:'+(s['eCO2 (ppm):'||'']||'?');
                     }
-                    html += '<div class="thread-row">' + dot
+                    html += '<div class="thread-row">'
+                          + '<span style="color:' + dotColor + '">&#9679;</span> '
                           + '<span class="thread-name">' + (labels[key]||key) + '</span>'
                           + '<span style="color:#aaa;font-size:11px">' + vals + '</span>'
                           + '<span style="color:#555;font-size:10px;margin-left:4px">(' + age + ')</span></div>';
@@ -592,6 +632,16 @@ class WebDashboard(Thread):
                 age_ms = int((now - last) * 1000) if last > 0 else -1
                 if data:
                     result[name] = {"data": data, "age_ms": age_ms}
+            # Camera FPS telemetry (per-camera)
+            for location, fps_data in getattr(st, "camera_fps", {}).items():
+                last = st._last_update.get(f"camera_fps_{location}", 0)
+                age_ms = int((now - last) * 1000) if last > 0 else -1
+                result[f"cam_{location}"] = {"data": fps_data, "age_ms": age_ms}
+            # SoC temperature telemetry (per-hostname)
+            for hostname, temp_data in getattr(st, "soc_temp", {}).items():
+                last = st._last_update.get(f"soc_temp_{hostname}", 0)
+                age_ms = int((now - last) * 1000) if last > 0 else -1
+                result[f"soc_{hostname}"] = {"data": temp_data, "age_ms": age_ms}
             return jsonify(result)
 
         return app

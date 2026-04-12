@@ -12,9 +12,9 @@ from collections import namedtuple
 from adafruit_servokit import ServoKit
 
 # glados imports
-from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD
+from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD, SocTemp
 from glados_modules.CameraModule import GLaDOSServerException, Camera, CameraWatchdog
-from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums
+from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums, SocTempEnums
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
@@ -114,6 +114,12 @@ if __name__ == "__main__":
     health.register("head_UD", head_UD)
     health.register("lcd", glados_right_lcd)
     health.register("camera", head_camera)
+    soc_poll = float(config_p.get(SocTempEnums.CONFIG_HEAD.value,
+                                   SocTempEnums.POLL_INTERVAL.value,
+                                   fallback=SocTempEnums.DEFAULT_POLL_INTERVAL.value))
+    soc_temp = SocTemp(broker=mqtt_connect, poll_interval=soc_poll)
+    soc_temp.start()
+    health.register("soc_temp", soc_temp)
     health.start()
     # Start web dashboard (Pi4: consumes RTSP since Camera is a separate process)
     head_cam_factory = cefh[CameraEnum.CAMERA_HEAD_FACTORY.value]

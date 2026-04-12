@@ -215,6 +215,14 @@ class Camera(Process):
                         fps = frame_count / (now - last_log_time)
                         self.logger.info(f"{self.location}: {fps:.1f} FPS, "
                                          f"last capture={t_capture*1000:.0f}ms send={t_send*1000:.0f}ms")
+                        # Publish FPS telemetry so dashboards and monitors can track camera health
+                        self._mqtt.send_command({
+                            CameraEnum.MSG_LOCATION_KEY.value: self.location,
+                            CameraEnum.MSG_ACTUAL_FPS.value: round(fps, 1),
+                            CameraEnum.MSG_TARGET_FPS.value: self.fps,
+                            CameraEnum.MSG_CAPTURE_MS.value: round(t_capture * 1000, 1),
+                            CameraEnum.MSG_SEND_MS.value: round(t_send * 1000, 1),
+                        }, CameraEnum.MQTT_FPS_TOPIC.value, qos=0)
                         frame_count = 0
                         last_log_time = now
 

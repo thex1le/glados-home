@@ -809,6 +809,24 @@ class CameraEnum(Enum):
     CAMERA_LEFT_FOV = 160
     X_RESOLUTION = 'x'
     Y_RESOLUTION = 'y'
+    # Camera FPS telemetry (published by Camera process, consumed by dashboard)
+    MQTT_FPS_TOPIC = f"{LOCATION_CORE}/{MSG_LOCATION_KEY}/fps"
+    MSG_ACTUAL_FPS = "actual_fps"
+    MSG_TARGET_FPS = "target_fps"
+    MSG_CAPTURE_MS = "capture_ms"
+    MSG_SEND_MS = "send_ms"
+
+
+class SocTempEnums(Enum):
+    """SoC chip temperature telemetry for fan control and thermal monitoring."""
+    CONFIG_HEAD = "SOC_TEMP"
+    SOC_TEMP_TOPIC = "system/soc_temp"
+    SOC_TEMP_KEY = "soc_temp"
+    CELSIUS_KEY = "celsius"
+    HOSTNAME_KEY = "hostname"
+    TIMESTAMP_KEY = "ts"
+    POLL_INTERVAL = "poll_interval"
+    DEFAULT_POLL_INTERVAL = 2.0
 
 
 class TrackingEnums(Enum):

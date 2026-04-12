@@ -12,8 +12,8 @@ import configparser
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
 from glados_modules.CameraModule import Camera, CameraWatchdog
-from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums
-from glados_modules.BodyControlModules import IMU
+from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums, SocTempEnums
+from glados_modules.BodyControlModules import IMU, SocTemp
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
@@ -88,6 +88,12 @@ if __name__ == "__main__":
     health.register("STT", gstt)
     health.register("left_camera", left_camera)
     health.register("right_camera", right_camera)
+    soc_poll = float(configp.get(SocTempEnums.CONFIG_HEAD.value,
+                                  SocTempEnums.POLL_INTERVAL.value,
+                                  fallback=SocTempEnums.DEFAULT_POLL_INTERVAL.value))
+    soc_temp = SocTemp(broker=mqtt_broker, poll_interval=soc_poll)
+    soc_temp.start()
+    health.register("soc_temp", soc_temp)
     health.start()
     # Start web dashboard (Pi5: consumes RTSP since cameras are separate processes)
     left_port = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value]
