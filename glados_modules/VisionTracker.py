@@ -373,10 +373,13 @@ class MotionTrack(MQTTClient):
 
         # Camera readiness gate: hold all movement until every camera has reported
         # at least one detection. Prevents chasing phantoms during the multi-minute
-        # camera startup sequence.
+        # camera startup sequence. Times out after 30s so a missing camera doesn't
+        # block the robot indefinitely.
         self._cameras_ready: set = set()
         self._all_cameras = {self.main_camera, self.left_camera, self.right_camera}
         self._cameras_online = False
+        self._cameras_gate_start: float = time.time()
+        self._cameras_gate_timeout: float = 30.0
 
         # World-space angle estimates (smoothed)
         self._world_lr: float = None
@@ -1304,14 +1307,23 @@ class MotionTrack(MQTTClient):
         # Camera readiness gate: track which cameras have come online and hold
         # all movement until all three are reporting. This prevents the robot
         # from chasing single-camera phantoms during the startup sequence.
+        # Times out after 30s so a camera that has no detections (empty room,
+        # camera pointed at wall) doesn't block forever.
         if not self._cameras_online:
             self._cameras_ready.add(camera)
+            elapsed = time.time() - self._cameras_gate_start
             if self._cameras_ready >= self._all_cameras:
                 self._cameras_online = True
                 self.logger.info(f"All cameras online: {self._cameras_ready}")
+            elif elapsed > self._cameras_gate_timeout:
+                self._cameras_online = True
+                missing = self._all_cameras - self._cameras_ready
+                self.logger.warning(
+                    f"Camera gate timeout after {elapsed:.0f}s — starting with "
+                    f"{self._cameras_ready}, missing: {missing}")
             else:
                 missing = self._all_cameras - self._cameras_ready
-                self.logger.debug(f"Waiting for cameras: {missing}")
+                self.logger.debug(f"Waiting for cameras ({elapsed:.0f}s): {missing}")
                 return
 
         # Periodically sync estimators from MQTT status
