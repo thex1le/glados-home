@@ -590,14 +590,12 @@ class MotionTrack(MQTTClient):
                         "target": round(est.target, 4),
                     }
                 diag["estimators"] = snapshot
-                head_lr_vel = abs(self._estimators.get(self.head_LR_name,
-                                                       SpringDamperEstimator(0, 1, 1)).velocity)
-                head_ud_vel = abs(self._estimators.get(self.head_UD_name,
-                                                       SpringDamperEstimator(0, 1, 1)).velocity)
-                diag["head_settling"] = max(head_lr_vel, head_ud_vel) > MotionProfile.SETTLING_VELOCITY_THRESHOLD.value
             else:
                 diag["estimators"] = {}
-                diag["head_settling"] = False
+
+            # Saccade cooldown state
+            diag["head_cooldown_remaining"] = max(0.0, round(
+                self._head_cooldown_until - time.time(), 2))
 
             diag["cameras_online"] = self._cameras_online
             diag["cameras_ready"] = list(self._cameras_ready)

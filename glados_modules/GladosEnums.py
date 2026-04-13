@@ -545,7 +545,7 @@ class MotionProfile(Enum):
     # Default pitch when side cameras drive (no head camera data yet).
     # Robot is mounted ~8ft high, people are ~5ft tall at ~6-10ft distance.
     # Negative = looking down. Adjust if mounting height changes.
-    SIDE_DRIVE_DEFAULT_PITCH = -15.0
+    SIDE_DRIVE_DEFAULT_PITCH = -5.0
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
@@ -567,8 +567,8 @@ class MotionProfile(Enum):
     # Separate UD smoothing — vertical is noisier than horizontal
     WORLD_SMOOTH_ALPHA_UD = 0.55   # UD-specific EMA (higher = more smoothing, LR stays at 0.4)
     # UD search sweep when side cameras see someone but head camera can't find them
-    UD_SEARCH_SWEEP_SPEED = 3.0    # degrees per update cycle
-    UD_SEARCH_SWEEP_RANGE = 15.0   # degrees above and below origin
+    UD_SEARCH_SWEEP_SPEED = 1.5    # degrees per update cycle
+    UD_SEARCH_SWEEP_RANGE = 10.0   # degrees above and below origin
     UD_SEARCH_START_DELAY = 1.5    # seconds after side handoff before sweeping
     # Body UD urgency: head UD within this margin of its limit triggers faster body follow
     BODY_UD_URGENCY_MARGIN = 15.0
