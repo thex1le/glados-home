@@ -334,7 +334,12 @@ class TestFullTrackingPipeline:
         mt.track_loop(CameraEnum.CAMERA_HEAD.value)
         first_world_lr = mt._world_lr
 
-        # Second detection at different position
+        # Second detection at different position — reset estimator state
+        # so the motion gate doesn't suppress (in real usage, enough time
+        # passes between frames for velocity to decay)
+        for est in mt._estimators.values():
+            est.velocity = 0.0
+            est.target = est.position  # no position error = no acceleration
         vision_map[CameraEnum.CAMERA_HEAD.value]["person"]["objects"][0]["box"] = {
             "x1": 400, "y1": 200, "x2": 500, "y2": 300
         }
