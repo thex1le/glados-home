@@ -1263,6 +1263,16 @@ class MotionTrack(MQTTClient):
         if time.time() < self._side_drive_backoff_until:
             return
 
+        # Head camera offline safety: if the head camera hasn't produced a
+        # frame in 10+ seconds, don't drive servos. Without head camera
+        # feedback, the robot nods back and forth chasing the UD sweep with
+        # no way to confirm it found the target or trigger occlusion backoff.
+        head_last = self._fusion._head_last_seen
+        if head_last > 0 and (time.time() - head_last) > 10.0:
+            self.logger.debug("SIDE_DRIVE: skipped — head camera offline "
+                              f"({time.time() - head_last:.0f}s since last frame)")
+            return
+
         best_lr = None
 
         # Prefer attention model target — prevents oscillation between people
