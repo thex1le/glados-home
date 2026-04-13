@@ -388,12 +388,12 @@ class MotionTrack(MQTTClient):
 
         # Camera readiness gate: hold all movement until every camera has reported
         # at least one detection. Prevents chasing phantoms during the multi-minute
-        # camera startup sequence. Times out after 30s so a missing camera doesn't
-        # block the robot indefinitely.
+        # camera startup sequence. Times out after 30s from FIRST detection (not
+        # from init, since model loading and camera boot can take minutes).
         self._cameras_ready: set = set()
         self._all_cameras = {self.main_camera, self.left_camera, self.right_camera}
         self._cameras_online = False
-        self._cameras_gate_start: float = time.time()
+        self._cameras_gate_start: float = 0.0  # set on first detection, not init
         self._cameras_gate_timeout: float = 30.0
         self._diagnostic_cache: Dict[str, Any] = {}
         # Saccade cooldown: suppress head camera for a duration after large servo moves
@@ -948,9 +948,19 @@ class MotionTrack(MQTTClient):
         head_targets = self._kinematics.inverse_kinematics_head(
             target_world_lr, target_world_ud, current_body)
 
-        # Stage 2: Body IK -- where body should eventually go
+        # Stage 2: Body IK -- where body should eventually go.
+        # During side-camera search (source="side"), the head sweeps up/down
+        # via the UD sweep, but the body should aim at the CENTER of the sweep
+        # (default pitch), not the current sweep position. This prevents body
+        # oscillation — the body positions deliberately like a snake's body,
+        # then the head scans independently. Once the head locks on (source="head"),
+        # both move together using the actual target.
+        if source == "side":
+            body_world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+        else:
+            body_world_ud = target_world_ud
         body_targets = self._kinematics.inverse_kinematics_body(
-            target_world_lr, target_world_ud)
+            target_world_lr, body_world_ud)
 
         head_lr_target = head_targets[self.head_LR_name]
         head_ud_target = head_targets[self.head_UD_name]
@@ -1350,10 +1360,19 @@ class MotionTrack(MQTTClient):
             "world_ud": round(world_ud, 1),
             "fusion_state": self._fusion.state,
         })
-        # Reset occlusion tracking on each new side-driven command
-        self._side_drive_attempt_start = time.time()
-        self._side_drive_head_frames = 0
-        self._side_drive_head_hits = 0
+        # Reset occlusion tracking only when the target direction changes
+        # significantly. If side cameras keep commanding the same angle, the
+        # head has been aimed there and the occlusion check should continue
+        # counting. Resetting on every 20Hz command prevents the 1.5s settling
+        # delay from ever expiring.
+        prev_lr = getattr(self, '_side_drive_last_lr', None)
+        if (self._side_drive_attempt_start == 0.0 or
+                prev_lr is None or
+                abs(self._side_world_lr_smooth - prev_lr) > 5.0):
+            self._side_drive_attempt_start = time.time()
+            self._side_drive_head_frames = 0
+            self._side_drive_head_hits = 0
+        self._side_drive_last_lr = self._side_world_lr_smooth
         self._update_targets(self._side_world_lr_smooth, world_ud, source="side")
 
     def __select_target(self, seen_data: list, camera: str) -> dict:
@@ -1485,6 +1504,11 @@ class MotionTrack(MQTTClient):
         # camera pointed at wall) doesn't block forever.
         if not self._cameras_online:
             self._cameras_ready.add(camera)
+            # Start the timeout from the FIRST detection, not from __init__.
+            # Model loading and camera boot can take minutes — the timeout
+            # should measure how long we've been waiting with partial cameras.
+            if self._cameras_gate_start == 0.0:
+                self._cameras_gate_start = time.time()
             elapsed = time.time() - self._cameras_gate_start
             if self._cameras_ready >= self._all_cameras:
                 self._cameras_online = True
