@@ -154,6 +154,11 @@ def _make_motion_track():
     mt._cameras_online = True
     # Saccade cooldown (not active for tests)
     mt._head_cooldown_until = 0.0
+    # Occlusion backoff (not active for tests)
+    mt._side_drive_attempt_start = 0.0
+    mt._side_drive_head_frames = 0
+    mt._side_drive_head_hits = 0
+    mt._side_drive_backoff_until = 0.0
 
     # Vision tracker (mock)
     mt.vision_tracker = MagicMock()

@@ -398,6 +398,16 @@ class MotionTrack(MQTTClient):
         self._diagnostic_cache: Dict[str, Any] = {}
         # Saccade cooldown: suppress head camera for a duration after large servo moves
         self._head_cooldown_until: float = 0.0
+        # Occlusion backoff: if the head repeatedly fails to see anyone at a
+        # side-camera-driven angle, stop trying for a while (the person is likely
+        # occluded by furniture from the head camera's viewpoint).
+        # Uses time-based window: tracks when the head started looking and how
+        # many successes vs failures since then. Only triggers when the head has
+        # been settled (not mid-slew) long enough to give YOLO a fair chance.
+        self._side_drive_attempt_start: float = 0.0  # when side cameras last drove head
+        self._side_drive_head_frames: int = 0  # head camera frames since attempt start
+        self._side_drive_head_hits: int = 0  # frames where head saw a person
+        self._side_drive_backoff_until: float = 0.0
 
         # World-space angle estimates (smoothed)
         self._world_lr: float = None
@@ -696,6 +706,45 @@ class MotionTrack(MQTTClient):
         if servo_name in self._estimators:
             return self._estimators[servo_name].get_position()
         return self._servo_middles.get(servo_name, MotionProfile.DEFAULT_SERVO_CENTER.value)
+
+    def _check_occlusion_backoff(self, head_saw_person: bool) -> None:
+        """Track head camera success/failure and trigger backoff if occluded.
+
+        Only counts frames that arrive at least 1.5 seconds after the last
+        side-driven command, giving the servos time to physically arrive
+        before judging whether the head camera can see the person. This
+        prevents motion blur frames from being counted as occlusion failures.
+
+        After 2 seconds of settled observation with <20% hit rate across
+        at least 15 frames, triggers a 5-second backoff on side-driven
+        movement. A single phantom detection doesn't prevent the backoff
+        since the threshold is hit rate, not zero-tolerance.
+
+        Args:
+            head_saw_person: True if the head camera detected a person.
+        """
+        # Only count frames after the head has had time to settle
+        time_since_drive = time.time() - self._side_drive_attempt_start
+        if self._side_drive_attempt_start == 0 or time_since_drive < 1.5:
+            return
+
+        self._side_drive_head_frames += 1
+        if head_saw_person:
+            self._side_drive_head_hits += 1
+
+        # Need at least 15 frames (~1 second at 15 FPS) of settled observation
+        if self._side_drive_head_frames >= 15:
+            hit_rate = self._side_drive_head_hits / self._side_drive_head_frames
+            if hit_rate < 0.2:
+                # Less than 20% of settled frames saw a person — occluded
+                self._side_drive_backoff_until = time.time() + 5.0
+                self.logger.info(
+                    f"Occlusion backoff: head saw person in "
+                    f"{self._side_drive_head_hits}/{self._side_drive_head_frames} "
+                    f"settled frames ({hit_rate:.0%}), pausing side drive for 5s")
+            # Reset counters regardless (start fresh observation window)
+            self._side_drive_head_frames = 0
+            self._side_drive_head_hits = 0
 
     def _head_is_settling(self) -> bool:
         """Check if head servos are still slewing above the settling threshold.
@@ -1207,6 +1256,13 @@ class MotionTrack(MQTTClient):
         target isn't in the roster. This prevents oscillation when left
         and right cameras see different people.
         """
+        # Occlusion backoff: if the head repeatedly fails to see anyone at
+        # the side-camera-driven angle, the person is likely occluded from
+        # the head camera's viewpoint (e.g., behind a monitor). Stop driving
+        # the head for a while to avoid futile slewing and motion blur.
+        if time.time() < self._side_drive_backoff_until:
+            return
+
         best_lr = None
 
         # Prefer attention model target — prevents oscillation between people
@@ -1286,6 +1342,10 @@ class MotionTrack(MQTTClient):
             "world_ud": round(world_ud, 1),
             "fusion_state": self._fusion.state,
         })
+        # Reset occlusion tracking on each new side-driven command
+        self._side_drive_attempt_start = time.time()
+        self._side_drive_head_frames = 0
+        self._side_drive_head_hits = 0
         self._update_targets(self._side_world_lr_smooth, world_ud, source="side")
 
     def __select_target(self, seen_data: list, camera: str) -> dict:
@@ -1453,6 +1513,7 @@ class MotionTrack(MQTTClient):
         if camera not in vision_map:
             if camera == self.main_camera:
                 self._fusion.head_lost()
+                self._check_occlusion_backoff(False)
             # Clear stale camera from roster so fuzzy matching isn't poisoned
             if self._room_state:
                 self._room_state.clear_camera(camera)
@@ -1465,6 +1526,7 @@ class MotionTrack(MQTTClient):
         if target_data.get(self.count, 0) == 0:
             if camera == self.main_camera:
                 self._fusion.head_lost()
+                self._check_occlusion_backoff(False)
             # Clear stale camera from roster so fuzzy matching isn't poisoned
             if self._room_state:
                 self._room_state.clear_camera(camera)
@@ -1582,6 +1644,7 @@ class MotionTrack(MQTTClient):
             self._fusion.update_head_detection()
             self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
             self._ud_search_active = False  # head found target, stop UD sweep
+            self._check_occlusion_backoff(True)  # head can see — record success
 
             # Check for pose data (prefer nose point over bounding box).
             # Hysteresis prevents rapid switching: once on nose, stay until 3

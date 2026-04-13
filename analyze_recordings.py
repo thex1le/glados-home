@@ -1,21 +1,31 @@
 """
-Comprehensive recording analysis: latest (UD fix + saccade cooldown) vs baseline.
-Session 20260413_004951 (latest) vs session 20260412_175514 (baseline).
+Comprehensive recording analysis: 3-way comparison.
+  - Latest (daytime, UD sweep range fix + saccade cooldown scoping + CUDA RTSP): session_20260413_164234
+  - Baseline (pre-all-changes, daytime-ish): session_20260412_175514
+  - Nighttime (before UD range fix): session_20260413_004951
 """
+# builtin
 import json
 import os
 import math
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 BASE = Path(r"C:\Users\Ben\PycharmProjects\glados-home\recordings")
-LATEST = "session_20260413_004951"
+LATEST = "session_20260413_164234"
 BASELINE = "session_20260412_175514"
+NIGHTTIME = "session_20260413_004951"
 
 CAMERAS = ["camera_head", "camera_left", "camera_right"]
 
+SESSIONS = [
+    (BASELINE, "Baseline"),
+    (NIGHTTIME, "Nighttime"),
+    (LATEST, "Latest"),
+]
 
-def load_tracking(session, camera):
+
+def load_tracking(session: str, camera: str) -> list:
     path = BASE / session / camera / "tracking.jsonl"
     frames = []
     if not path.exists():
@@ -28,538 +38,349 @@ def load_tracking(session, camera):
     return frames
 
 
-def bbox_center(box):
+def bbox_center(box: dict) -> tuple:
     return ((box["x1"] + box["x2"]) / 2, (box["y1"] + box["y2"]) / 2)
 
 
-def _std(vals):
+def std_dev(vals: list) -> float:
     if len(vals) < 2:
         return 0.0
     mean = sum(vals) / len(vals)
     return math.sqrt(sum((v - mean) ** 2 for v in vals) / (len(vals) - 1))
 
 
-def analyze_camera(frames, label=""):
-    """Part 1 metrics for a single camera recording."""
+def analyze_camera(frames: list) -> dict:
+    """Compute all per-camera metrics."""
     total = len(frames)
     if total == 0:
-        return {"label": label, "total": 0, "duration_s": 0, "fps": 0,
-                "person_frames": 0, "pct_person": 0, "mean_conf": 0,
-                "unique_track_ids": 0, "pct_none_track": 0, "pct_stable_20px": 0,
-                "jumps_50px": 0, "jumps_100px": 0, "phantom_count": 0}
+        return {"total_frames": 0, "duration_s": 0, "fps": 0,
+                "detection_rate": 0, "mean_conf": 0, "conf_std": 0,
+                "mean_conf_delta": 0, "stability_pct": 0,
+                "jumps_50": 0, "jumps_100": 0,
+                "unique_track_ids": 0, "track_switches": 0,
+                "track_none_pct": 0, "phantom_total": 0,
+                "top3_phantoms": [], "person_counts": {},
+                "max_dropout_streak": 0, "person_frames": 0}
 
     t0 = frames[0].get("wall_time", 0)
     t1 = frames[-1].get("wall_time", 0)
     duration = t1 - t0 if t1 > t0 else 0
     fps = (total - 1) / duration if duration > 0 else 0
 
-    person_frames = 0
-    person_confs = []
-    all_track_ids = set()
-    none_track_ids = 0
-    phantom_count = 0
+    person_frame_count = 0
+    confidences = []
     prev_center = None
     stable_count = 0
-    jump_50 = 0
-    jump_100 = 0
-    center_movement_frames = 0
+    total_consecutive = 0
+    jumps_50 = 0
+    jumps_100 = 0
+    all_track_ids = set()
+    track_id_sequence = []
+    none_track_count = 0
+    phantom_classes = Counter()
+    person_counts = Counter()
+    max_dropout = 0
+    current_dropout = 0
 
     for frame in frames:
         tracking = frame.get("tracking", {})
-        has_person = False
-        best_person_conf = 0
-        best_person_center = None
-        best_person_track_id = None
-
-        for class_name, class_data in tracking.items():
-            if class_name in ("trace_id", "ts_vision", "diagnostics"):
+        # Count phantoms (non-person, non-metadata)
+        for cls_name, cls_data in tracking.items():
+            if cls_name in ("trace_id", "ts_vision", "diagnostics", "person"):
                 continue
-            if not isinstance(class_data, dict):
-                continue
-            objects = class_data.get("objects", [])
-            for obj in objects:
-                obj_name = obj.get("name", "")
-                is_person = (obj_name == "person")
+            if isinstance(cls_data, dict) and "count" in cls_data:
+                cnt = cls_data["count"]
+                if cnt > 0:
+                    phantom_classes[cls_name] += cnt
 
-                if is_person:
-                    has_person = True
-                    conf = obj.get("confidence", 0)
-                    if conf > best_person_conf:
-                        best_person_conf = conf
-                        best_person_center = bbox_center(obj["box"])
-                        best_person_track_id = obj.get("track_id")
-                else:
-                    phantom_count += 1
+        person_data = tracking.get("person", {})
+        if not isinstance(person_data, dict):
+            person_counts[0] += 1
+            current_dropout += 1
+            max_dropout = max(max_dropout, current_dropout)
+            prev_center = None
+            continue
 
-        if has_person:
-            person_frames += 1
-            person_confs.append(best_person_conf)
-            if best_person_track_id is not None:
-                all_track_ids.add(best_person_track_id)
+        count = person_data.get("count", 0)
+        objects = person_data.get("objects", [])
+
+        bucket = min(count, 3)
+        if bucket == 3:
+            person_counts["3+"] += 1
+        else:
+            person_counts[bucket] += 1
+
+        if count > 0 and objects:
+            current_dropout = 0
+            person_frame_count += 1
+            obj = objects[0]
+            conf = obj.get("confidence", 0)
+            confidences.append(conf)
+            box = obj["box"]
+            cx, cy = bbox_center(box)
+
+            tid = obj.get("track_id")
+            if tid is not None:
+                all_track_ids.add(tid)
             else:
-                none_track_ids += 1
+                none_track_count += 1
+            track_id_sequence.append(tid)
 
-            if prev_center is not None and best_person_center is not None:
-                dx = best_person_center[0] - prev_center[0]
-                dy = best_person_center[1] - prev_center[1]
+            if prev_center is not None:
+                dx = cx - prev_center[0]
+                dy = cy - prev_center[1]
                 dist = math.sqrt(dx * dx + dy * dy)
-                center_movement_frames += 1
+                total_consecutive += 1
                 if dist < 20:
                     stable_count += 1
                 if dist > 50:
-                    jump_50 += 1
+                    jumps_50 += 1
                 if dist > 100:
-                    jump_100 += 1
-            prev_center = best_person_center
+                    jumps_100 += 1
+            prev_center = (cx, cy)
         else:
+            current_dropout += 1
+            max_dropout = max(max_dropout, current_dropout)
             prev_center = None
 
-    pct_person = (person_frames / total * 100) if total > 0 else 0
-    mean_conf = (sum(person_confs) / len(person_confs)) if person_confs else 0
-    pct_none_track = (none_track_ids / person_frames * 100) if person_frames > 0 else 0
-    pct_stable = (stable_count / center_movement_frames * 100) if center_movement_frames > 0 else 0
+    detection_rate = (person_frame_count / total * 100) if total > 0 else 0
+    mean_conf = (sum(confidences) / len(confidences)) if confidences else 0
+    conf_std_val = std_dev(confidences) if len(confidences) > 1 else 0
+    conf_deltas = [abs(confidences[i] - confidences[i - 1]) for i in range(1, len(confidences))]
+    mean_conf_delta = sum(conf_deltas) / len(conf_deltas) if conf_deltas else 0
+    stability_pct = (stable_count / total_consecutive * 100) if total_consecutive > 0 else 0
+    track_none_pct = (none_track_count / person_frame_count * 100) if person_frame_count > 0 else 0
+
+    # Track switches
+    switches = 0
+    prev_id = None
+    for tid in track_id_sequence:
+        if tid is not None and prev_id is not None and tid != prev_id:
+            switches += 1
+        if tid is not None:
+            prev_id = tid
 
     return {
-        "label": label,
-        "total": total,
+        "total_frames": total,
         "duration_s": round(duration, 1),
-        "fps": round(fps, 1),
-        "person_frames": person_frames,
-        "pct_person": round(pct_person, 1),
+        "fps": round(fps, 2),
+        "detection_rate": round(detection_rate, 1),
         "mean_conf": round(mean_conf, 4),
+        "conf_std": round(conf_std_val, 4),
+        "mean_conf_delta": round(mean_conf_delta, 4),
+        "stability_pct": round(stability_pct, 1),
+        "jumps_50": jumps_50,
+        "jumps_100": jumps_100,
         "unique_track_ids": len(all_track_ids),
-        "pct_none_track": round(pct_none_track, 1),
-        "pct_stable_20px": round(pct_stable, 1),
-        "jumps_50px": jump_50,
-        "jumps_100px": jump_100,
-        "phantom_count": phantom_count,
+        "track_switches": switches,
+        "track_none_pct": round(track_none_pct, 1),
+        "phantom_total": sum(phantom_classes.values()),
+        "top3_phantoms": phantom_classes.most_common(3),
+        "person_counts": dict(person_counts),
+        "max_dropout_streak": max_dropout,
+        "person_frames": person_frame_count,
     }
 
 
-def print_table(rows, title=""):
-    if title:
-        print(f"\n{'='*90}")
-        print(f"  {title}")
-        print(f"{'='*90}")
-    if not rows:
-        print("  (no data)")
-        return
-    keys = list(rows[0].keys())
-    widths = {}
-    for k in keys:
-        widths[k] = max(len(str(k)), max(len(str(r.get(k, ""))) for r in rows))
-    header = " | ".join(str(k).rjust(widths[k]) for k in keys)
-    print(f"  {header}")
-    print(f"  {'-' * len(header)}")
-    for r in rows:
-        line = " | ".join(str(r.get(k, "")).rjust(widths[k]) for k in keys)
-        print(f"  {line}")
+def fmt_row(cols: list, widths: list) -> str:
+    parts = []
+    for val, w in zip(cols, widths):
+        parts.append(str(val).rjust(w))
+    return "  " + " | ".join(parts)
 
 
-def print_delta(b, l, keys):
-    print(f"\n  DELTA (LATEST - BASELINE):")
-    for k in keys:
-        bv, lv = b.get(k, 0), l.get(k, 0)
+def print_comparison_table(cam_label: str, latest: dict, baseline: dict) -> None:
+    """Print per-camera latest vs baseline table."""
+    print(f"\n{'='*72}")
+    print(f"  {cam_label}: LATEST vs BASELINE")
+    print(f"{'='*72}")
+
+    rows = [
+        ("Total frames", baseline["total_frames"], latest["total_frames"]),
+        ("Duration (s)", baseline["duration_s"], latest["duration_s"]),
+        ("FPS", baseline["fps"], latest["fps"]),
+        ("Person detect rate (%)", baseline["detection_rate"], latest["detection_rate"]),
+        ("Mean person confidence", baseline["mean_conf"], latest["mean_conf"]),
+        ("Bbox stability <20px (%)", baseline["stability_pct"], latest["stability_pct"]),
+        ("Jumps >50px", baseline["jumps_50"], latest["jumps_50"]),
+        ("Jumps >100px", baseline["jumps_100"], latest["jumps_100"]),
+        ("Unique track IDs", baseline["unique_track_ids"], latest["unique_track_ids"]),
+        ("Track ID switches", baseline["track_switches"], latest["track_switches"]),
+        ("Track ID = None (%)", baseline["track_none_pct"], latest["track_none_pct"]),
+        ("Phantom object count", baseline["phantom_total"], latest["phantom_total"]),
+    ]
+
+    w = [30, 12, 12, 10]
+    print(fmt_row(["Metric", "Baseline", "Latest", "Delta"], w))
+    print(f"  {'-'*68}")
+    for name, bv, lv in rows:
         if isinstance(bv, float):
-            delta = round(lv - bv, 2)
-            sign = "+" if delta >= 0 else ""
-            print(f"    {k}: {sign}{delta}")
+            delta = round(lv - bv, 4)
+            ds = f"{delta:+.4f}" if "conf" in name.lower() else f"{delta:+.1f}"
         else:
             delta = lv - bv
-            sign = "+" if delta >= 0 else ""
-            print(f"    {k}: {sign}{delta}")
+            ds = f"{delta:+d}"
+        print(fmt_row([name, bv, lv, ds], w))
+
+    # Phantoms detail
+    for label, data in [("Baseline", baseline), ("Latest", latest)]:
+        phantoms = data.get("top3_phantoms", [])
+        if phantoms:
+            pstr = ", ".join(f"{n}({c})" for n, c in phantoms)
+            print(f"  Top 3 phantoms ({label}): {pstr}")
 
 
-# ============================================================================
-# PART 1
-# ============================================================================
-def part1():
-    print("\n" + "#" * 90)
-    print("# PART 1: ALL 3 CAMERAS COMPARISON (LATEST vs BASELINE)")
-    print("#" * 90)
+def head_deep_dive(data: dict) -> None:
+    """Metrics 8-10: head camera deep dive on latest."""
+    print(f"\n{'='*72}")
+    print(f"  HEAD CAMERA DEEP DIVE (Latest Only)")
+    print(f"{'='*72}")
 
-    delta_keys = ["pct_person", "mean_conf", "pct_none_track", "pct_stable_20px",
-                  "jumps_50px", "jumps_100px", "phantom_count"]
+    # 8. Person count distribution
+    pc = data.get("person_counts", {})
+    total = data["total_frames"]
+    print(f"\n  [8] Person Count Distribution:")
+    for k in [0, 1, 2, "3+"]:
+        cnt = pc.get(k, 0)
+        pct = cnt / total * 100 if total > 0 else 0
+        bar = "#" * int(pct / 2)
+        print(f"      {str(k):>3s} persons: {cnt:>5d} frames ({pct:5.1f}%) {bar}")
 
-    for cam in CAMERAS:
-        rows = []
-        for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-            frames = load_tracking(session, cam)
-            m = analyze_camera(frames, label=tag)
-            rows.append(m)
-        print_table(rows, title=cam)
-        if len(rows) == 2 and rows[0]["total"] > 0 and rows[1]["total"] > 0:
-            print_delta(rows[0], rows[1], delta_keys)
+    # 9. Longest detection dropout streak
+    print(f"\n  [9] Longest detection dropout streak: {data['max_dropout_streak']} frames")
+    if data["fps"] > 0 and data["max_dropout_streak"] > 0:
+        dropout_sec = data["max_dropout_streak"] / data["fps"]
+        print(f"      = ~{dropout_sec:.1f} seconds at {data['fps']} fps")
 
-
-# ============================================================================
-# PART 2
-# ============================================================================
-def part2():
-    print("\n" + "#" * 90)
-    print("# PART 2: DIAGNOSTIC DEEP-DIVE (LATEST HEAD CAMERA)")
-    print("#" * 90)
-
-    frames = load_tracking(LATEST, "camera_head")
-    total = len(frames)
-
-    # 2.1 Diagnostics check
-    print(f"\n--- 2.1 Diagnostics Fields ---")
-    non_empty_diag = 0
-    diag_keys_found = set()
-    sample_diag = None
-    for f in frames:
-        d = f.get("tracking", {}).get("diagnostics", {})
-        if d:
-            non_empty_diag += 1
-            diag_keys_found.update(d.keys())
-            if sample_diag is None:
-                sample_diag = d
-    print(f"  Total frames: {total}")
-    print(f"  Frames with non-empty diagnostics: {non_empty_diag} "
-          f"({round(non_empty_diag/total*100,1) if total else 0}%)")
-    if diag_keys_found:
-        print(f"  Diagnostic keys found: {sorted(diag_keys_found)}")
-        print(f"  Sample: {json.dumps(sample_diag, indent=4)[:1000]}")
+    # 10. Confidence variance
+    print(f"\n  [10] Confidence Stability:")
+    print(f"       Std dev:              {data['conf_std']:.4f}")
+    print(f"       Mean frame-to-frame:  {data['mean_conf_delta']:.4f}")
+    if data["mean_conf_delta"] < 0.02:
+        assessment = "STABLE (delta < 0.02)"
+    elif data["mean_conf_delta"] > 0.05:
+        assessment = "FLICKERY (delta > 0.05)"
     else:
-        print(f"  ALL diagnostics are empty dicts.")
-        print(f"  Saccade cooldown / head_settling / fusion_state are NOT recorded.")
-        print(f"  The recorder does not capture internal tracker state -- only detection results.")
-
-    # 2.2 Estimator health -- inferred from bbox movement
-    print(f"\n--- 2.2 Bbox-Inferred Motion Health ---")
-    person_centers_x = []
-    person_centers_y = []
-    velocities_x = []
-    velocities_y = []
-    prev_cx, prev_cy, prev_t = None, None, None
-    for f in frames:
-        tracking = f.get("tracking", {})
-        t = f.get("wall_time", 0)
-        if "person" in tracking:
-            objs = tracking["person"].get("objects", [])
-            if objs:
-                box = objs[0]["box"]
-                cx, cy = bbox_center(box)
-                person_centers_x.append(cx)
-                person_centers_y.append(cy)
-                if prev_cx is not None and prev_t is not None:
-                    dt = t - prev_t
-                    if dt > 0:
-                        velocities_x.append((cx - prev_cx) / dt)
-                        velocities_y.append((cy - prev_cy) / dt)
-                prev_cx, prev_cy, prev_t = cx, cy, t
-            else:
-                prev_cx, prev_cy, prev_t = None, None, None
-        else:
-            prev_cx, prev_cy, prev_t = None, None, None
-
-    if person_centers_x:
-        print(f"  Person center X: min={min(person_centers_x):.1f}, max={max(person_centers_x):.1f}, "
-              f"mean={sum(person_centers_x)/len(person_centers_x):.1f}, std={_std(person_centers_x):.1f}")
-        print(f"  Person center Y: min={min(person_centers_y):.1f}, max={max(person_centers_y):.1f}, "
-              f"mean={sum(person_centers_y)/len(person_centers_y):.1f}, std={_std(person_centers_y):.1f}")
-    if velocities_x:
-        abs_vx = [abs(v) for v in velocities_x]
-        abs_vy = [abs(v) for v in velocities_y]
-        speeds = [math.sqrt(vx*vx+vy*vy) for vx, vy in zip(velocities_x, velocities_y)]
-        print(f"  Speed (px/s): min={min(speeds):.1f}, max={max(speeds):.1f}, "
-              f"mean={sum(speeds)/len(speeds):.1f}, median={sorted(speeds)[len(speeds)//2]:.1f}")
-        extreme_v = sum(1 for s in speeds if s > 500)
-        print(f"  Frames with speed > 500 px/s: {extreme_v} ({round(extreme_v/len(speeds)*100,1)}%)")
-        extreme_v2 = sum(1 for s in speeds if s > 200)
-        print(f"  Frames with speed > 200 px/s: {extreme_v2} ({round(extreme_v2/len(speeds)*100,1)}%)")
-
-    # 2.3 Detection presence per camera (proxy for fusion)
-    print(f"\n--- 2.3 Detection Presence Per Camera (proxy for fusion state) ---")
-    for cam in CAMERAS:
-        cam_frames = load_tracking(LATEST, cam)
-        person_count = sum(1 for f in cam_frames if "person" in f.get("tracking", {}))
-        total_cam = len(cam_frames)
-        pct = round(person_count / total_cam * 100, 1) if total_cam else 0
-        state = "head_tracking possible" if cam == "camera_head" and pct > 50 else ""
-        if cam != "camera_head" and pct > 50:
-            state = "SIDE_DRIVE possible"
-        if pct < 10:
-            state = "camera rarely sees person"
-        print(f"  {cam}: {person_count}/{total_cam} ({pct}%) {state}")
-
-    # 2.4 UD oscillation analysis
-    print(f"\n--- 2.4 UD (Vertical) Oscillation Analysis ---")
-    for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-        bf = load_tracking(session, "camera_head")
-        by_list = []
-        for f in bf:
-            tracking = f.get("tracking", {})
-            if "person" in tracking:
-                objs = tracking["person"].get("objects", [])
-                if objs:
-                    by_list.append(bbox_center(objs[0]["box"])[1])
-
-        if not by_list:
-            print(f"  {tag}: no person detections")
-            continue
-
-        # Direction changes
-        dc = 0
-        ld = 0
-        for i in range(1, len(by_list)):
-            dy = by_list[i] - by_list[i - 1]
-            if abs(dy) < 1:
-                continue
-            cd = 1 if dy > 0 else -1
-            if ld != 0 and cd != ld:
-                dc += 1
-            ld = cd
-
-        # Windowed Y std
-        window = 30
-        y_stds = []
-        for i in range(0, len(by_list) - window, window):
-            chunk = by_list[i:i + window]
-            y_stds.append(_std(chunk))
-
-        high_osc = sum(1 for s in y_stds if s > 20) if y_stds else 0
-        mean_ystd = sum(y_stds) / len(y_stds) if y_stds else 0
-
-        print(f"  {tag}:")
-        print(f"    Person frames: {len(by_list)}")
-        print(f"    Y overall std: {_std(by_list):.1f} px")
-        print(f"    Y direction changes: {dc} (rate: {round(dc / len(by_list) * 100, 1)}%)")
-        print(f"    Y std per {window}-frame window: mean={mean_ystd:.1f}, "
-              f"max={max(y_stds):.1f}" if y_stds else "    (not enough data for windowed analysis)")
-        if y_stds:
-            print(f"    High-oscillation windows (std>20px): {high_osc}/{len(y_stds)}")
-
-    # 2.5 IMU data
-    print(f"\n--- 2.5 IMU Data ---")
-    print(f"  IMU data is published on body/imu/status, NOT recorded in tracking.jsonl.")
-    print(f"  No IMU data available in these recording files.")
-
-    # 2.6 Attention / track ID stability
-    print(f"\n--- 2.6 Track ID Stability (proxy for attention) ---")
-    for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-        hf = load_tracking(session, "camera_head")
-        track_ids = []
-        for f in hf:
-            tracking = f.get("tracking", {})
-            if "person" in tracking:
-                objs = tracking["person"].get("objects", [])
-                if objs:
-                    track_ids.append(objs[0].get("track_id"))
-        unique = set(t for t in track_ids if t is not None)
-        none_count = sum(1 for t in track_ids if t is None)
-        switches = 0
-        prev_id = None
-        for tid in track_ids:
-            if tid is not None and prev_id is not None and tid != prev_id:
-                switches += 1
-            if tid is not None:
-                prev_id = tid
-        print(f"  {tag}: unique_ids={unique}, none_count={none_count}, switches={switches}")
-
-    # Check gesture data
-    print(f"\n--- 2.7 Gesture Data (latest head only) ---")
-    gesture_counts = defaultdict(int)
-    gesture_frames = 0
-    for f in frames:
-        tracking = f.get("tracking", {})
-        if "person" in tracking:
-            objs = tracking["person"].get("objects", [])
-            for obj in objs:
-                g = obj.get("gesture")
-                if g:
-                    gesture_frames += 1
-                    if isinstance(g, dict):
-                        for gname, gval in g.items():
-                            gesture_counts[gname] += 1
-                    elif isinstance(g, str):
-                        gesture_counts[g] += 1
-    print(f"  Frames with gesture data: {gesture_frames}")
-    if gesture_counts:
-        for gname, count in sorted(gesture_counts.items(), key=lambda x: -x[1]):
-            print(f"    {gname}: {count}")
-    else:
-        print(f"  No gesture detections found.")
-
-    # Check pose source
-    print(f"\n--- 2.8 Pose Source Distribution ---")
-    pose_sources = defaultdict(int)
-    pose_frames = 0
-    no_pose_frames = 0
-    for f in frames:
-        tracking = f.get("tracking", {})
-        if "person" in tracking:
-            objs = tracking["person"].get("objects", [])
-            for obj in objs:
-                if "pose" in obj:
-                    pose_frames += 1
-                    src = obj.get("source", "unknown")
-                    pose_sources[src] += 1
-                else:
-                    no_pose_frames += 1
-    print(f"  Frames with pose: {pose_frames}, without pose: {no_pose_frames}")
-    for src, count in sorted(pose_sources.items(), key=lambda x: -x[1]):
-        print(f"    source={src}: {count}")
+        assessment = "MODERATE"
+    print(f"       Assessment:           {assessment}")
 
 
-# ============================================================================
-# PART 3
-# ============================================================================
-def part3():
-    print("\n" + "#" * 90)
-    print("# PART 3: VISUAL QUALITY CHECK (HEAD CAMERA FRAMES)")
-    print("#" * 90)
-
-    frames_dir = BASE / LATEST / "camera_head" / "frames"
-    tracking_frames = load_tracking(LATEST, "camera_head")
-    indices = [100, 300, 500, 700]
-
-    rows = []
+def check_frame_files(session: str, indices: list) -> None:
+    """Metric 11: frame file sizes."""
+    print(f"\n{'='*72}")
+    print(f"  HEAD CAMERA FRAME FILE SIZES (Latest)")
+    print(f"{'='*72}")
+    frames_dir = BASE / session / "camera_head" / "frames"
+    w = [10, 15, 12, 10]
+    print(fmt_row(["Index", "Filename", "Size (bytes)", "Size (KB)"], w))
+    print(f"  {'-'*52}")
     for idx in indices:
         fname = f"{idx:06d}.jpg"
         fpath = frames_dir / fname
         if fpath.exists():
-            size = os.path.getsize(fpath)
-            size_str = f"{size:,d}"
+            size = fpath.stat().st_size
+            print(fmt_row([idx, fname, f"{size:,d}", f"{size/1024:.1f}"], w))
         else:
-            size_str = "MISSING"
-
-        conf = "-"
-        has_person = "no"
-        classes_str = "-"
-        track_id = "-"
-
-        if idx < len(tracking_frames):
-            tf = tracking_frames[idx]
-            tracking = tf.get("tracking", {})
-            det_classes = [k for k in tracking if k not in ("trace_id", "ts_vision", "diagnostics")]
-            classes_str = ", ".join(det_classes) if det_classes else "none"
-            if "person" in tracking:
-                objs = tracking["person"].get("objects", [])
-                if objs:
-                    conf = f"{objs[0].get('confidence', 0):.4f}"
-                    has_person = "YES"
-                    track_id = str(objs[0].get("track_id", "None"))
-
-        rows.append({
-            "idx": idx,
-            "file": fname,
-            "size_bytes": size_str,
-            "person": has_person,
-            "conf": conf,
-            "track_id": track_id,
-            "classes": classes_str,
-        })
-
-    print_table(rows, title="Frame Quality Samples (latest head camera)")
-
-    # Compare frame sizes between sessions
-    print(f"\n  --- Frame Size Comparison (average over first 100 frames) ---")
-    for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-        fdir = BASE / session / "camera_head" / "frames"
-        sizes = []
-        for i in range(100):
-            fp = fdir / f"{i:06d}.jpg"
-            if fp.exists():
-                sizes.append(os.path.getsize(fp))
-        if sizes:
-            print(f"  {tag}: mean={sum(sizes)/len(sizes):,.0f} bytes, "
-                  f"min={min(sizes):,d}, max={max(sizes):,d}, count={len(sizes)}")
-        else:
-            print(f"  {tag}: no frames found")
+            print(fmt_row([idx, fname, "NOT FOUND", "-"], w))
 
 
-# ============================================================================
-# PART 4
-# ============================================================================
-def part4():
-    print("\n" + "#" * 90)
-    print("# PART 4: SIDE CAMERA COMPARISON (LATEST vs BASELINE)")
-    print("#" * 90)
+def three_way_head_table(latest: dict, baseline: dict, nighttime: dict) -> None:
+    """Metric 12: 3-way head camera comparison."""
+    print(f"\n{'='*72}")
+    print(f"  3-WAY HEAD CAMERA COMPARISON")
+    print(f"{'='*72}")
 
-    for cam in ["camera_left", "camera_right"]:
-        rows = []
-        for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-            frames = load_tracking(session, cam)
-            m = analyze_camera(frames, label=tag)
-            rows.append(m)
-        print_table(rows, title=cam)
-
-        if len(rows) == 2 and rows[0]["total"] > 0 and rows[1]["total"] > 0:
-            b, l = rows[0], rows[1]
-            print(f"\n  Reliability Assessment:")
-            for tag_name, r in [("BASELINE", b), ("LATEST", l)]:
-                det_ok = r["pct_person"] > 90
-                conf_ok = r["mean_conf"] > 0.7
-                status = "RELIABLE" if det_ok and conf_ok else "UNRELIABLE"
-                det_verdict = "PASS" if det_ok else "FAIL"
-                conf_verdict = "PASS" if conf_ok else "FAIL"
-                print(f"    {tag_name}: detect={r['pct_person']}% (>90%: {det_verdict}), "
-                      f"conf={r['mean_conf']} (>0.7: {conf_verdict}) => {status}")
-            print(f"  Phantom delta: {l['phantom_count'] - b['phantom_count']:+d} "
-                  f"(BASELINE={b['phantom_count']}, LATEST={l['phantom_count']})")
-
-
-# ============================================================================
-# SUMMARY
-# ============================================================================
-def summary():
-    print("\n" + "#" * 90)
-    print("# BRUTAL SUMMARY: DID THE UD FIX + SACCADE COOLDOWN ACTUALLY HELP?")
-    print("#" * 90)
-
-    results = {}
-    for cam in CAMERAS:
-        for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-            frames = load_tracking(session, cam)
-            results[(cam, tag)] = analyze_camera(frames, label=tag)
-
-    bh = results[("camera_head", "BASELINE")]
-    lh = results[("camera_head", "LATEST")]
-
-    print(f"\n  HEAD CAMERA METRICS:")
     metrics = [
-        ("Detection rate", "pct_person", "%", True),
-        ("Mean confidence", "mean_conf", "", True),
-        ("Bbox stability <20px", "pct_stable_20px", "%", True),
-        ("Jumps >50px", "jumps_50px", "", False),
-        ("Jumps >100px", "jumps_100px", "", False),
-        ("Phantoms", "phantom_count", "", False),
-        ("Track ID count", "unique_track_ids", "", False),
+        ("Total frames", "total_frames"),
+        ("Duration (s)", "duration_s"),
+        ("FPS", "fps"),
+        ("Detection rate (%)", "detection_rate"),
+        ("Mean confidence", "mean_conf"),
+        ("Confidence std", "conf_std"),
+        ("Conf frame delta", "mean_conf_delta"),
+        ("Bbox stability (%)", "stability_pct"),
+        ("Jumps >50px", "jumps_50"),
+        ("Jumps >100px", "jumps_100"),
+        ("Unique track IDs", "unique_track_ids"),
+        ("Track switches", "track_switches"),
+        ("Track None (%)", "track_none_pct"),
+        ("Phantom objects", "phantom_total"),
+        ("Max dropout streak", "max_dropout_streak"),
     ]
 
-    improvements = 0
-    regressions = 0
-    for label, key, unit, higher_better in metrics:
-        bv = bh[key]
-        lv = lh[key]
-        if isinstance(bv, float):
-            delta = lv - bv
-            delta_str = f"{delta:+.2f}"
-        else:
-            delta = lv - bv
-            delta_str = f"{delta:+d}"
-        if higher_better:
-            improved = delta > 0
-        else:
-            improved = delta < 0
-        status = "BETTER" if improved else ("WORSE" if delta != 0 else "SAME")
-        if improved:
-            improvements += 1
-        elif delta != 0:
-            regressions += 1
-        print(f"    {label:<25s}: {bv}{unit} -> {lv}{unit} ({delta_str}) [{status}]")
+    w = [25, 12, 12, 12]
+    print(fmt_row(["Metric", "Baseline", "Nighttime", "Latest"], w))
+    print(f"  {'-'*65}")
+    for name, key in metrics:
+        bv = baseline.get(key, 0)
+        nv = nighttime.get(key, 0)
+        lv = latest.get(key, 0)
+        print(fmt_row([name, bv, nv, lv], w))
 
-    # UD oscillation
-    print(f"\n  UD OSCILLATION:")
-    for session, tag in [(BASELINE, "BASELINE"), (LATEST, "LATEST")]:
-        bf = load_tracking(session, "camera_head")
+    # Phantoms per session
+    print()
+    for label, data in [("Baseline", baseline), ("Nighttime", nighttime), ("Latest", latest)]:
+        phantoms = data.get("top3_phantoms", [])
+        if phantoms:
+            pstr = ", ".join(f"{n}({c})" for n, c in phantoms)
+        else:
+            pstr = "none"
+        print(f"  Top phantoms ({label}): {pstr}")
+
+
+def verdict(latest_h: dict, baseline_h: dict, nighttime_h: dict) -> None:
+    """Final assessment."""
+    print(f"\n{'='*72}")
+    print(f"  VERDICT: Did the fixes help?")
+    print(f"{'='*72}")
+
+    def compare(name: str, key: str, higher_better: bool, b: dict, l: dict, label: str) -> str:
+        bv = b.get(key, 0)
+        lv = l.get(key, 0)
+        delta = lv - bv
+        if isinstance(bv, float):
+            ds = f"{delta:+.4f}"
+        else:
+            ds = f"{delta:+d}"
+        improved = (delta > 0) if higher_better else (delta < 0)
+        neutral_threshold = 0.01 if isinstance(bv, float) else 1
+        if abs(delta) < neutral_threshold:
+            tag = "SAME"
+        elif improved:
+            tag = "BETTER"
+        else:
+            tag = "WORSE"
+        return f"    {name:<28s} {label}: {ds} [{tag}]"
+
+    key_metrics = [
+        ("Detection rate", "detection_rate", True),
+        ("Mean confidence", "mean_conf", True),
+        ("Bbox stability", "stability_pct", True),
+        ("Jumps >50px", "jumps_50", False),
+        ("Jumps >100px", "jumps_100", False),
+        ("Track switches", "track_switches", False),
+        ("Phantom objects", "phantom_total", False),
+        ("Max dropout streak", "max_dropout_streak", False),
+    ]
+
+    print(f"\n  Latest vs Baseline (head camera):")
+    for name, key, hb in key_metrics:
+        print(compare(name, key, hb, baseline_h, latest_h, "vs baseline"))
+
+    print(f"\n  Latest vs Nighttime (head camera):")
+    for name, key, hb in key_metrics:
+        print(compare(name, key, hb, nighttime_h, latest_h, "vs night"))
+
+    # UD oscillation comparison
+    print(f"\n  UD (vertical) oscillation comparison:")
+    for session, tag in SESSIONS:
+        hf = load_tracking(session, "camera_head")
         by_list = []
-        for f in bf:
+        for f in hf:
             tracking = f.get("tracking", {})
-            if "person" in tracking:
-                objs = tracking["person"].get("objects", [])
+            person_data = tracking.get("person", {})
+            if isinstance(person_data, dict):
+                objs = person_data.get("objects", [])
                 if objs:
                     by_list.append(bbox_center(objs[0]["box"])[1])
         if by_list:
@@ -573,44 +394,50 @@ def summary():
                 if ld != 0 and cd != ld:
                     dc += 1
                 ld = cd
-            print(f"    {tag}: Y_std={_std(by_list):.1f}px, direction_changes={dc} "
-                  f"({round(dc / len(by_list) * 100, 1)}%)")
+            rate = round(dc / len(by_list) * 100, 1)
+            print(f"    {tag:<12s}: Y_std={std_dev(by_list):.1f}px, direction_changes={dc} ({rate}%)")
 
-    print(f"\n  SIDE CAMERAS:")
-    for cam in ["camera_left", "camera_right"]:
-        bc = results[(cam, "BASELINE")]
-        lc = results[(cam, "LATEST")]
-        det_delta = lc["pct_person"] - bc["pct_person"]
-        conf_delta = lc["mean_conf"] - bc["mean_conf"]
-        phantom_delta = lc["phantom_count"] - bc["phantom_count"]
-        print(f"    {cam}: detect {bc['pct_person']}%->{lc['pct_person']}% ({det_delta:+.1f}), "
-              f"conf {bc['mean_conf']}->{lc['mean_conf']} ({conf_delta:+.4f}), "
-              f"phantoms {phantom_delta:+d}")
 
-    print(f"\n  OVERALL VERDICT:")
-    print(f"    Head camera: {improvements} metrics improved, {regressions} regressed")
-    if improvements > regressions:
-        print(f"    ==> Net IMPROVEMENT")
-    elif regressions > improvements:
-        print(f"    ==> Net REGRESSION")
-    else:
-        print(f"    ==> NEUTRAL / MIXED RESULTS")
+def main() -> None:
+    print("=" * 72)
+    print("  GLaDOS Recording Comparison Report")
+    print(f"  Baseline:  {BASELINE} (pre-all-changes, daytime)")
+    print(f"  Nighttime: {NIGHTTIME} (before UD range fix, night)")
+    print(f"  Latest:    {LATEST} (UD fix + saccade cooldown + CUDA RTSP)")
+    print("=" * 72)
 
-    print(f"\n  IMPORTANT CAVEATS:")
-    print(f"    - Diagnostics are EMPTY in both recordings. Cannot directly measure:")
-    print(f"      * Saccade cooldown activation count/frequency")
-    print(f"      * Fusion state (head_tracking vs SIDE_DRIVE)")
-    print(f"      * Estimator position/velocity divergence")
-    print(f"      * IMU readings during tracking")
-    print(f"    - All analysis is from bbox/detection data only.")
-    print(f"    - To get diagnostics, the MotionRecorder needs to capture")
-    print(f"      VisionTracker internal state (cooldown, estimator, fusion).")
-    print(f"    - Different recording durations/conditions may skew comparison.")
+    # Load all data
+    results = {}
+    for session, tag in SESSIONS:
+        results[tag] = {}
+        for cam in CAMERAS:
+            results[tag][cam] = analyze_camera(load_tracking(session, cam))
+
+    # Metrics 1-7: Per camera, latest vs baseline
+    for cam in CAMERAS:
+        cam_label = cam.replace("camera_", "").upper() + " CAMERA"
+        print_comparison_table(cam_label, results["Latest"][cam], results["Baseline"][cam])
+
+    # Metrics 8-10: Head deep dive (latest only)
+    head_deep_dive(results["Latest"]["camera_head"])
+
+    # Metric 11: Frame file sizes
+    check_frame_files(LATEST, [100, 300, 500, 700])
+
+    # Metric 12: 3-way head comparison
+    three_way_head_table(
+        results["Latest"]["camera_head"],
+        results["Baseline"]["camera_head"],
+        results["Nighttime"].get("camera_head", {"total_frames": 0}),
+    )
+
+    # Final verdict
+    verdict(
+        results["Latest"]["camera_head"],
+        results["Baseline"]["camera_head"],
+        results["Nighttime"].get("camera_head", {"total_frames": 0}),
+    )
 
 
 if __name__ == "__main__":
-    part1()
-    part2()
-    part3()
-    part4()
-    summary()
+    main()
