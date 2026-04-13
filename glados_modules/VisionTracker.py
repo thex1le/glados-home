@@ -380,6 +380,7 @@ class MotionTrack(MQTTClient):
         self._cameras_online = False
         self._cameras_gate_start: float = time.time()
         self._cameras_gate_timeout: float = 30.0
+        self._diagnostic_cache: Dict[str, Any] = {}
 
         # World-space angle estimates (smoothed)
         self._world_lr: float = None
@@ -542,23 +543,17 @@ class MotionTrack(MQTTClient):
             }
         return snapshot
 
-    def get_diagnostic_snapshot(self) -> Dict[str, Any]:
-        """Build a diagnostic state snapshot for recording alongside each frame.
+    def _update_diagnostic_cache(self) -> None:
+        """Build and cache a diagnostic snapshot from the MQTT callback thread.
 
-        Captures everything needed to diagnose motion gate behavior,
-        servo state, and IMU readings after the fact. Called by
-        MachineVision's camera tracker threads — must be thread-safe
-        and never raise (recording should not crash the vision pipeline).
-
-        Returns:
-            Dict with estimator state, IMU data, motion gate status,
-            fusion state, and attention state.
+        Called at the end of track_loop() so all estimator reads happen in the
+        same thread that mutates them. MachineVision's tracker threads read
+        the cached snapshot via get_diagnostic_snapshot() without touching
+        estimator state directly.
         """
         try:
             diag: Dict[str, Any] = {}
 
-            # Estimator positions and velocities — read without calling
-            # get_position() to avoid mutating state from the wrong thread
             if self._estimators_initialized:
                 snapshot = {}
                 for name, est in self._estimators.items():
@@ -568,7 +563,6 @@ class MotionTrack(MQTTClient):
                         "target": round(est.target, 4),
                     }
                 diag["estimators"] = snapshot
-                # Motion gate check using raw velocity (no get_position call)
                 head_lr_vel = abs(self._estimators.get(self.head_LR_name,
                                                        SpringDamperEstimator(0, 1, 1)).velocity)
                 head_ud_vel = abs(self._estimators.get(self.head_UD_name,
@@ -578,24 +572,19 @@ class MotionTrack(MQTTClient):
                 diag["estimators"] = {}
                 diag["head_settling"] = False
 
-            # Camera readiness gate
             diag["cameras_online"] = self._cameras_online
             diag["cameras_ready"] = list(self._cameras_ready)
-
-            # Fusion state machine
             diag["fusion_state"] = self._fusion.state if self._fusion else ""
-
-            # World angle estimates (smoothed)
             diag["world_lr"] = round(self._world_lr, 2) if self._world_lr is not None else None
             diag["world_ud"] = round(self._world_ud, 2) if self._world_ud is not None else None
 
-            # Attention model state
             if self._attention:
                 diag["attention"] = self._attention.get_state()
             else:
                 diag["attention"] = {}
 
-            # IMU data (full BNO055 sensor readings from Pi5)
+            # IMU data — SensorTracker is written by its own MQTT thread, but
+            # dict reads are atomic in CPython (GIL) so this is safe
             imu_status = self.servo_status.st.get_sensor_status("imu_status")
             if imu_status:
                 diag["imu"] = {
@@ -610,10 +599,20 @@ class MotionTrack(MQTTClient):
             else:
                 diag["imu"] = {}
 
-            return diag
+            self._diagnostic_cache = diag
         except Exception:
-            # Never crash the vision pipeline for diagnostic recording
-            return {}
+            pass
+
+    def get_diagnostic_snapshot(self) -> Dict[str, Any]:
+        """Return the latest diagnostic snapshot for recording.
+
+        Thread-safe: returns a cached dict built by _update_diagnostic_cache()
+        in the MQTT callback thread. Never reads estimator state directly.
+
+        Returns:
+            Dict with estimator state, IMU data, motion gate status, etc.
+        """
+        return getattr(self, '_diagnostic_cache', {})
 
     def _init_estimators(self) -> bool:
         """Initialize spring-damper estimators from first servo status.
@@ -1415,6 +1414,11 @@ class MotionTrack(MQTTClient):
         if self.head_LR_name in self._estimators:
             self._estimators[self.head_LR_name].get_position()
             self._estimators[self.head_UD_name].get_position()
+
+        # Cache diagnostic snapshot for recording — built here in the MQTT
+        # thread where estimator state is safe to read. MachineVision's
+        # tracker threads read the cached copy via get_diagnostic_snapshot().
+        self._update_diagnostic_cache()
 
         # Saccadic suppression: skip head camera during fast servo motion.
         # The camera sees motion blur and clutter during slews, producing
