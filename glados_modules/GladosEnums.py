@@ -560,7 +560,7 @@ class MotionProfile(Enum):
     SACCADE_THRESHOLD = 10.0       # degrees — head delta above this triggers fast snap
     SACCADE_SPEED = 5              # speed level for snaps (omega=14, zeta=0.70)
     # Saccadic suppression: don't trust head camera during fast servo motion
-    SETTLING_VELOCITY_THRESHOLD = 15.0  # deg/s — head camera skipped above this
+    SETTLING_VELOCITY_THRESHOLD = 7.0  # deg/s — head camera skipped above this
     # Minimum confidence for a detection to be considered a tracking target
     TARGET_MIN_CONFIDENCE = 0.40
     # Separate UD smoothing — vertical is noisier than horizontal
