@@ -88,8 +88,8 @@ class RtspConsumer:
                 attempt += 1
                 # Try each pipeline until one connects
                 pipelines = [
-                    (gst_original, "nvh264dec"),
                     (gst_hw_cuda, "nvh264dec+cudadownload"),
+                    (gst_original, "nvh264dec"),
                     (gst_sw, "avdec_h264"),
                 ]
                 for pipeline, label in pipelines:
