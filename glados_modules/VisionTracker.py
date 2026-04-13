@@ -617,8 +617,8 @@ class MotionTrack(MQTTClient):
                 diag["imu"] = {}
 
             self._diagnostic_cache = diag
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"Diagnostic cache update failed: {e}")
 
     def get_diagnostic_snapshot(self) -> Dict[str, Any]:
         """Return the latest diagnostic snapshot for recording.
@@ -881,7 +881,7 @@ class MotionTrack(MQTTClient):
         return body_amp * sway, -head_amp * sway
 
     def _update_targets(self, target_world_lr: float, target_world_ud: float,
-                         trace_id: str = None) -> None:
+                         trace_id: str = None, source: str = "head") -> None:
         """Compute head and body servo targets from world-space angles and send one MQTT message.
 
         Uses two-stage Jacobian IK to account for non-orthogonal joint axes:
@@ -937,13 +937,16 @@ class MotionTrack(MQTTClient):
         saccade = head_delta > MotionProfile.SACCADE_THRESHOLD.value
         head_speed = MotionProfile.SACCADE_SPEED.value if saccade else self.dms
         if saccade:
-            # Suppress head camera during slew — time scales with movement size
-            cooldown = min(head_delta / MotionProfile.SACCADE_COOLDOWN_DIVISOR.value,
-                           MotionProfile.SACCADE_COOLDOWN_MAX.value)
-            self._head_cooldown_until = time.time() + cooldown
-            self.logger.debug(
-                f"SACCADE: head_delta={head_delta:.1f} -> speed {head_speed} "
-                f"cooldown={cooldown:.2f}s")
+            self.logger.debug(f"SACCADE: head_delta={head_delta:.1f} -> speed {head_speed} source={source}")
+            # Only suppress head camera when the HEAD camera itself drives a saccade.
+            # Side-camera-driven saccades happen during UD sweep (large IK deltas from
+            # changing world_ud) and should NOT suppress the head camera — it needs to
+            # process frames to lock on and stop the sweep.
+            if source == "head":
+                cooldown = min(head_delta / MotionProfile.SACCADE_COOLDOWN_DIVISOR.value,
+                               MotionProfile.SACCADE_COOLDOWN_MAX.value)
+                self._head_cooldown_until = time.time() + cooldown
+                self.logger.debug(f"SACCADE: cooldown={cooldown:.2f}s")
 
         # Body UD urgency: when head UD is near its physical limit, speed up body UD
         # and widen the rate limit so the body can catch up
@@ -1101,7 +1104,7 @@ class MotionTrack(MQTTClient):
                 self.head_UD_name: self._get_estimated_position(self.head_UD_name),
             }
             _, current_pitch = self._kinematics.forward_kinematics(current_angles)
-            self._update_targets(best_side, current_pitch)
+            self._update_targets(best_side, current_pitch, source="side")
             if self.debug_overlay_enabled:
                 self._debug_overlay["state"] = "DRIFT_TOWARD"
             return
@@ -1114,7 +1117,7 @@ class MotionTrack(MQTTClient):
                 face_id = random.choice(list(self._last_known_positions.keys()))
                 glance_lr = self._last_known_positions[face_id]
                 head_ud_mid = self._servo_middles[self.head_UD_name]
-                self._update_targets(glance_lr, head_ud_mid)
+                self._update_targets(glance_lr, head_ud_mid, source="side")
                 self.logger.debug(f"Memory glance toward {face_id}")
                 if self.debug_overlay_enabled:
                     self._debug_overlay["state"] = "GLANCE"
@@ -1140,7 +1143,7 @@ class MotionTrack(MQTTClient):
         head_lr_mid = self._servo_middles[self.head_LR_name]
         head_ud_mid = self._servo_middles[self.head_UD_name]
 
-        self._update_targets(head_lr_mid + lr, head_ud_mid + ud)
+        self._update_targets(head_lr_mid + lr, head_ud_mid + ud, source="side")
         if not self._idle_active:
             self._idle_active = True
             self._idle_start_time = now
@@ -1283,7 +1286,7 @@ class MotionTrack(MQTTClient):
             "world_ud": round(world_ud, 1),
             "fusion_state": self._fusion.state,
         })
-        self._update_targets(self._side_world_lr_smooth, world_ud)
+        self._update_targets(self._side_world_lr_smooth, world_ud, source="side")
 
     def __select_target(self, seen_data: list, camera: str) -> dict:
         """Select the best target using human-like priority.
@@ -1432,9 +1435,9 @@ class MotionTrack(MQTTClient):
         # Periodically sync estimators from MQTT status
         self._sync_estimators_from_status()
 
-        # Cache diagnostic snapshot for recording — built here in the MQTT
-        # thread where estimator state is safe to read. MachineVision's
-        # tracker threads read the cached copy via get_diagnostic_snapshot().
+        # Cache diagnostic snapshot for recording BEFORE any early returns.
+        # Built here in the MQTT thread where estimator state is safe to read.
+        # MachineVision's tracker threads read the cached copy.
         self._update_diagnostic_cache()
 
         # Saccadic suppression: skip head camera for a timed cooldown after
