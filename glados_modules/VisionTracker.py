@@ -542,6 +542,62 @@ class MotionTrack(MQTTClient):
             }
         return snapshot
 
+    def get_diagnostic_snapshot(self) -> Dict[str, Any]:
+        """Build a diagnostic state snapshot for recording alongside each frame.
+
+        Captures everything needed to diagnose motion gate behavior,
+        servo state, and IMU readings after the fact. Called by
+        MachineVision's recording path to enrich tracking JSONL.
+
+        Returns:
+            Dict with estimator state, IMU data, motion gate status,
+            fusion state, and attention state.
+        """
+        diag: Dict[str, Any] = {}
+
+        # Estimator positions and velocities (spring-damper predictions)
+        if self._estimators_initialized:
+            diag["estimators"] = self._get_estimator_snapshot()
+            # Motion gate: would head camera be suppressed right now?
+            diag["head_settling"] = self._head_is_settling()
+        else:
+            diag["estimators"] = {}
+            diag["head_settling"] = False
+
+        # Camera readiness gate
+        diag["cameras_online"] = self._cameras_online
+        diag["cameras_ready"] = list(self._cameras_ready)
+
+        # Fusion state machine
+        diag["fusion_state"] = self._fusion.state if self._fusion else ""
+
+        # World angle estimates (smoothed)
+        diag["world_lr"] = round(self._world_lr, 2) if self._world_lr is not None else None
+        diag["world_ud"] = round(self._world_ud, 2) if self._world_ud is not None else None
+
+        # Attention model state
+        if self._attention:
+            diag["attention"] = self._attention.get_state()
+        else:
+            diag["attention"] = {}
+
+        # IMU data (full BNO055 sensor readings from Pi5)
+        imu_status = self.servo_status.st.get_sensor_status("imu_status")
+        if imu_status:
+            diag["imu"] = {
+                "euler": imu_status.get("euler"),
+                "gyroscope": imu_status.get("gyroscope"),
+                "linear_accel": imu_status.get("linear"),
+                "quaternion": imu_status.get("quaternion"),
+                "calibration": imu_status.get("calibration_status"),
+                "temperature": imu_status.get("temperature"),
+                "ts": imu_status.get("time"),
+            }
+        else:
+            diag["imu"] = {}
+
+        return diag
+
     def _init_estimators(self) -> bool:
         """Initialize spring-damper estimators from first servo status.
         Returns True if already initialized or successfully initialized now.

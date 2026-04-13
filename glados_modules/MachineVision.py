@@ -340,10 +340,13 @@ class MLDetect(Thread, MQTTClient):
                 # Start trace record
                 self.tracer.start_trace(trace_id, camera=camera_key, ts_vision=ts_vision)
 
-                # Record tracking data alongside the frame
+                # Record tracking data alongside the frame, enriched with
+                # diagnostic state (estimators, IMU, motion gate, attention)
                 if self._recording_session and self._recording_session.is_active:
+                    enriched = dict(sight)
+                    enriched["diagnostics"] = self.motion_tracking.get_diagnostic_snapshot()
                     self._recording_session.record_frame(
-                        camera_key, None, wall_time, tracking_data=sight)
+                        camera_key, None, wall_time, tracking_data=enriched)
 
                 consecutive_errors = 0  # reset on success
 
