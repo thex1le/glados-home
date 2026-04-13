@@ -54,17 +54,32 @@ class SpringDamperEstimator:
         now = time.time()
         dt = min(now - self.last_time, 0.1)  # cap dt to prevent explosion after pauses
         self.last_time = now
-        if dt <= 0:
-            return self.position
-        accel = (self.omega ** 2) * (self.target - self.position) - 2.0 * self.zeta * self.omega * self.velocity
-        self.velocity += accel * dt
-        self.position += self.velocity * dt
+        if dt > 0:
+            accel = (self.omega ** 2) * (self.target - self.position) - 2.0 * self.zeta * self.omega * self.velocity
+            self.velocity += accel * dt
+            self.position += self.velocity * dt
+        # Clamp to physical bounds always — catches divergence from sync or
+        # external mutation, not just from the physics step above.
+        self.position = max(-180.0, min(360.0, self.position))
+        self.velocity = max(-1000.0, min(1000.0, self.velocity))
         return self.position
 
     def sync(self, reported_position: float, reported_velocity: float = 0.0) -> None:
-        """Gently correct from MQTT status (blend, don't snap)."""
-        self.position = 0.7 * self.position + 0.3 * reported_position
-        self.velocity = 0.7 * self.velocity + 0.3 * reported_velocity
+        """Correct from MQTT status. Snap if drift is large, blend if small.
+
+        The 70/30 blend works well for small corrections, but if the estimator
+        has diverged significantly (e.g., after the spring-damper goes numerically
+        unstable), the blend can't recover — 0.7 * 1,000,000 + 0.3 * 90 is still
+        700,000. Snap to reported values when drift exceeds a safe threshold.
+        """
+        drift = abs(self.position - reported_position)
+        if drift > 50.0:
+            # Estimator has diverged badly — snap to reality
+            self.position = reported_position
+            self.velocity = reported_velocity
+        else:
+            self.position = 0.7 * self.position + 0.3 * reported_position
+            self.velocity = 0.7 * self.velocity + 0.3 * reported_velocity
 
 
 class CameraFusionState:
@@ -381,6 +396,8 @@ class MotionTrack(MQTTClient):
         self._cameras_gate_start: float = time.time()
         self._cameras_gate_timeout: float = 30.0
         self._diagnostic_cache: Dict[str, Any] = {}
+        # Saccade cooldown: suppress head camera for a duration after large servo moves
+        self._head_cooldown_until: float = 0.0
 
         # World-space angle estimates (smoothed)
         self._world_lr: float = None
@@ -920,7 +937,13 @@ class MotionTrack(MQTTClient):
         saccade = head_delta > MotionProfile.SACCADE_THRESHOLD.value
         head_speed = MotionProfile.SACCADE_SPEED.value if saccade else self.dms
         if saccade:
-            self.logger.debug(f"SACCADE: head_delta={head_delta:.1f} -> speed {head_speed}")
+            # Suppress head camera during slew — time scales with movement size
+            cooldown = min(head_delta / MotionProfile.SACCADE_COOLDOWN_DIVISOR.value,
+                           MotionProfile.SACCADE_COOLDOWN_MAX.value)
+            self._head_cooldown_until = time.time() + cooldown
+            self.logger.debug(
+                f"SACCADE: head_delta={head_delta:.1f} -> speed {head_speed} "
+                f"cooldown={cooldown:.2f}s")
 
         # Body UD urgency: when head UD is near its physical limit, speed up body UD
         # and widen the rate limit so the body can catch up
@@ -1213,12 +1236,23 @@ class MotionTrack(MQTTClient):
                 f"SIDE_DRIVE: raw_lr={best_lr:.1f} smooth_lr={old_smooth:.1f}->{self._side_world_lr_smooth:.1f} "
                 f"alpha={alpha:.2f}")
 
+        # Throttle servo commands to match Pi4's 50Hz physics loop.
+        # Without this, 100+ commands/sec from alternating L/R cameras flood the Pi4
+        # and the spring-damper can't build momentum (body doesn't rotate).
+        # IMPORTANT: this must happen BEFORE the UD sweep so the sweep only
+        # advances at 20Hz. Previously it was after, causing the sweep to race
+        # through its range at 30+ Hz and oscillate world_ud between extremes.
+        now = time.time()
+        if now - self._side_drive_last_send < 0.05:
+            return
+        self._side_drive_last_send = now
+
         # Side cameras can't measure pitch — use last head camera value if recent,
         # otherwise default to mounting-appropriate downward pitch.
         # Using FK pitch here creates a positive feedback loop (runaway to 180°).
         # Short timeout (2s): after body rotates, old head camera pitch is wrong
         # for the new body orientation and causes IK to produce wild body_lr targets.
-        head_ud_age = time.time() - self._world_ud_time if self._world_ud_time > 0 else float('inf')
+        head_ud_age = now - self._world_ud_time if self._world_ud_time > 0 else float('inf')
         if self._world_ud is not None and head_ud_age < 2.0:
             world_ud = self._world_ud
             self._ud_search_active = False
@@ -1241,14 +1275,6 @@ class MotionTrack(MQTTClient):
                     self._ud_search_direction *= -1
                     self._ud_search_pitch = self._ud_search_origin + self._ud_search_direction * sweep_range
                 world_ud = self._ud_search_pitch
-
-        # Throttle servo commands to match Pi4's 50Hz physics loop.
-        # Without this, 100+ commands/sec from alternating L/R cameras flood the Pi4
-        # and the spring-damper can't build momentum (body doesn't rotate).
-        now = time.time()
-        if now - self._side_drive_last_send < 0.05:
-            return
-        self._side_drive_last_send = now
 
         self.logger.debug(
             f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")
@@ -1406,25 +1432,18 @@ class MotionTrack(MQTTClient):
         # Periodically sync estimators from MQTT status
         self._sync_estimators_from_status()
 
-        # Advance head estimator simulation so velocity decays even when the
-        # gate suppresses head camera processing. Without this, velocity freezes
-        # because get_position() only runs during head camera tracking, creating
-        # a deadlock where the gate never opens. Must happen in this thread
-        # (MQTT callback) to avoid concurrent mutation from MachineVision threads.
-        if self.head_LR_name in self._estimators:
-            self._estimators[self.head_LR_name].get_position()
-            self._estimators[self.head_UD_name].get_position()
-
         # Cache diagnostic snapshot for recording — built here in the MQTT
         # thread where estimator state is safe to read. MachineVision's
         # tracker threads read the cached copy via get_diagnostic_snapshot().
         self._update_diagnostic_cache()
 
-        # Saccadic suppression: skip head camera during fast servo motion.
-        # The camera sees motion blur and clutter during slews, producing
-        # phantom detections that drive the feedback loop. Side cameras are
-        # ceiling-mounted and unaffected by servo motion.
-        if camera == self.main_camera and self._head_is_settling():
+        # Saccadic suppression: skip head camera for a timed cooldown after
+        # large servo moves. Set by _update_targets() when a saccade is detected.
+        # Time-based instead of velocity-based because the spring-damper estimator
+        # velocity proved unreliable (diverged numerically when called frequently).
+        if camera == self.main_camera and time.time() < self._head_cooldown_until:
+            self.logger.debug(
+                f"HEAD_COOLDOWN: suppressed ({self._head_cooldown_until - time.time():.2f}s remaining)")
             return
 
         vision_map = self.vision_tracker.get_vision_map()

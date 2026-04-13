@@ -559,8 +559,9 @@ class MotionProfile(Enum):
     # Saccadic movement: fast head snap for large repositions
     SACCADE_THRESHOLD = 10.0       # degrees — head delta above this triggers fast snap
     SACCADE_SPEED = 5              # speed level for snaps (omega=14, zeta=0.70)
-    # Saccadic suppression: don't trust head camera during fast servo motion
-    SETTLING_VELOCITY_THRESHOLD = 7.0  # deg/s — head camera skipped above this
+    # Saccadic suppression: time-based cooldown after large head moves
+    SACCADE_COOLDOWN_DIVISOR = 30.0    # cooldown = head_delta / this (1s per 30°)
+    SACCADE_COOLDOWN_MAX = 2.0         # max cooldown duration in seconds
     # Minimum confidence for a detection to be considered a tracking target
     TARGET_MIN_CONFIDENCE = 0.40
     # Separate UD smoothing — vertical is noisier than horizontal

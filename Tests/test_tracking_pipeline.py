@@ -152,6 +152,8 @@ def _make_motion_track():
     mt._cameras_ready = {mt.main_camera, mt.left_camera, mt.right_camera}
     mt._all_cameras = {mt.main_camera, mt.left_camera, mt.right_camera}
     mt._cameras_online = True
+    # Saccade cooldown (not active for tests)
+    mt._head_cooldown_until = 0.0
 
     # Vision tracker (mock)
     mt.vision_tracker = MagicMock()
@@ -335,11 +337,11 @@ class TestFullTrackingPipeline:
         first_world_lr = mt._world_lr
 
         # Second detection at different position — reset estimator state
-        # so the motion gate doesn't suppress (in real usage, enough time
-        # passes between frames for velocity to decay)
+        # and clear saccade cooldown (in real usage, enough time passes)
         for est in mt._estimators.values():
             est.velocity = 0.0
             est.target = est.position  # no position error = no acceleration
+        mt._head_cooldown_until = 0.0  # clear saccade cooldown
         vision_map[CameraEnum.CAMERA_HEAD.value]["person"]["objects"][0]["box"] = {
             "x1": 400, "y1": 200, "x2": 500, "y2": 300
         }
