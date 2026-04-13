@@ -689,21 +689,16 @@ class MotionTrack(MQTTClient):
         clutter instead of the target. Returns True if the head should NOT
         process camera input yet.
 
-        Must call get_position() to advance the spring-damper simulation
-        before reading velocity. Without this, the velocity is frozen from
-        the last time get_position() was called (which only happens during
-        head camera processing). If the gate suppresses the head camera,
-        get_position() never runs, velocity never decays, and the gate
-        deadlocks in the ON state.
+        IMPORTANT: The caller must advance the head estimators via
+        get_position() before calling this method. Otherwise the velocity
+        is stale and the gate deadlocks. This is done in track_loop()
+        to keep all estimator mutation in the MQTT callback thread.
 
         Returns:
             True if head servo velocity exceeds the settling threshold.
         """
         if self.head_LR_name not in self._estimators:
             return False
-        # Advance the simulation so velocity decays even when gate is active
-        self._estimators[self.head_LR_name].get_position()
-        self._estimators[self.head_UD_name].get_position()
         head_lr_vel = abs(self._estimators[self.head_LR_name].velocity)
         head_ud_vel = abs(self._estimators[self.head_UD_name].velocity)
         settling = max(head_lr_vel, head_ud_vel) > MotionProfile.SETTLING_VELOCITY_THRESHOLD.value
@@ -1411,6 +1406,15 @@ class MotionTrack(MQTTClient):
 
         # Periodically sync estimators from MQTT status
         self._sync_estimators_from_status()
+
+        # Advance head estimator simulation so velocity decays even when the
+        # gate suppresses head camera processing. Without this, velocity freezes
+        # because get_position() only runs during head camera tracking, creating
+        # a deadlock where the gate never opens. Must happen in this thread
+        # (MQTT callback) to avoid concurrent mutation from MachineVision threads.
+        if self.head_LR_name in self._estimators:
+            self._estimators[self.head_LR_name].get_position()
+            self._estimators[self.head_UD_name].get_position()
 
         # Saccadic suppression: skip head camera during fast servo motion.
         # The camera sees motion blur and clutter during slews, producing
