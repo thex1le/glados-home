@@ -547,56 +547,73 @@ class MotionTrack(MQTTClient):
 
         Captures everything needed to diagnose motion gate behavior,
         servo state, and IMU readings after the fact. Called by
-        MachineVision's recording path to enrich tracking JSONL.
+        MachineVision's camera tracker threads — must be thread-safe
+        and never raise (recording should not crash the vision pipeline).
 
         Returns:
             Dict with estimator state, IMU data, motion gate status,
             fusion state, and attention state.
         """
-        diag: Dict[str, Any] = {}
+        try:
+            diag: Dict[str, Any] = {}
 
-        # Estimator positions and velocities (spring-damper predictions)
-        if self._estimators_initialized:
-            diag["estimators"] = self._get_estimator_snapshot()
-            # Motion gate: would head camera be suppressed right now?
-            diag["head_settling"] = self._head_is_settling()
-        else:
-            diag["estimators"] = {}
-            diag["head_settling"] = False
+            # Estimator positions and velocities — read without calling
+            # get_position() to avoid mutating state from the wrong thread
+            if self._estimators_initialized:
+                snapshot = {}
+                for name, est in self._estimators.items():
+                    snapshot[name] = {
+                        "position": round(est.position, 4),
+                        "velocity": round(est.velocity, 4),
+                        "target": round(est.target, 4),
+                    }
+                diag["estimators"] = snapshot
+                # Motion gate check using raw velocity (no get_position call)
+                head_lr_vel = abs(self._estimators.get(self.head_LR_name,
+                                                       SpringDamperEstimator(0, 1, 1)).velocity)
+                head_ud_vel = abs(self._estimators.get(self.head_UD_name,
+                                                       SpringDamperEstimator(0, 1, 1)).velocity)
+                diag["head_settling"] = max(head_lr_vel, head_ud_vel) > MotionProfile.SETTLING_VELOCITY_THRESHOLD.value
+            else:
+                diag["estimators"] = {}
+                diag["head_settling"] = False
 
-        # Camera readiness gate
-        diag["cameras_online"] = self._cameras_online
-        diag["cameras_ready"] = list(self._cameras_ready)
+            # Camera readiness gate
+            diag["cameras_online"] = self._cameras_online
+            diag["cameras_ready"] = list(self._cameras_ready)
 
-        # Fusion state machine
-        diag["fusion_state"] = self._fusion.state if self._fusion else ""
+            # Fusion state machine
+            diag["fusion_state"] = self._fusion.state if self._fusion else ""
 
-        # World angle estimates (smoothed)
-        diag["world_lr"] = round(self._world_lr, 2) if self._world_lr is not None else None
-        diag["world_ud"] = round(self._world_ud, 2) if self._world_ud is not None else None
+            # World angle estimates (smoothed)
+            diag["world_lr"] = round(self._world_lr, 2) if self._world_lr is not None else None
+            diag["world_ud"] = round(self._world_ud, 2) if self._world_ud is not None else None
 
-        # Attention model state
-        if self._attention:
-            diag["attention"] = self._attention.get_state()
-        else:
-            diag["attention"] = {}
+            # Attention model state
+            if self._attention:
+                diag["attention"] = self._attention.get_state()
+            else:
+                diag["attention"] = {}
 
-        # IMU data (full BNO055 sensor readings from Pi5)
-        imu_status = self.servo_status.st.get_sensor_status("imu_status")
-        if imu_status:
-            diag["imu"] = {
-                "euler": imu_status.get("euler"),
-                "gyroscope": imu_status.get("gyroscope"),
-                "linear_accel": imu_status.get("linear"),
-                "quaternion": imu_status.get("quaternion"),
-                "calibration": imu_status.get("calibration_status"),
-                "temperature": imu_status.get("temperature"),
-                "ts": imu_status.get("time"),
-            }
-        else:
-            diag["imu"] = {}
+            # IMU data (full BNO055 sensor readings from Pi5)
+            imu_status = self.servo_status.st.get_sensor_status("imu_status")
+            if imu_status:
+                diag["imu"] = {
+                    "euler": list(imu_status["euler"]) if imu_status.get("euler") else None,
+                    "gyroscope": list(imu_status["gyroscope"]) if imu_status.get("gyroscope") else None,
+                    "linear_accel": list(imu_status["linear"]) if imu_status.get("linear") else None,
+                    "quaternion": list(imu_status["quaternion"]) if imu_status.get("quaternion") else None,
+                    "calibration": list(imu_status["calibration_status"]) if imu_status.get("calibration_status") else None,
+                    "temperature": imu_status.get("temperature"),
+                    "ts": imu_status.get("time"),
+                }
+            else:
+                diag["imu"] = {}
 
-        return diag
+            return diag
+        except Exception:
+            # Never crash the vision pipeline for diagnostic recording
+            return {}
 
     def _init_estimators(self) -> bool:
         """Initialize spring-damper estimators from first servo status.
