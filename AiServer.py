@@ -46,6 +46,14 @@ if __name__ == "__main__":
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
     # start up machine vision
     mv = MLDetect(config_p)
+    # Wait for Pi4/Pi5 cameras to come online before connecting RTSP streams.
+    # MLDetect tracker threads and the dashboard both create RTSP consumers that
+    # retry against offline cameras, flooding logs and wasting resources.
+    print("\033[94m" + "=" * 60)
+    print("  Waiting 60s for Pi4 and Pi5 camera systems to come online.")
+    print("  Start BodyServer.py on Pi4 and GLaDOS.py on Pi5 now.")
+    print("=" * 60 + "\033[0m")
+    time.sleep(60)
     mv.start()
     # start the audio receive server
     broker = AudioServerRX.broker_tuple
@@ -90,14 +98,6 @@ if __name__ == "__main__":
     dash_port = int(config_p.get(DashboardEnums.CONFIG_HEAD.value,
                                   DashboardEnums.DASHBOARD_PORT.value,
                                   fallback=DashboardEnums.DEFAULT_PORT.value))
-    # Wait for Pi4/Pi5 cameras to come online before connecting RTSP streams.
-    # Without this delay, the RTSPFrameGrabber retries GStreamer/FFmpeg pipelines
-    # repeatedly against offline cameras, flooding logs and wasting resources.
-    print("\033[94m" + "=" * 60)
-    print("  Waiting 60s for Pi4 and Pi5 camera systems to come online.")
-    print("  Start BodyServer.py on Pi4 and GLaDOS.py on Pi5 now.")
-    print("=" * 60 + "\033[0m")
-    time.sleep(60)
     # Subscribe to sensor MQTT topics so dashboard can display Pi sensors + camera FPS
     sensor_tracker = SensorTracker(mqtt_b)
     dashboard = WebDashboard(
