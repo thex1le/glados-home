@@ -58,19 +58,18 @@ class TestCameraFusionState:
         fusion.update_head_detection()
         # Fast-forward to HEAD_TRACKING
         fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        # Requires 3 consecutive misses before transitioning
-        fusion.head_lost()
-        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value  # still holding
-        fusion.head_lost()
-        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value  # still holding
-        fusion.head_lost()
+        # Requires 10 consecutive misses before transitioning
+        for i in range(9):
+            fusion.head_lost()
+            assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value  # still holding
+        fusion.head_lost()  # 10th miss
         assert fusion.state == FusionEnums.STATE_HANDOFF_TO_SIDE.value  # now transitions
 
     def test_head_lost_without_side_goes_to_side_only(self):
         fusion = CameraFusionState()
         fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        # Requires 3 consecutive misses
-        for _ in range(3):
+        # Requires 10 consecutive misses
+        for _ in range(10):
             fusion.head_lost()
         assert fusion.state == FusionEnums.STATE_SIDE_ONLY.value
 
@@ -78,8 +77,8 @@ class TestCameraFusionState:
         """A successful detection resets the miss counter."""
         fusion = CameraFusionState()
         fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        fusion.head_lost()  # miss 1
-        fusion.head_lost()  # miss 2
+        for _ in range(8):
+            fusion.head_lost()  # 8 misses
         fusion.update_head_detection()  # resets counter
         fusion.head_lost()  # miss 1 again
         assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value  # still holding

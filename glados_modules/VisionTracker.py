@@ -158,8 +158,8 @@ class CameraFusionState:
         if self.state in (FusionEnums.STATE_HEAD_TRACKING.value,
                           FusionEnums.STATE_HANDOFF_TO_HEAD.value):
             self._head_miss_count += 1
-            if self._head_miss_count < 3:
-                self.logger.debug(f"FUSION: head_lost miss {self._head_miss_count}/3, holding {self.state}")
+            if self._head_miss_count < 10:
+                self.logger.debug(f"FUSION: head_lost miss {self._head_miss_count}/10, holding {self.state}")
                 return
             old_state = self.state
             best_side = self.get_best_side_world_lr()
@@ -573,15 +573,18 @@ class MotionTrack(MQTTClient):
     def _update_diagnostic_cache(self) -> None:
         """Build and cache a diagnostic snapshot from the MQTT callback thread.
 
-        Called at the end of track_loop() so all estimator reads happen in the
-        same thread that mutates them. MachineVision's tracker threads read
-        the cached snapshot via get_diagnostic_snapshot() without touching
+        Called from track_loop() so all estimator reads happen in the same
+        thread that mutates them. MachineVision's tracker threads read the
+        cached snapshot via get_diagnostic_snapshot() without touching
         estimator state directly.
+
+        Must be robust to partially-initialized state — track_loop can fire
+        before all attributes are set up.
         """
         try:
             diag: Dict[str, Any] = {}
 
-            if self._estimators_initialized:
+            if hasattr(self, '_estimators_initialized') and self._estimators_initialized:
                 snapshot = {}
                 for name, est in self._estimators.items():
                     snapshot[name] = {
@@ -594,39 +597,43 @@ class MotionTrack(MQTTClient):
                 diag["estimators"] = {}
 
             # Saccade cooldown state
-            diag["head_cooldown_remaining"] = max(0.0, round(
-                self._head_cooldown_until - time.time(), 2))
+            if hasattr(self, '_head_cooldown_until'):
+                diag["head_cooldown_remaining"] = max(0.0, round(
+                    self._head_cooldown_until - time.time(), 2))
 
-            diag["cameras_online"] = self._cameras_online
-            diag["cameras_ready"] = list(self._cameras_ready)
-            diag["fusion_state"] = self._fusion.state if self._fusion else ""
-            diag["world_lr"] = round(self._world_lr, 2) if self._world_lr is not None else None
-            diag["world_ud"] = round(self._world_ud, 2) if self._world_ud is not None else None
+            diag["cameras_online"] = getattr(self, '_cameras_online', False)
+            diag["cameras_ready"] = list(getattr(self, '_cameras_ready', set()))
+            diag["fusion_state"] = self._fusion.state if hasattr(self, '_fusion') and self._fusion else ""
+            diag["world_lr"] = round(self._world_lr, 2) if getattr(self, '_world_lr', None) is not None else None
+            diag["world_ud"] = round(self._world_ud, 2) if getattr(self, '_world_ud', None) is not None else None
 
-            if self._attention:
+            if hasattr(self, '_attention') and self._attention:
                 diag["attention"] = self._attention.get_state()
             else:
                 diag["attention"] = {}
 
             # IMU data — SensorTracker is written by its own MQTT thread, but
             # dict reads are atomic in CPython (GIL) so this is safe
-            imu_status = self.servo_status.st.get_sensor_status("imu_status")
-            if imu_status:
-                diag["imu"] = {
-                    "euler": list(imu_status["euler"]) if imu_status.get("euler") else None,
-                    "gyroscope": list(imu_status["gyroscope"]) if imu_status.get("gyroscope") else None,
-                    "linear_accel": list(imu_status["linear"]) if imu_status.get("linear") else None,
-                    "quaternion": list(imu_status["quaternion"]) if imu_status.get("quaternion") else None,
-                    "calibration": list(imu_status["calibration_status"]) if imu_status.get("calibration_status") else None,
-                    "temperature": imu_status.get("temperature"),
-                    "ts": imu_status.get("time"),
-                }
+            if hasattr(self, 'servo_status') and hasattr(self.servo_status, 'st'):
+                imu_status = self.servo_status.st.get_sensor_status("imu_status")
+                if imu_status:
+                    diag["imu"] = {
+                        "euler": list(imu_status["euler"]) if imu_status.get("euler") else None,
+                        "gyroscope": list(imu_status["gyroscope"]) if imu_status.get("gyroscope") else None,
+                        "linear_accel": list(imu_status["linear"]) if imu_status.get("linear") else None,
+                        "quaternion": list(imu_status["quaternion"]) if imu_status.get("quaternion") else None,
+                        "calibration": list(imu_status["calibration_status"]) if imu_status.get("calibration_status") else None,
+                        "temperature": imu_status.get("temperature"),
+                        "ts": imu_status.get("time"),
+                    }
+                else:
+                    diag["imu"] = {}
             else:
                 diag["imu"] = {}
 
             self._diagnostic_cache = diag
         except Exception as e:
-            self.logger.debug(f"Diagnostic cache update failed: {e}")
+            self.logger.error(f"Diagnostic cache update failed: {e}")
 
     def get_diagnostic_snapshot(self) -> Dict[str, Any]:
         """Return the latest diagnostic snapshot for recording.
@@ -948,19 +955,9 @@ class MotionTrack(MQTTClient):
         head_targets = self._kinematics.inverse_kinematics_head(
             target_world_lr, target_world_ud, current_body)
 
-        # Stage 2: Body IK -- where body should eventually go.
-        # During side-camera search (source="side"), the head sweeps up/down
-        # via the UD sweep, but the body should aim at the CENTER of the sweep
-        # (default pitch), not the current sweep position. This prevents body
-        # oscillation — the body positions deliberately like a snake's body,
-        # then the head scans independently. Once the head locks on (source="head"),
-        # both move together using the actual target.
-        if source == "side":
-            body_world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
-        else:
-            body_world_ud = target_world_ud
+        # Stage 2: Body IK -- where body should eventually go
         body_targets = self._kinematics.inverse_kinematics_body(
-            target_world_lr, body_world_ud)
+            target_world_lr, target_world_ud)
 
         head_lr_target = head_targets[self.head_LR_name]
         head_ud_target = head_targets[self.head_UD_name]
