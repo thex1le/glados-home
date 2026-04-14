@@ -46,22 +46,64 @@ if __name__ == "__main__":
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
     # start up machine vision
     mv = MLDetect(config_p)
-    # Wait for Pi4/Pi5 cameras to come online before connecting RTSP streams.
-    # MLDetect tracker threads and the dashboard both create RTSP consumers that
-    # retry against offline cameras, flooding logs and wasting resources.
+
+    # Wait for Pi4/Pi5 cameras to signal ready over MQTT before connecting
+    # RTSP streams. Without this, MLDetect and the dashboard retry against
+    # offline cameras, flooding logs and wasting GPU resources.
+    from threading import Event
+    from json import loads as _json_loads
+    from glados_modules.MqttConnector import MQTTClient as _WaitClient
+    from glados_modules.GladosEnums import MQTTEnums as _MQTTEnums
+
+    mqtt_conf = config_p[SystemEnums.CONFIG_HEAD_MQTT.value]
+    _wait_ip = mqtt_conf[SystemEnums.MQTT_SERVER_IP.value]
+    _wait_port = int(mqtt_conf[SystemEnums.MQTT_PORT.value])
+
+    _ready_systems = set()
+    _expected_systems = {"body_server", "glados_main"}
+    _all_ready = Event()
+
+    class _CameraWaiter(_WaitClient):
+        def __init__(self):
+            self.topic_handler = {
+                _MQTTEnums.CAMERA_READY_TOPIC.value: self._on_ready
+            }
+            super().__init__(ip=_wait_ip, port=_wait_port)
+
+        def _on_ready(self, msg):
+            try:
+                data = _json_loads(msg.payload.decode())
+                system = data.get("system", "unknown")
+                cameras = data.get("cameras", [])
+                _ready_systems.add(system)
+                print(f"\033[92m  ✓ {system} cameras ready: {cameras}\033[0m")
+                if _ready_systems >= _expected_systems:
+                    _all_ready.set()
+            except Exception:
+                pass
+
+    _waiter = _CameraWaiter()
+    _timeout = 120  # seconds — generous fallback if a Pi is down
+
     print("\033[94m" + "=" * 60)
-    print("  Waiting 60s for Pi4 and Pi5 camera systems to come online.")
+    print("  Waiting for Pi4 and Pi5 to signal cameras ready...")
     print("  Start BodyServer.py on Pi4 and GLaDOS.py on Pi5 now.")
+    print(f"  (timeout: {_timeout}s)")
     print("=" * 60 + "\033[0m")
-    time.sleep(60)
+
+    if _all_ready.wait(timeout=_timeout):
+        print("\033[92m  All camera systems ready — starting vision pipeline.\033[0m")
+    else:
+        missing = _expected_systems - _ready_systems
+        print(f"\033[93m  Timeout after {_timeout}s — starting without: {missing}\033[0m")
+
     mv.start()
     # start the audio receive server
     broker = AudioServerRX.broker_tuple
     stt_conf = config_p[STTEnums.CONFIG_HEAD_STT.value]
-    mqtt_conf = config_p[SystemEnums.CONFIG_HEAD_MQTT.value]
     audio_b = broker(stt_conf[STTEnums.STT_SERVER_IP.value], int(stt_conf[STTEnums.STT_SERVER_PORT.value]))
     # reuse ip port broker tuple
-    mqtt_b = broker(mqtt_conf[SystemEnums.MQTT_SERVER_IP.value], int(mqtt_conf[SystemEnums.MQTT_PORT.value]))
+    mqtt_b = broker(_wait_ip, _wait_port)
     lstt_tx = LocalSTTtx(mqtt_b)
     stt_audio_rx = AudioServerRX(audio_b, callback=lstt_tx.process_audio)
     stt_audio_rx.start()

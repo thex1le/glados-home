@@ -81,6 +81,14 @@ if __name__ == "__main__":
     # give time for first camera to start before we spin up the second
     time.sleep(5)
     right_camera.start()
+    # Signal AI server that cameras are ready for RTSP connection
+    from glados_modules.MqttConnector import MQTTClient as _ReadyClient
+    from glados_modules.GladosEnums import MQTTEnums as _MQTTEnums
+    _ready = _ReadyClient(ip=mqtt_broker.ip, port=mqtt_broker.port)
+    _ready.send_command(
+        {"system": "glados_main", "cameras": [left_camera_location, right_camera_location]},
+        _MQTTEnums.CAMERA_READY_TOPIC.value)
+    print(f"Published camera ready signal for left + right cameras")
     # Start health monitoring
     health = HealthMonitor(broker=mqtt_broker, system_name="glados_main")
     health.register("IMU", imu)

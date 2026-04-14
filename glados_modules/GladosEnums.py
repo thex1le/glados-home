@@ -192,6 +192,7 @@ class MQTTEnums(Enum):
     ATTENTION_CONVERSATION_TOPIC = "system/attention/conversation"
     PIPELINE_DEBUG_TOPIC = "system/debug"
     PIPELINE_DEBUG_CONTROL_TOPIC = "system/debug/control"
+    CAMERA_READY_TOPIC = "system/camera_ready"
 
 
 class DashboardEnums(Enum):

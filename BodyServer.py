@@ -14,7 +14,7 @@ from adafruit_servokit import ServoKit
 # glados imports
 from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, GladosLCD, SocTemp
 from glados_modules.CameraModule import GLaDOSServerException, Camera, CameraWatchdog
-from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums, SocTempEnums
+from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums, SocTempEnums, MQTTEnums
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
@@ -106,6 +106,13 @@ if __name__ == "__main__":
     head_camera = Camera(configfile=config_p, location=cefh[CameraEnum.CAMERA_HEAD_FACTORY.value],
                          rtspport=int(cefh[CameraEnum.CAMERA_HEAD_PORT.value]))
     head_camera.start()
+    # Signal AI server that cameras are ready for RTSP connection
+    from glados_modules.MqttConnector import MQTTClient
+    _ready_client = MQTTClient(ip=mqtt_connect.ip, port=mqtt_connect.port)
+    _ready_client.send_command(
+        {"system": "body_server", "cameras": [cefh[CameraEnum.CAMERA_HEAD_FACTORY.value]]},
+        MQTTEnums.CAMERA_READY_TOPIC.value)
+    print(f"Published camera ready signal for head camera")
     # Start health monitoring
     health = HealthMonitor(broker=mqtt_connect, system_name="body_server")
     health.register("body_LR", body_LR)
