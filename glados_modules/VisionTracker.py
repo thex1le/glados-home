@@ -1884,6 +1884,23 @@ class MotionTrack(MQTTClient):
                 if confirmed:
                     alpha_lr = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
                     alpha_ud = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
+
+                # Adaptive smoothing: large angle jumps are more likely phantom
+                # switches or noise — smooth them heavily. Small changes are
+                # real tracking — let them through responsively. This prevents
+                # the head from whipping between phantom detections while still
+                # following a person who moves normally.
+                lr_delta = abs(world_lr - self._world_lr)
+                ud_delta = abs(world_ud - self._world_ud)
+                if lr_delta > 20.0:
+                    alpha_lr = max(alpha_lr, 0.8)  # heavy: 80% old, 20% new
+                elif lr_delta > 10.0:
+                    alpha_lr = max(alpha_lr, 0.6)  # moderate smoothing
+                if ud_delta > 15.0:
+                    alpha_ud = max(alpha_ud, 0.8)
+                elif ud_delta > 8.0:
+                    alpha_ud = max(alpha_ud, 0.6)
+
                 old_lr, old_ud = self._world_lr, self._world_ud
                 self._world_lr = alpha_lr * self._world_lr + (1 - alpha_lr) * world_lr
                 self._world_ud = alpha_ud * self._world_ud + (1 - alpha_ud) * world_ud
