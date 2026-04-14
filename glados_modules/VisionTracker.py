@@ -158,8 +158,8 @@ class CameraFusionState:
         if self.state in (FusionEnums.STATE_HEAD_TRACKING.value,
                           FusionEnums.STATE_HANDOFF_TO_HEAD.value):
             self._head_miss_count += 1
-            if self._head_miss_count < 10:
-                self.logger.debug(f"FUSION: head_lost miss {self._head_miss_count}/10, holding {self.state}")
+            if self._head_miss_count < 5:
+                self.logger.debug(f"FUSION: head_lost miss {self._head_miss_count}/5, holding {self.state}")
                 return
             old_state = self.state
             best_side = self.get_best_side_world_lr()
@@ -1904,6 +1904,17 @@ class MotionTrack(MQTTClient):
                 self._world_lr = alpha_lr * self._world_lr + (1 - alpha_lr) * world_lr
                 self._world_ud = alpha_ud * self._world_ud + (1 - alpha_ud) * world_ud
                 self._world_ud_time = time.time()
+
+                # Drift correction: gently pull head camera's world_lr toward
+                # the side camera's estimate. The side cameras are fixed-mount
+                # so their world_lr doesn't drift. A 5% blend per frame prevents
+                # the slow EMA accumulation that causes the head to gradually
+                # drift off-target over 10-15 seconds.
+                side_lr = self._fusion.get_best_side_world_lr()
+                if side_lr is not None:
+                    drift = abs(self._world_lr - side_lr)
+                    if drift < 30.0:  # only correct if roughly agreeing
+                        self._world_lr = 0.95 * self._world_lr + 0.05 * side_lr
                 self.logger.debug(
                     f"EMA: raw_lr={world_lr:.1f} raw_ud={world_ud:.1f} "
                     f"alpha_lr={alpha_lr:.2f} alpha_ud={alpha_ud:.2f} "
