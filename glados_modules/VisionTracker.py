@@ -751,6 +751,123 @@ class MotionTrack(MQTTClient):
             self._side_drive_head_frames = 0
             self._side_drive_head_hits = 0
 
+    def _compute_pose_correction(self, pose_data: dict) -> Optional[tuple]:
+        """Compute world-angle correction from partial body keypoints.
+
+        When the head camera sees part of a person but not the face, the
+        visible keypoints tell us which direction the face is. If we see
+        legs but no face, the face is above → look up. If we see the left
+        side but not the right, the person extends right → look right.
+
+        Args:
+            pose_data: Dict of keypoint name → {x, y, confidence, location}.
+
+        Returns:
+            Tuple of (lr_correction, ud_correction) in degrees, or None
+            if not enough keypoints are visible for a reliable correction.
+        """
+        min_conf = 0.3
+        upper_kps = {"Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear"}
+        lower_kps = {"Left Hip", "Right Hip", "Left Knee", "Right Knee",
+                     "Left Ankle", "Right Ankle"}
+
+        visible = []
+        upper_visible = 0
+        lower_visible = 0
+        for name, kp in pose_data.items():
+            if not isinstance(kp, dict):
+                continue
+            if kp.get("confidence", 0) >= min_conf:
+                visible.append((kp.get("x", 0), kp.get("y", 0), name))
+                if name in upper_kps:
+                    upper_visible += 1
+                if name in lower_kps:
+                    lower_visible += 1
+
+        if len(visible) < 3:
+            return None
+
+        avg_x = sum(v[0] for v in visible) / len(visible)
+        avg_y = sum(v[1] for v in visible) / len(visible)
+
+        # Vertical correction
+        ud_correction = 0.0
+        if lower_visible >= 2 and upper_visible == 0:
+            # See legs, no face → face is above → look UP (negative world_ud)
+            offset = (avg_y - self.cam_y / 2) / (self.cam_y / 2)
+            ud_correction = -abs(offset) * MotionProfile.POSE_CORRECTION_SCALE_UD.value
+        elif upper_visible >= 2 and lower_visible == 0:
+            # See face near edge, no legs → might need to look DOWN
+            offset = (self.cam_y / 2 - avg_y) / (self.cam_y / 2)
+            ud_correction = abs(offset) * MotionProfile.POSE_CORRECTION_SCALE_UD.value
+
+        # Horizontal correction — only if significantly off-center
+        lr_correction = 0.0
+        x_offset = (self.cam_x / 2 - avg_x) / (self.cam_x / 2)
+        if abs(x_offset) > 0.2:
+            lr_correction = x_offset * MotionProfile.POSE_CORRECTION_SCALE_LR.value
+
+        if abs(ud_correction) > 0.5 or abs(lr_correction) > 0.5:
+            self.logger.debug(
+                f"POSE_CORRECTION: upper={upper_visible} lower={lower_visible} "
+                f"visible={len(visible)} avg=({avg_x:.0f},{avg_y:.0f}) "
+                f"lr_corr={lr_correction:.1f} ud_corr={ud_correction:.1f}")
+            return (lr_correction, ud_correction)
+
+        return None
+
+    def _compute_bbox_edge_correction(self, bbox: dict) -> Optional[tuple]:
+        """Compute world-angle correction from bounding box edge clipping.
+
+        When a person's bbox touches a frame edge, they extend beyond the
+        frame in that direction. This is a less precise fallback when pose
+        keypoints aren't available.
+
+        Args:
+            bbox: Bounding box dict with x1, y1, x2, y2.
+
+        Returns:
+            Tuple of (lr_correction, ud_correction) in degrees, or None
+            if the bbox isn't clipped on any edge.
+        """
+        edge_margin = 10.0  # pixels — consider "clipped" if within this margin of edge
+        x1 = bbox.get("x1", 0)
+        y1 = bbox.get("y1", 0)
+        x2 = bbox.get("x2", 0)
+        y2 = bbox.get("y2", 0)
+
+        clipped_top = y1 < edge_margin
+        clipped_bottom = y2 > (self.cam_y - edge_margin)
+        clipped_left = x1 < edge_margin
+        clipped_right = x2 > (self.cam_x - edge_margin)
+
+        # Only correct if ONE side is clipped but not the opposite
+        # (both sides clipped = person fills frame, no directional info)
+        ud_correction = 0.0
+        if clipped_top and not clipped_bottom:
+            # Person extends above frame → look UP
+            ud_correction = -MotionProfile.POSE_CORRECTION_SCALE_UD.value * 0.5
+        elif clipped_bottom and not clipped_top:
+            # Person extends below frame → look DOWN
+            ud_correction = MotionProfile.POSE_CORRECTION_SCALE_UD.value * 0.5
+
+        lr_correction = 0.0
+        if clipped_left and not clipped_right:
+            # Person extends left → look LEFT
+            lr_correction = MotionProfile.POSE_CORRECTION_SCALE_LR.value * 0.5
+        elif clipped_right and not clipped_left:
+            # Person extends right → look RIGHT
+            lr_correction = -MotionProfile.POSE_CORRECTION_SCALE_LR.value * 0.5
+
+        if abs(ud_correction) > 0.1 or abs(lr_correction) > 0.1:
+            self.logger.debug(
+                f"BBOX_EDGE_CORRECTION: top={clipped_top} bot={clipped_bottom} "
+                f"left={clipped_left} right={clipped_right} "
+                f"lr_corr={lr_correction:.1f} ud_corr={ud_correction:.1f}")
+            return (lr_correction, ud_correction)
+
+        return None
+
     def _head_is_settling(self) -> bool:
         """Check if head servos are still slewing above the settling threshold.
 
@@ -1715,6 +1832,27 @@ class MotionTrack(MQTTClient):
             # Compensate for camera being below the eye — tilt up so the eye
             # looks at the person's face instead of their chest/floor
             world_ud -= self._eye_ud_offset
+
+            # Directional correction when nose tracking failed (use_point=False).
+            # Priority chain: pose keypoints > bbox edge clipping > nothing.
+            # Pose gives precise "I see legs, face is above" signals.
+            # Bbox edge gives coarse "person is clipped on this side" signals.
+            if not use_point:
+                correction = None
+                # Tier 1: pose keypoints (more precise)
+                if TrackingEnums.KEY_POSE.value in best_target:
+                    correction = self._compute_pose_correction(
+                        best_target[TrackingEnums.KEY_POSE.value])
+                # Tier 2: bbox edge clipping (less precise fallback)
+                if correction is None:
+                    bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
+                    if bbox:
+                        correction = self._compute_bbox_edge_correction(bbox)
+                # Apply whichever correction was found
+                if correction:
+                    lr_corr, ud_corr = correction
+                    world_lr += lr_corr
+                    world_ud += ud_corr
 
             # Apply handoff blending if transitioning from side camera
             if self._enable_blending:

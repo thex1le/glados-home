@@ -572,6 +572,9 @@ class MotionProfile(Enum):
     UD_SEARCH_START_DELAY = 1.5    # seconds after side handoff before sweeping
     # Body UD urgency: head UD within this margin of its limit triggers faster body follow
     BODY_UD_URGENCY_MARGIN = 15.0
+    # Pose-guided correction: use visible keypoints to steer toward face
+    POSE_CORRECTION_SCALE_UD = 8.0   # max degrees of UD correction from partial body
+    POSE_CORRECTION_SCALE_LR = 5.0   # max degrees of LR correction from partial body
     # Emotion-driven tracking speed: personality mood -> spring-damper speed level
     MOOD_SPEED_MAP = {
         "calm": 1,
