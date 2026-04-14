@@ -43,13 +43,19 @@ class RtspSystem(GstRtspServer.RTSPMediaFactory):
                     self.cam_x, self.cam_y, fps, fps))
         else:
             # Software H.264 encoding (CPU-based, works everywhere)
+            # key-int-max: fixed keyframe interval so RTSP clients don't wait
+            #   up to 16s for a keyframe when connecting mid-stream
+            # bitrate: prevents x264 from buffering on complex frames
+            # config-interval=1: re-send SPS/PPS with each keyframe so late
+            #   joiners can decode immediately
             self.launch_string = (
                 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
                 'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 '
                 '! queue max-size-buffers=1 leaky=downstream '
                 '! videoconvert ! video/x-raw,format=I420 '
                 '! x264enc speed-preset=ultrafast tune=zerolatency '
-                '! rtph264pay config-interval=0 name=pay0 pt=96'.format(
+                'key-int-max=30 bitrate=2000 '
+                '! rtph264pay config-interval=1 name=pay0 pt=96'.format(
                     self.cam_x, self.cam_y, fps))
 
     def send_data(self, data):
