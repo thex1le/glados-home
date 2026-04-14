@@ -49,6 +49,11 @@ class RoomPerson:
     attention_time: float = 0.0
     # Per-camera ByteTrack IDs for temporal identity continuity
     track_ids: Dict[str, int] = field(default_factory=dict)
+    # Confirmation: how many detection frames have matched this entry.
+    # Unconfirmed entries (frames_seen < threshold) don't trigger
+    # attention switches — prevents phantom IDs from whipping the head.
+    frames_seen: int = 0
+    has_pose: bool = False  # at least one detection had pose keypoints
 
     def to_dict(self) -> dict:
         """Serialize to a JSON-compatible dict for MQTT publishing."""
@@ -167,6 +172,9 @@ class RoomStateManager:
                     person.cameras.add(camera)
                     person.last_seen = now
                     person.bbox_height = bbox_height
+                    person.frames_seen += 1
+                    if detection.get("pose"):
+                        person.has_pose = True
                     if track_id is not None:
                         person.track_ids[camera] = track_id
                     if face_id != "unknown":

@@ -167,17 +167,32 @@ class AttentionModel:
             person_priorities = []
 
             # --- NEW ARRIVAL (highest) ---
+            # Only treat as new arrival if the person has been CONFIRMED —
+            # detected consistently for enough frames that we're sure they're
+            # real, not a phantom re-detection or flickering track ID.
+            # A human takes a beat to register a new person before shifting
+            # attention; GLaDOS should do the same.
+            min_confirmation = 10  # ~0.7s at 15fps
             time_in_room = now - person.first_seen
-            if time_in_room < self._arrival_window:
-                person_priorities.append(f"NEW_ARRIVAL(t={time_in_room:.1f}s)")
+            confirmed = person.frames_seen >= min_confirmation
+            if time_in_room < self._arrival_window and confirmed:
+                person_priorities.append(
+                    f"NEW_ARRIVAL(t={time_in_room:.1f}s frames={person.frames_seen})")
                 if AttentionPriority.NEW_ARRIVAL.value > best_priority.value:
                     best_pid = pid
                     best_priority = AttentionPriority.NEW_ARRIVAL
                     best_reason = "new_arrival"
-                    # Don't break — check if multiple arrivals, pick most recent
                     self.logger.debug(
-                        f"PRIORITY: {pid} -> new_arrival (in room {time_in_room:.1f}s < {self._arrival_window}s)")
+                        f"PRIORITY: {pid} -> new_arrival (in room {time_in_room:.1f}s "
+                        f"frames={person.frames_seen} confirmed)")
                     continue
+            elif time_in_room < self._arrival_window and not confirmed:
+                person_priorities.append(
+                    f"UNCONFIRMED(t={time_in_room:.1f}s frames={person.frames_seen})")
+                self.logger.debug(
+                    f"PRIORITY: {pid} -> unconfirmed arrival "
+                    f"(frames={person.frames_seen} < {min_confirmation})")
+                continue  # skip other priority checks for unconfirmed entries
 
             # --- GESTURE ---
             # Gesture detection happens per-frame, so we check if the person
