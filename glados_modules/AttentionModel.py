@@ -167,31 +167,33 @@ class AttentionModel:
             person_priorities = []
 
             # --- NEW ARRIVAL (highest) ---
-            # Only treat as new arrival if the person has been CONFIRMED —
-            # detected consistently for enough frames that we're sure they're
-            # real, not a phantom re-detection or flickering track ID.
-            # A human takes a beat to register a new person before shifting
-            # attention; GLaDOS should do the same.
-            min_confirmation = 10  # ~0.7s at 15fps
+            # Only treat as new arrival if composite confidence confirms
+            # the detection is real — multiple ML models have validated it
+            # (pose + face > bbox alone). Phantoms never accumulate composite
+            # evidence, so they stay below the threshold.
+            # Also require minimum frames as a secondary check.
+            min_composite = 0.55  # requires at least bbox + pose or bbox + partial face
+            min_frames = 5  # ~0.3s at 15fps
             time_in_room = now - person.first_seen
-            confirmed = person.frames_seen >= min_confirmation
+            confirmed = (person.composite_score >= min_composite and
+                         person.frames_seen >= min_frames)
             if time_in_room < self._arrival_window and confirmed:
                 person_priorities.append(
-                    f"NEW_ARRIVAL(t={time_in_room:.1f}s frames={person.frames_seen})")
+                    f"NEW_ARRIVAL(t={time_in_room:.1f}s composite={person.composite_score:.2f})")
                 if AttentionPriority.NEW_ARRIVAL.value > best_priority.value:
                     best_pid = pid
                     best_priority = AttentionPriority.NEW_ARRIVAL
                     best_reason = "new_arrival"
                     self.logger.debug(
                         f"PRIORITY: {pid} -> new_arrival (in room {time_in_room:.1f}s "
-                        f"frames={person.frames_seen} confirmed)")
+                        f"composite={person.composite_score:.2f} frames={person.frames_seen})")
                     continue
             elif time_in_room < self._arrival_window and not confirmed:
                 person_priorities.append(
-                    f"UNCONFIRMED(t={time_in_room:.1f}s frames={person.frames_seen})")
+                    f"UNCONFIRMED(t={time_in_room:.1f}s composite={person.composite_score:.2f})")
                 self.logger.debug(
                     f"PRIORITY: {pid} -> unconfirmed arrival "
-                    f"(frames={person.frames_seen} < {min_confirmation})")
+                    f"(composite={person.composite_score:.2f} < {min_composite})")
                 continue  # skip other priority checks for unconfirmed entries
 
             # --- GESTURE ---
@@ -241,11 +243,13 @@ class AttentionModel:
 
         # --- PROXIMITY fallback (with personality modifier) ---
         if best_pid is None:
-            # Score: confidence + personality grudge bonus (normalized)
+            # Score: composite confidence + personality grudge bonus
+            # Composite is better than raw confidence — it reflects accumulated
+            # evidence from all ML models, not just YOLO's single-frame guess.
             def _score(pid: str) -> float:
-                conf = roster[pid].confidence
+                composite = roster[pid].composite_score
                 grudge = self._personality_modifiers.get(pid, 0.0) / 100.0
-                return conf + grudge
+                return composite + grudge
 
             best_pid = max(roster, key=_score)
             best_priority = AttentionPriority.PROXIMITY

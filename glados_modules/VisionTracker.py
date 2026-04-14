@@ -1518,10 +1518,13 @@ class MotionTrack(MQTTClient):
         face_id_key = VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value
 
         # Confidence floor: filter out low-confidence phantoms before scoring.
-        # VisionTracker gates entire frames, but multi-detection frames can
-        # smuggle low-confidence co-detections past the gate.
+        # Filter using composite confidence (multi-model evidence) rather than
+        # raw YOLO confidence alone. A detection at YOLO 0.45 with pose keypoints
+        # (composite ~0.60) is more reliable than YOLO 0.50 with no pose.
+        from glados_modules.RoomStateManager import RoomStateManager
         min_conf = MotionProfile.TARGET_MIN_CONFIDENCE.value
-        seen_data = [d for d in seen_data if d.get(confidence_key, 0) >= min_conf]
+        seen_data = [d for d in seen_data
+                     if RoomStateManager.compute_frame_composite(d) >= min_conf]
         if not seen_data:
             return {}
 

@@ -29,6 +29,8 @@ def _make_person(person_id: str, world_lr: float = 0.0, confidence: float = 0.9,
         emotion="neutral",
         bbox_height=300.0,
         face_id=person_id,
+        frames_seen=20,
+        composite_score=min(confidence + 0.15, 1.0),  # composite reflects raw + pose
     )
 
 

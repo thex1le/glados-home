@@ -54,6 +54,10 @@ class RoomPerson:
     # attention switches — prevents phantom IDs from whipping the head.
     frames_seen: int = 0
     has_pose: bool = False  # at least one detection had pose keypoints
+    # Composite confidence: accumulated evidence from chained ML models.
+    # Rises as YOLO+pose+face+emotion confirm the detection across frames.
+    # Decays slowly (0.95/frame) when evidence is missing.
+    composite_score: float = 0.0
 
     def to_dict(self) -> dict:
         """Serialize to a JSON-compatible dict for MQTT publishing."""
@@ -68,6 +72,7 @@ class RoomPerson:
             "bbox_height": round(self.bbox_height, 0),
             "face_id": self.face_id,
             "attention_time": round(self.attention_time, 1),
+            "composite_score": round(self.composite_score, 3),
         }
 
 
@@ -92,6 +97,9 @@ class RoomStateManager:
         self._pending_arrivals: List[str] = []
         self._pending_departures: List[str] = []
 
+        # Composite confidence decay per frame (0.95 = 5% decay when no new evidence)
+        self._composite_decay = 0.95
+
         # Config from enums
         self._departure_timeout = RoomStateEnums.DEPARTURE_TIMEOUT.value
         self._publish_interval = RoomStateEnums.PUBLISH_INTERVAL.value
@@ -100,6 +108,48 @@ class RoomStateManager:
         self._height_weight = RoomStateEnums.MATCH_HEIGHT_WEIGHT.value
         self._camera_weight = RoomStateEnums.MATCH_CAMERA_WEIGHT.value
         self._proximity_max = RoomStateEnums.MATCH_PROXIMITY_MAX_DEG.value
+
+    @staticmethod
+    def compute_frame_composite(detection: dict) -> float:
+        """Compute per-frame composite confidence from chained ML evidence.
+
+        Each ML model that succeeds retroactively validates the previous
+        layers. A YOLO bbox at 0.45 with pose + face + emotion is more
+        reliable than a 0.70 bbox alone. Phantoms never accumulate
+        evidence beyond bbox, so they stay at low composite.
+
+        Args:
+            detection: Person detection dict with confidence, pose, face, gesture.
+
+        Returns:
+            Composite confidence score (0.0 - 1.0).
+        """
+        score = detection.get("confidence", 0.0)
+
+        # Pose keypoints: skeleton confirms person shape
+        pose = detection.get("pose", {})
+        if pose:
+            visible_kps = sum(1 for kp in pose.values()
+                              if isinstance(kp, dict) and kp.get("confidence", 0) >= 0.3)
+            if visible_kps >= 5:
+                score += 0.15
+            elif visible_kps >= 2:
+                score += 0.08
+
+        # Face: detection confirms a face exists in the bbox
+        face = detection.get("face", {})
+        if face:
+            face_id = face.get("face_id", "unknown")
+            if face_id and face_id != "unknown":
+                score += 0.20  # recognized person — strongest signal
+            elif face.get("detected", False):
+                score += 0.10  # face detected but not recognized
+
+        # Emotion: reading an emotion confirms the face was real
+        if face and face.get("emotion") and face.get("emotion") != "neutral":
+            score += 0.05
+
+        return min(score, 1.0)
 
     def clear_camera(self, camera: str) -> None:
         """Remove a camera from all roster entries when it reports no detections.
@@ -132,8 +182,11 @@ class RoomStateManager:
         now = time.time()
         with self._lock:
             # Clear this camera from all existing entries (will re-add for matched)
+            # Also apply composite decay — entries not matched this frame lose
+            # a small amount of composite confidence each update cycle.
             for person in self._roster.values():
                 person.cameras.discard(camera)
+                person.composite_score *= self._composite_decay
 
             for det_idx, detection in enumerate(detections):
                 conf = detection.get("confidence", 0.0)
@@ -164,6 +217,9 @@ class RoomStateManager:
                 matched_id = self._match_detection(
                     face_id, world_lr, bbox_height, camera, track_id, now)
 
+                # Compute composite confidence from all ML evidence in this detection
+                frame_composite = self.compute_frame_composite(detection)
+
                 if matched_id:
                     # Update existing entry
                     person = self._roster[matched_id]
@@ -173,6 +229,9 @@ class RoomStateManager:
                     person.last_seen = now
                     person.bbox_height = bbox_height
                     person.frames_seen += 1
+                    # Composite: take the higher of new evidence or decayed old score
+                    person.composite_score = max(frame_composite,
+                                                  person.composite_score * self._composite_decay)
                     if detection.get("pose"):
                         person.has_pose = True
                     if track_id is not None:
@@ -210,6 +269,7 @@ class RoomStateManager:
                         bbox_height=bbox_height,
                         face_id=face_id,
                         track_ids=initial_track_ids,
+                        composite_score=frame_composite,
                     )
                     self._roster[person_id] = person
                     self._pending_arrivals.append(person_id)

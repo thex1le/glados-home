@@ -27,6 +27,7 @@ def _make_person(person_id: str, world_lr: float = 0.0, confidence: float = 0.9,
         bbox_height=300.0,
         face_id=face_id or person_id,
         frames_seen=20,  # default: confirmed (enough frames to trigger new_arrival)
+        composite_score=0.80,  # default: high composite (YOLO + pose + face confirmed)
     )
 
 
