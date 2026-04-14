@@ -1614,19 +1614,28 @@ class MotionTrack(MQTTClient):
         # Camera readiness gate: track which cameras have come online and hold
         # all movement until all three are reporting. This prevents the robot
         # from chasing single-camera phantoms during the startup sequence.
-        # Times out after 30s so a camera that has no detections (empty room,
-        # camera pointed at wall) doesn't block forever.
+        # Head camera override: if the head camera has a strong detection,
+        # start tracking immediately — don't wait for side cameras. The head
+        # camera is the primary tracking sensor and shouldn't be blocked by
+        # slow or offline side cameras.
+        # Times out after 30s so a missing camera doesn't block forever.
         if not self._cameras_online:
             self._cameras_ready.add(camera)
-            # Start the timeout from the FIRST detection, not from __init__.
-            # Model loading and camera boot can take minutes — the timeout
-            # should measure how long we've been waiting with partial cameras.
             if self._cameras_gate_start == 0.0:
                 self._cameras_gate_start = time.time()
             elapsed = time.time() - self._cameras_gate_start
             if self._cameras_ready >= self._all_cameras:
                 self._cameras_online = True
                 self.logger.info(f"All cameras online: {self._cameras_ready}")
+            elif camera == self.main_camera:
+                # Head camera override: start immediately if head has a detection.
+                # The head camera passing VisionTracker's 0.65 gate means it has
+                # a high-confidence person — no need to wait for side cameras.
+                self._cameras_online = True
+                missing = self._all_cameras - self._cameras_ready
+                self.logger.info(
+                    f"Head camera override — starting tracking (ready: "
+                    f"{self._cameras_ready}, pending: {missing})")
             elif elapsed > self._cameras_gate_timeout:
                 self._cameras_online = True
                 missing = self._all_cameras - self._cameras_ready
