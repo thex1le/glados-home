@@ -28,8 +28,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Start/stop GLaDOS recording session")
     parser.add_argument("--broker", required=True, help="MQTT broker IP address")
     parser.add_argument("--port", type=int, default=1883, help="MQTT broker port")
-    parser.add_argument("--session", default=None,
-                        help="Session name (auto-generated if omitted)")
+    parser.add_argument("--session", default=None, help="Session name (auto-generated if omitted)")
     parser.add_argument("--duration", type=int, default=None,
                         help="Auto-stop after N seconds (default: manual stop)")
     parser.add_argument("--stop", action="store_true",

@@ -545,7 +545,7 @@ class MotionProfile(Enum):
     # Default pitch when side cameras drive (no head camera data yet).
     # Robot is mounted ~8ft high, people are ~5ft tall at ~6-10ft distance.
     # Negative = looking down. Adjust if mounting height changes.
-    SIDE_DRIVE_DEFAULT_PITCH = -15.0
+    SIDE_DRIVE_DEFAULT_PITCH = 0.0
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
