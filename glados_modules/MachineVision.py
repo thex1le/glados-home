@@ -481,7 +481,7 @@ class MLDetect(Thread, MQTTClient):
 
         # if a pose model exists, plot the pose on the camera
         if p_model is not None:
-            # we have a model, must be head camera, run model and draw points
+            # pose model exists for this camera — run inference and draw skeleton
             key_points, scores = p_model(image)
             a_image = draw_skeleton(a_image, key_points, scores,
                                     kpt_thr=self.kpt_threshold)

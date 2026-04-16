@@ -1700,15 +1700,15 @@ class MotionTrack(MQTTClient):
         trace_id = vision_map[camera].get(TraceEnums.TRACE_ID.value)
         ts_vision = vision_map[camera].get(TraceEnums.TS_VISION.value)
 
-        # Per-detection confidence re-filter. VisionTracker gates entire frames
-        # by the highest confidence detection, but low-confidence co-detections
-        # (phantoms from clutter) ride along. Re-filter each detection individually.
-        confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-        conf_threshold = (self.confidence if camera == self.main_camera
-                          else self.vision_tracker.side_confidence_score)
+        # Per-detection re-filter using composite confidence (YOLO + pose + face).
+        # Pose-confirmed detections at low YOLO confidence are real people, not
+        # phantoms — phantoms never accumulate pose/face evidence. All cameras
+        # run pose estimation so all benefit from composite scoring.
+        from glados_modules.RoomStateManager import RoomStateManager
         all_objects = target_data.get(self.objects, [])
+        composite_threshold = MotionProfile.TARGET_MIN_CONFIDENCE.value
         filtered_objects = [d for d in all_objects
-                           if d.get(confidence_key, 0) >= conf_threshold]
+                           if RoomStateManager.compute_frame_composite(d) >= composite_threshold]
         if not filtered_objects:
             if camera == self.main_camera:
                 self._fusion.head_lost()
