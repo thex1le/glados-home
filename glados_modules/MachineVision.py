@@ -345,6 +345,11 @@ class MLDetect(Thread, MQTTClient):
                 if self._recording_session and self._recording_session.is_active:
                     enriched = dict(sight)
                     enriched["diagnostics"] = self.motion_tracking.get_diagnostic_snapshot()
+                    # Enrich person detections with composite confidence score
+                    from glados_modules.RoomStateManager import RoomStateManager
+                    person_data = enriched.get("person", {})
+                    for obj in person_data.get("objects", []):
+                        obj["composite_score"] = RoomStateManager.compute_frame_composite(obj)
                     self._recording_session.record_frame(
                         camera_key, None, wall_time, tracking_data=enriched)
 

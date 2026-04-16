@@ -542,11 +542,11 @@ class MotionProfile(Enum):
     # Without correction, centering the nose in frame makes GLaDOS look at the
     # person's chest/floor instead of their face. Positive = tilt head up.
     # Tuned at 6ft distance — adjust if camera mounting changes.
-    EYE_UD_OFFSET = 5.0
+    EYE_UD_OFFSET = 2.0
     # Default pitch when side cameras drive (no head camera data yet).
     # Robot is mounted ~8ft high, people are ~5ft tall at ~6-10ft distance.
     # Negative = looking down. Adjust if mounting height changes.
-    SIDE_DRIVE_DEFAULT_PITCH = 0.0
+    SIDE_DRIVE_DEFAULT_PITCH = -10.0
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
@@ -569,8 +569,11 @@ class MotionProfile(Enum):
     WORLD_SMOOTH_ALPHA_UD = 0.55   # UD-specific EMA (higher = more smoothing, LR stays at 0.4)
     # UD search sweep when side cameras see someone but head camera can't find them
     UD_SEARCH_SWEEP_SPEED = 3.0    # degrees per update cycle
-    UD_SEARCH_SWEEP_RANGE = 30.0   # degrees above and below origin
+    UD_SEARCH_SWEEP_RANGE = 25.0   # degrees above and below origin (30 hits servo max via IK)
     UD_SEARCH_START_DELAY = 1.5    # seconds after side handoff before sweeping
+    UD_SEARCH_VELOCITY_GATE = 5.0  # deg/s — sweep waits for servo to settle before advancing
+    UD_SEARCH_MAX_DURATION = 15.0  # seconds — sweep times out, triggers occlusion backoff
+    FROZEN_ANGLE_TIMEOUT = 5.0     # seconds — force world angle re-init if stale this long
     # Body UD urgency: head UD within this margin of its limit triggers faster body follow
     BODY_UD_URGENCY_MARGIN = 15.0
     # Pose-guided correction: use visible keypoints to steer toward face

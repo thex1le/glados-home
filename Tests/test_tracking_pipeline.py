@@ -71,6 +71,7 @@ def _make_motion_track():
     mt._ud_search_direction = 1
     mt._ud_search_origin = 0.0
     mt._ud_search_pitch = 0.0
+    mt._ud_search_start_time = 0.0
     mt._room_state = None
     mt._enable_room_state = False
     mt._attention = None

@@ -449,6 +449,7 @@ class MotionTrack(MQTTClient):
         self._ud_search_direction: int = 1  # 1 = up, -1 = down
         self._ud_search_origin: float = 0.0
         self._ud_search_pitch: float = 0.0
+        self._ud_search_start_time: float = 0.0
 
         # Last tracked target state for multi-person selection
         self._last_tracked_world_lr: float = None
@@ -867,33 +868,6 @@ class MotionTrack(MQTTClient):
             return (lr_correction, ud_correction)
 
         return None
-
-    def _head_is_settling(self) -> bool:
-        """Check if head servos are still slewing above the settling threshold.
-
-        Implements saccadic suppression: head camera detections are unreliable
-        during fast servo motion because the camera sees motion blur and
-        clutter instead of the target. Returns True if the head should NOT
-        process camera input yet.
-
-        IMPORTANT: The caller must advance the head estimators via
-        get_position() before calling this method. Otherwise the velocity
-        is stale and the gate deadlocks. This is done in track_loop()
-        to keep all estimator mutation in the MQTT callback thread.
-
-        Returns:
-            True if head servo velocity exceeds the settling threshold.
-        """
-        if self.head_LR_name not in self._estimators:
-            return False
-        head_lr_vel = abs(self._estimators[self.head_LR_name].velocity)
-        head_ud_vel = abs(self._estimators[self.head_UD_name].velocity)
-        settling = max(head_lr_vel, head_ud_vel) > MotionProfile.SETTLING_VELOCITY_THRESHOLD.value
-        if settling:
-            self.logger.debug(
-                f"HEAD_GATE: settling (lr_vel={head_lr_vel:.1f} ud_vel={head_ud_vel:.1f} "
-                f"thresh={MotionProfile.SETTLING_VELOCITY_THRESHOLD.value})")
-        return settling
 
     def _pixel_to_world_angle(self, bbox: dict, camera: str, axis: str, point: bool = False) -> float:
         """Convert a pixel detection to an absolute world-space angle.
@@ -1453,19 +1427,39 @@ class MotionTrack(MQTTClient):
             if not self._ud_search_active:
                 if head_ud_age > MotionProfile.UD_SEARCH_START_DELAY.value:
                     self._ud_search_active = True
+                    self._ud_search_start_time = time.time()
                     self._ud_search_origin = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
                     self._ud_search_pitch = self._ud_search_origin
-                    self._ud_search_direction = 1  # start by looking up
-                    self.logger.info("UD search sweep started")
+                    self._ud_search_direction = -1  # start by looking down
+                    # Reset stale world angles so EMA initializes fresh
+                    # when head camera re-acquires after sweep
+                    self._world_ud = None
+                    self._world_lr = None
+                    self.logger.info("UD search sweep started — world angles reset for fresh acquisition")
                 world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
             else:
-                # Sweep up and down searching for the person
-                self._ud_search_pitch += self._ud_search_direction * MotionProfile.UD_SEARCH_SWEEP_SPEED.value
-                sweep_range = MotionProfile.UD_SEARCH_SWEEP_RANGE.value
-                if abs(self._ud_search_pitch - self._ud_search_origin) > sweep_range:
-                    self._ud_search_direction *= -1
-                    self._ud_search_pitch = self._ud_search_origin + self._ud_search_direction * sweep_range
-                world_ud = self._ud_search_pitch
+                # Sweep timeout — person is likely occluded, back off
+                if time.time() - self._ud_search_start_time > MotionProfile.UD_SEARCH_MAX_DURATION.value:
+                    self.logger.info("UD search sweep timed out — triggering occlusion backoff")
+                    self._ud_search_active = False
+                    self._side_drive_backoff_until = time.time() + 5.0
+                    world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+                else:
+                    # Velocity gate: only advance when head UD servo has nearly
+                    # settled from the previous step (prevents motion blur)
+                    can_advance = True
+                    if self.head_UD_name in self._estimators:
+                        ud_vel = abs(self._estimators[self.head_UD_name].velocity)
+                        if ud_vel > MotionProfile.UD_SEARCH_VELOCITY_GATE.value:
+                            can_advance = False
+                            self.logger.debug(f"UD_SWEEP: waiting for settle (vel={ud_vel:.1f})")
+                    if can_advance:
+                        self._ud_search_pitch += self._ud_search_direction * MotionProfile.UD_SEARCH_SWEEP_SPEED.value
+                    sweep_range = MotionProfile.UD_SEARCH_SWEEP_RANGE.value
+                    if abs(self._ud_search_pitch - self._ud_search_origin) > sweep_range:
+                        self._ud_search_direction *= -1
+                        self._ud_search_pitch = self._ud_search_origin + self._ud_search_direction * sweep_range
+                    world_ud = self._ud_search_pitch
 
         self.logger.debug(
             f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")
@@ -1798,6 +1792,20 @@ class MotionTrack(MQTTClient):
 
         # Head camera: full tracking with world-space angles
         if camera == self.main_camera:
+            # Safety: detect frozen world angles (prevents the 894-frame catastrophic
+            # freeze where world angles are set once and never updated). If we're
+            # processing a head detection but world angles haven't been updated in
+            # >5s, force re-initialization.
+            if (self._world_ud is not None and
+                    self._world_ud_time > 0 and
+                    time.time() - self._world_ud_time > MotionProfile.FROZEN_ANGLE_TIMEOUT.value):
+                self.logger.warning(
+                    f"FROZEN_ANGLE: world angles stale for "
+                    f"{time.time() - self._world_ud_time:.1f}s — forcing re-init "
+                    f"(world_lr={self._world_lr}, world_ud={self._world_ud})")
+                self._world_lr = None
+                self._world_ud = None
+
             # Signal head detection to fusion state machine
             self._fusion.update_head_detection()
             self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
