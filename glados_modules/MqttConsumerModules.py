@@ -14,7 +14,7 @@ from glados_modules.PipelineDebug import PipelineDebug
 from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
     LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums,
-    SocTempEnums
+    SocTempEnums, MotionProfile
 )
 
 
@@ -406,14 +406,14 @@ class VisionTracker(MQTTClient):
         if self.target in sight_results:
             with self._lock:
                 for p in sight_results[self.target][self.objects_key]:
-                    c = p.get(self.confidence_key, 0.0)
-                    if camera == CameraEnum.CAMERA_HEAD.value:
-                        cf_score = self.confidence_score
-                    elif camera in (CameraEnum.CAMERA_RIGHT.value, CameraEnum.CAMERA_LEFT.value):
-                        cf_score = self.side_confidence_score
-                    else:
-                        cf_score = 0.0
-                    if float(c) >= cf_score:
+                    # Use composite confidence (YOLO + pose + face) for gating.
+                    # All cameras run pose estimation, so pose-confirmed detections
+                    # at low YOLO confidence pass through. Phantoms without pose
+                    # evidence are filtered by the downstream re-filter in track_loop.
+                    from glados_modules.RoomStateManager import RoomStateManager
+                    c = RoomStateManager.compute_frame_composite(p)
+                    cf_score = MotionProfile.TARGET_MIN_CONFIDENCE.value
+                    if c >= cf_score:
                         self.logger.debug(f"Confidence of {c} found for {self.target}")
                         # Update response_map with current sight results
                         self.response_map[camera] = sight_results
