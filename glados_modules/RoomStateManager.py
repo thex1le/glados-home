@@ -126,14 +126,18 @@ class RoomStateManager:
         """
         score = detection.get("confidence", 0.0)
 
-        # Pose keypoints: skeleton confirms person shape
+        # Pose keypoints: skeleton confirms person shape.
+        # Average keypoint confidence distinguishes real people (avg ~0.7)
+        # from phantoms where the pose model hallucinates on clutter (avg ~0.35).
         pose = detection.get("pose", {})
         if pose:
-            visible_kps = sum(1 for kp in pose.values()
-                              if isinstance(kp, dict) and kp.get("confidence", 0) >= 0.3)
-            if visible_kps >= 5:
+            kp_confs = [kp.get("confidence", 0) for kp in pose.values()
+                        if isinstance(kp, dict) and kp.get("confidence", 0) >= 0.3]
+            visible_kps = len(kp_confs)
+            avg_kp_conf = sum(kp_confs) / len(kp_confs) if kp_confs else 0.0
+            if visible_kps >= 5 and avg_kp_conf >= 0.5:
                 score += 0.15
-            elif visible_kps >= 2:
+            elif visible_kps >= 2 and avg_kp_conf >= 0.5:
                 score += 0.08
 
         # Face: detection confirms a face exists in the bbox
