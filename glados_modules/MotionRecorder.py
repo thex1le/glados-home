@@ -102,12 +102,13 @@ def build_frame_record(
     smoothed_world_ud: float,
     output_targets: Dict[str, dict],
     fusion_state: str = "",
+    composite_score: float = 0.0,
 ) -> dict:
     """Build a complete frame record from MotionTrack's internal state.
 
     This captures everything needed to replay the calculation offline:
     - Input: detection bbox/pose, camera, estimator positions, servo config
-    - Intermediate: raw and smoothed world angles, fusion state
+    - Intermediate: raw and smoothed world angles, fusion state, composite confidence
     - Output: final servo targets
     """
     return {
@@ -126,6 +127,7 @@ def build_frame_record(
         "smoothed_world_lr": round(smoothed_world_lr, 4),
         "smoothed_world_ud": round(smoothed_world_ud, 4),
         "fusion_state": fusion_state,
+        "composite_score": round(composite_score, 4),
         # Outputs
         "output_targets": output_targets,
     }

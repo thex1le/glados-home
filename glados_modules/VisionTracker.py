@@ -1455,7 +1455,7 @@ class MotionTrack(MQTTClient):
                     self._ud_search_active = True
                     self._ud_search_origin = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
                     self._ud_search_pitch = self._ud_search_origin
-                    self._ud_search_direction = -1  # start by looking down
+                    self._ud_search_direction = 1  # start by looking up
                     self.logger.info("UD search sweep started")
                 world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
             else:
@@ -1963,6 +1963,7 @@ class MotionTrack(MQTTClient):
                         smoothed_world_ud=self._world_ud,
                         output_targets=output_targets,
                         fusion_state="dead_zone",
+                        composite_score=RoomStateManager.compute_frame_composite(best_target) if self._room_state else 0.0,
                     )
                     self._recorder.log_frame(record)
                 return
@@ -2042,6 +2043,7 @@ class MotionTrack(MQTTClient):
                     smoothed_world_ud=self._world_ud,
                     output_targets=output_targets,
                     fusion_state=self._fusion.state,
+                    composite_score=RoomStateManager.compute_frame_composite(best_target) if self._room_state else 0.0,
                 )
                 self._recorder.log_frame(record)
 
@@ -2068,6 +2070,7 @@ class MotionTrack(MQTTClient):
                         smoothed_world_ud=0.0,
                         output_targets={},
                         fusion_state=self._fusion.state,
+                        composite_score=RoomStateManager.compute_frame_composite(best_target) if self._room_state else 0.0,
                     )
                     self._recorder.log_frame(side_record)
             if self._fusion.side_can_drive_servos():
