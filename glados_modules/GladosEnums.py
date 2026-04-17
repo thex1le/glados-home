@@ -550,6 +550,9 @@ class MotionProfile(Enum):
     # Camera mounting offsets in FK yaw (positive = robot's left, negative = robot's right)
     CAMERA_LEFT_MOUNTING_OFFSET = 55.0
     CAMERA_RIGHT_MOUNTING_OFFSET = -55.0
+    # Vertical mounting pitch (0 = level, negative = tilted down)
+    CAMERA_LEFT_MOUNTING_PITCH = 0.0
+    CAMERA_RIGHT_MOUNTING_PITCH = 0.0
     # IK rate limiting: max degrees body targets can change per frame
     BODY_LR_MAX_STEP_DEG = 25.0
     BODY_UD_MAX_STEP_DEG = 15.0
@@ -821,6 +824,9 @@ class CameraEnum(Enum):
     CAMERA_HEAD_FOV_Y = 41
     CAMERA_RIGHT_FOV = 160
     CAMERA_LEFT_FOV = 160
+    # Vertical FOV derived from horizontal FOV and 4:3 aspect ratio (equidistant fisheye)
+    CAMERA_RIGHT_FOV_Y = 120
+    CAMERA_LEFT_FOV_Y = 120
     X_RESOLUTION = 'x'
     Y_RESOLUTION = 'y'
     # Camera FPS telemetry (published by Camera process, consumed by dashboard)

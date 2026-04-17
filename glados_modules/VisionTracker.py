@@ -105,6 +105,8 @@ class CameraFusionState:
         self._right_last_seen: float = 0.0
         self._left_world_lr: float = 0.0
         self._right_world_lr: float = 0.0
+        self._left_world_ud: float = None
+        self._right_world_ud: float = None
         self._left_count: int = 0
         self._right_count: int = 0
         self._handoff_start_time: float = 0.0
@@ -113,7 +115,8 @@ class CameraFusionState:
         self._left_angle_history: list = []
         self._right_angle_history: list = []
 
-    def update_side_detection(self, camera: str, world_lr: float, count: int) -> None:
+    def update_side_detection(self, camera: str, world_lr: float, count: int,
+                              world_ud: float = None) -> None:
         """Record a side camera detection and angle history for prediction."""
         now = time.time()
         window = FusionEnums.PREDICTION_HISTORY_WINDOW.value
@@ -121,6 +124,8 @@ class CameraFusionState:
             self._left_last_seen = now
             self._left_world_lr = world_lr
             self._left_count = count
+            if world_ud is not None:
+                self._left_world_ud = world_ud
             self._left_angle_history.append((now, world_lr))
             self._left_angle_history = [(t, a) for t, a in self._left_angle_history
                                          if now - t <= window]
@@ -128,6 +133,8 @@ class CameraFusionState:
             self._right_last_seen = now
             self._right_world_lr = world_lr
             self._right_count = count
+            if world_ud is not None:
+                self._right_world_ud = world_ud
             self._right_angle_history.append((now, world_lr))
             self._right_angle_history = [(t, a) for t, a in self._right_angle_history
                                           if now - t <= window]
@@ -187,6 +194,23 @@ class CameraFusionState:
             return self._left_world_lr
         elif right_fresh:
             return self._right_world_lr
+        return None
+
+    def get_best_side_world_ud(self) -> float:
+        """Return the most recent non-stale side camera world UD estimate, or None."""
+        now = time.time()
+        staleness = FusionEnums.SIDE_CAMERA_STALENESS.value
+        left_fresh = (now - self._left_last_seen) < staleness if self._left_last_seen > 0 else False
+        right_fresh = (now - self._right_last_seen) < staleness if self._right_last_seen > 0 else False
+
+        if left_fresh and right_fresh:
+            if self._left_last_seen >= self._right_last_seen:
+                return self._left_world_ud
+            return self._right_world_ud
+        elif left_fresh:
+            return self._left_world_ud
+        elif right_fresh:
+            return self._right_world_ud
         return None
 
     def get_best_side_camera(self) -> str:
@@ -901,9 +925,15 @@ class MotionTrack(MQTTClient):
             else:
                 fov = CameraEnum.CAMERA_HEAD_FOV_Y.value
         elif camera == CameraEnum.CAMERA_RIGHT.value:
-            fov = CameraEnum.CAMERA_RIGHT_FOV.value
+            if axis == ServoEnum.X_AXIS.value:
+                fov = CameraEnum.CAMERA_RIGHT_FOV.value
+            else:
+                fov = CameraEnum.CAMERA_RIGHT_FOV_Y.value
         elif camera == CameraEnum.CAMERA_LEFT.value:
-            fov = CameraEnum.CAMERA_LEFT_FOV.value
+            if axis == ServoEnum.X_AXIS.value:
+                fov = CameraEnum.CAMERA_LEFT_FOV.value
+            else:
+                fov = CameraEnum.CAMERA_LEFT_FOV_Y.value
         else:
             fov = 54.0
 
@@ -947,11 +977,16 @@ class MotionTrack(MQTTClient):
             else:
                 camera_world = pitch
         elif camera == CameraEnum.CAMERA_LEFT.value:
-            # Side cameras are fixed to the ceiling mount — they don't rotate with the body.
-            # Use FK-space yaw (0 = forward), not servo-space, so the IK interprets it correctly.
-            camera_world = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
+            # Side cameras are fixed — they don't rotate with the body.
+            if axis == ServoEnum.X_AXIS.value:
+                camera_world = MotionProfile.CAMERA_LEFT_MOUNTING_OFFSET.value
+            else:
+                camera_world = MotionProfile.CAMERA_LEFT_MOUNTING_PITCH.value
         elif camera == CameraEnum.CAMERA_RIGHT.value:
-            camera_world = MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
+            if axis == ServoEnum.X_AXIS.value:
+                camera_world = MotionProfile.CAMERA_RIGHT_MOUNTING_OFFSET.value
+            else:
+                camera_world = MotionProfile.CAMERA_RIGHT_MOUNTING_PITCH.value
         else:
             camera_world = 0.0
 
@@ -1412,54 +1447,27 @@ class MotionTrack(MQTTClient):
             return
         self._side_drive_last_send = now
 
-        # Side cameras can't measure pitch — use last head camera value if recent,
-        # otherwise default to mounting-appropriate downward pitch.
-        # Using FK pitch here creates a positive feedback loop (runaway to 180°).
-        # Short timeout (2s): after body rotates, old head camera pitch is wrong
-        # for the new body orientation and causes IK to produce wild body_lr targets.
+        # UD pitch: use side camera estimate if available, otherwise last head
+        # value, otherwise default pitch. Side cameras give a rough but useful
+        # pitch from the person's Y-position in the fisheye frame — far better
+        # than a blind sweep for initial acquisition.
+        side_ud = self._fusion.get_best_side_world_ud()
         head_ud_age = now - self._world_ud_time if self._world_ud_time > 0 else float('inf')
-        if self._world_ud is not None and head_ud_age < 2.0:
+        if side_ud is not None:
+            # Side camera has a UD estimate — use it directly
+            world_ud = side_ud
+            self._ud_search_active = False
+            self.logger.debug(f"SIDE_DRIVE: using side camera UD estimate {side_ud:.1f}")
+        elif self._world_ud is not None and head_ud_age < 2.0:
             world_ud = self._world_ud
             self._ud_search_active = False
         else:
-            # No recent head camera pitch data — start UD search sweep
-            # to find the person the side cameras know is there
-            if not self._ud_search_active:
-                if head_ud_age > MotionProfile.UD_SEARCH_START_DELAY.value:
-                    self._ud_search_active = True
-                    self._ud_search_start_time = time.time()
-                    self._ud_search_origin = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
-                    self._ud_search_pitch = self._ud_search_origin
-                    self._ud_search_direction = -1  # start by looking down
-                    # Reset stale world angles so EMA initializes fresh
-                    # when head camera re-acquires after sweep
-                    self._world_ud = None
-                    self._world_lr = None
-                    self.logger.info("UD search sweep started — world angles reset for fresh acquisition")
-                world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
-            else:
-                # Sweep timeout — person is likely occluded, back off
-                if time.time() - self._ud_search_start_time > MotionProfile.UD_SEARCH_MAX_DURATION.value:
-                    self.logger.info("UD search sweep timed out — triggering occlusion backoff")
-                    self._ud_search_active = False
-                    self._side_drive_backoff_until = time.time() + 5.0
-                    world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
-                else:
-                    # Velocity gate: only advance when head UD servo has nearly
-                    # settled from the previous step (prevents motion blur)
-                    can_advance = True
-                    if self.head_UD_name in self._estimators:
-                        ud_vel = abs(self._estimators[self.head_UD_name].velocity)
-                        if ud_vel > MotionProfile.UD_SEARCH_VELOCITY_GATE.value:
-                            can_advance = False
-                            self.logger.debug(f"UD_SWEEP: waiting for settle (vel={ud_vel:.1f})")
-                    if can_advance:
-                        self._ud_search_pitch += self._ud_search_direction * MotionProfile.UD_SEARCH_SWEEP_SPEED.value
-                    sweep_range = MotionProfile.UD_SEARCH_SWEEP_RANGE.value
-                    if abs(self._ud_search_pitch - self._ud_search_origin) > sweep_range:
-                        self._ud_search_direction *= -1
-                        self._ud_search_pitch = self._ud_search_origin + self._ud_search_direction * sweep_range
-                    world_ud = self._ud_search_pitch
+            # No side UD and no recent head data — fall back to default pitch.
+            # Reset stale world angles so EMA initializes fresh on re-acquisition.
+            if self._world_ud is not None:
+                self._world_ud = None
+                self._world_lr = None
+            world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
         self.logger.debug(
             f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")
@@ -1784,15 +1792,21 @@ class MotionTrack(MQTTClient):
                         f"ROOM_ROSTER publish: count={summary['count']} "
                         f"arrivals={arrivals} departures={departures}")
 
-        # Side cameras: always record world angle in fusion state (even during head tracking)
+        # Side cameras: record both LR and UD world angles in fusion state.
+        # UD from side cameras is a rough estimate (fisheye distortion) but
+        # far better than the blind sweep for initial head pitch acquisition.
         if camera in (self.left_camera, self.right_camera):
             bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
             if bbox:
                 side_world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
+                side_world_ud = self._pixel_to_world_angle(bbox, camera, ServoEnum.Y_AXIS.value)
                 bbox_cx = (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2
-                self.logger.debug(f"Side raw: {camera} bbox_cx={bbox_cx:.0f} raw_world_lr={side_world_lr:.1f}")
+                bbox_cy = (bbox.get('y1', 0) + bbox.get('y2', 0)) / 2
+                self.logger.debug(f"Side raw: {camera} bbox_cx={bbox_cx:.0f} bbox_cy={bbox_cy:.0f} "
+                                  f"raw_world_lr={side_world_lr:.1f} raw_world_ud={side_world_ud:.1f}")
                 self._fusion.update_side_detection(camera, side_world_lr,
-                                                    target_data.get(self.count, 0))
+                                                    target_data.get(self.count, 0),
+                                                    world_ud=side_world_ud)
 
         # Head camera: full tracking with world-space angles
         if camera == self.main_camera:
