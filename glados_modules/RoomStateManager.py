@@ -127,17 +127,27 @@ class RoomStateManager:
         score = detection.get("confidence", 0.0)
 
         # Pose keypoints: skeleton confirms person shape.
-        # Average keypoint confidence distinguishes real people (avg ~0.7)
-        # from phantoms where the pose model hallucinates on clutter (avg ~0.35).
+        # Only use the 17 core COCO body keypoints (Nose through Right Ankle)
+        # for quality assessment. The 133-keypoint extended model includes face
+        # mesh, hand, and foot points that are noisy at distance and dilute the
+        # average — even real people at 10ft average only 0.31 on all 133 points.
+        # Core body keypoints are more reliable (real ~0.6+, phantom ~0.35).
+        _CORE_BODY_KPS = {
+            "Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear",
+            "Left Shoulder", "Right Shoulder", "Left Elbow", "Right Elbow",
+            "Left Wrist", "Right Wrist", "Left Hip", "Right Hip",
+            "Left Knee", "Right Knee", "Left Ankle", "Right Ankle",
+        }
         pose = detection.get("pose", {})
         if pose:
-            kp_confs = [kp.get("confidence", 0) for kp in pose.values()
-                        if isinstance(kp, dict) and kp.get("confidence", 0) >= 0.3]
-            visible_kps = len(kp_confs)
-            avg_kp_conf = sum(kp_confs) / len(kp_confs) if kp_confs else 0.0
-            if visible_kps >= 5 and avg_kp_conf >= 0.5:
+            core_confs = [kp.get("confidence", 0) for name, kp in pose.items()
+                          if isinstance(kp, dict) and name in _CORE_BODY_KPS
+                          and kp.get("confidence", 0) >= 0.3]
+            visible_kps = len(core_confs)
+            avg_kp_conf = sum(core_confs) / len(core_confs) if core_confs else 0.0
+            if visible_kps >= 5 and avg_kp_conf >= 0.45:
                 score += 0.15
-            elif visible_kps >= 2 and avg_kp_conf >= 0.5:
+            elif visible_kps >= 2 and avg_kp_conf >= 0.45:
                 score += 0.08
 
         # Face: detection confirms a face exists in the bbox
