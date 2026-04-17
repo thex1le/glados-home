@@ -405,6 +405,7 @@ class VisionTracker(MQTTClient):
         sight_results: Dict[str, Any] = msg.get(self.results_key, {})
         if self.target in sight_results:
             with self._lock:
+                passed_gate = False
                 for p in sight_results[self.target][self.objects_key]:
                     # Use composite confidence (YOLO + pose + face) for gating.
                     # All cameras run pose estimation, so pose-confirmed detections
@@ -414,6 +415,7 @@ class VisionTracker(MQTTClient):
                     c = RoomStateManager.compute_frame_composite(p)
                     cf_score = MotionProfile.TARGET_MIN_CONFIDENCE.value
                     if c >= cf_score:
+                        passed_gate = True
                         self.logger.debug(f"Confidence of {c} found for {self.target}")
                         # Update response_map with current sight results
                         self.response_map[camera] = sight_results
@@ -454,6 +456,12 @@ class VisionTracker(MQTTClient):
                                 )
                         else:
                             self.logger.debug("Skipping update as last message was recently sent")
+                # Clear stale data when no detection passes the composite gate.
+                # Without this, track_loop replays the old good detection on every
+                # frame, resetting the miss counter and preventing fusion from
+                # transitioning to side_only for up to FROZEN_ANGLE_TIMEOUT seconds.
+                if not passed_gate and camera in self.response_map:
+                    del self.response_map[camera]
 
     def get_vision_map(self) -> Dict[Any, Any]:
         """Retrieve the latest vision response messages.
