@@ -564,7 +564,7 @@ class MotionProfile(Enum):
     SACCADE_COOLDOWN_DIVISOR = 30.0    # cooldown = head_delta / this (1s per 30°)
     SACCADE_COOLDOWN_MAX = 2.0         # max cooldown duration in seconds
     # Minimum confidence for a detection to be considered a tracking target
-    TARGET_MIN_CONFIDENCE = 0.40
+    TARGET_MIN_CONFIDENCE = 0.50
     # Separate UD smoothing — vertical is noisier than horizontal
     WORLD_SMOOTH_ALPHA_UD = 0.55   # UD-specific EMA (higher = more smoothing, LR stays at 0.4)
     # UD search sweep when side cameras see someone but head camera can't find them
