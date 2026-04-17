@@ -145,9 +145,13 @@ class RoomStateManager:
                           and kp.get("confidence", 0) >= 0.3]
             visible_kps = len(core_confs)
             avg_kp_conf = sum(core_confs) / len(core_confs) if core_confs else 0.0
-            if visible_kps >= 5 and avg_kp_conf >= 0.35:
+            # Only grant pose bonus when YOLO confidence is >= 0.40.
+            # Below that, the pose model hallucinates skeletons on clutter
+            # (workbench tools at YOLO 0.35 get 87+ keypoints fitted to noise).
+            yolo_conf = detection.get("confidence", 0.0)
+            if visible_kps >= 5 and avg_kp_conf >= 0.35 and yolo_conf >= 0.40:
                 score += 0.15
-            elif visible_kps >= 2 and avg_kp_conf >= 0.35:
+            elif visible_kps >= 2 and avg_kp_conf >= 0.35 and yolo_conf >= 0.40:
                 score += 0.08
 
         # Face: detection confirms a face exists in the bbox

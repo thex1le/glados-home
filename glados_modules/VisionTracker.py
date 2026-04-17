@@ -1810,11 +1810,30 @@ class MotionTrack(MQTTClient):
                 self._world_lr = None
                 self._world_ud = None
 
-            # Signal head detection to fusion state machine
-            self._fusion.update_head_detection()
-            self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
-            self._ud_search_active = False  # head found target, stop UD sweep
-            self._check_occlusion_backoff(True)  # head can see — record success
+            # Only claim head_tracking if the detection is trustworthy:
+            # either high raw YOLO confidence (>= 0.50) or confirmed by a side
+            # camera seeing a person at a similar angle. Low-confidence
+            # unconfirmed detections are likely phantoms (workbench clutter at
+            # YOLO 0.35 with hallucinated pose) and should not reset the miss
+            # counter or kill the UD sweep.
+            confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
+            head_yolo = best_target.get(confidence_key, 0.0)
+            head_trustworthy = (head_yolo >= 0.50 or
+                                self._fusion.is_confirmed_by_side(
+                                    self._pixel_to_world_angle(
+                                        best_target.get(TrackingEnums.KEY_BOX.value, {}),
+                                        camera, ServoEnum.X_AXIS.value)))
+            if head_trustworthy:
+                self._fusion.update_head_detection()
+                self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
+                self._ud_search_active = False  # head found target, stop UD sweep
+                self._check_occlusion_backoff(True)  # head can see — record success
+            else:
+                self.logger.debug(
+                    f"HEAD_WEAK: yolo={head_yolo:.2f}, not side-confirmed — "
+                    f"skipping update_head_detection")
+                self._fusion.head_lost()
+                return
 
             # Check for pose data (prefer nose point over bounding box).
             # Hysteresis prevents rapid switching: once on nose, stay until 3
