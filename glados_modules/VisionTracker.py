@@ -743,11 +743,11 @@ class MotionTrack(MQTTClient):
             hit_rate = self._side_drive_head_hits / self._side_drive_head_frames
             if hit_rate < 0.2:
                 # Less than 20% of settled frames saw a person — occluded
-                self._side_drive_backoff_until = time.time() + 5.0
+                self._side_drive_backoff_until = time.time() + 2.0
                 self.logger.info(
                     f"Occlusion backoff: head saw person in "
                     f"{self._side_drive_head_hits}/{self._side_drive_head_frames} "
-                    f"settled frames ({hit_rate:.0%}), pausing side drive for 5s")
+                    f"settled frames ({hit_rate:.0%}), pausing side drive for 2s")
             # Reset counters regardless (start fresh observation window)
             self._side_drive_head_frames = 0
             self._side_drive_head_hits = 0

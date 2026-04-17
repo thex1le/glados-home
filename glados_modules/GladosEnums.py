@@ -596,7 +596,7 @@ class FusionEnums(Enum):
     STATE_HANDOFF_TO_HEAD = "handoff_to_head"
     STATE_HANDOFF_TO_SIDE = "handoff_to_side"
     HANDOFF_BLEND_DURATION = 0.5       # seconds to lerp during camera handoff
-    HANDOFF_AGREEMENT_THRESHOLD = 8.0  # degrees — cameras agree within this
+    HANDOFF_AGREEMENT_THRESHOLD = 25.0  # degrees — cameras agree within this (wide due to fisheye vs rectilinear geometry)
     SIDE_CAMERA_STALENESS = 1.0        # seconds before side detection is stale
     HEAD_CAMERA_DROPOUT_TIMEOUT = 5.0  # seconds before assuming head camera stream dropped
     CONFIRMED_SMOOTH_ALPHA = 0.3       # tighter EMA when head + side cameras agree
