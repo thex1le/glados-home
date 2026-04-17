@@ -438,30 +438,25 @@ class VisionTracker(MQTTClient):
                         self.logger.debug(
                             f"Sending Start command to track object {self.target} with a score of {c}"
                         )
-                        if self.last_message is None:
-                            self.last_message = time()
-
-                        if time() - self.last_message >= 0.5:
-                            if camera == TrackingEnums.BODY_HEAD_CAMERA.value:
-                                self.send_command(
-                                    TargetMessageBuilder.send_track_command_start(camera),
-                                    TrackingEnums.MQTT_COMMAND_TOPIC.value,
-                                )
-                            elif camera in (TrackingEnums.BODY_LEFT_CAMERA.value, TrackingEnums.BODY_RIGHT_CAMERA.value):
-                                # Side cameras always send track commands so room state stays fresh.
-                                # Servo driving is gated by side_can_drive_servos() in MotionTrack.
-                                self.send_command(
-                                    TargetMessageBuilder.send_track_command_start(camera),
-                                    TrackingEnums.MQTT_COMMAND_TOPIC.value,
-                                )
-                        else:
-                            self.logger.debug("Skipping update as last message was recently sent")
+                        break  # one passing detection is enough
                 # Clear stale data when no detection passes the composite gate.
                 # Without this, track_loop replays the old good detection on every
                 # frame, resetting the miss counter and preventing fusion from
                 # transitioning to side_only for up to FROZEN_ANGLE_TIMEOUT seconds.
                 if not passed_gate and camera in self.response_map:
                     del self.response_map[camera]
+                # Always send the track command so track_loop runs on every
+                # frame. When response_map was cleared (no passing detection),
+                # track_loop sees no data and calls head_lost() to accumulate
+                # the miss counter. Without this, head_lost() never fires and
+                # fusion stays stuck in head_tracking.
+                if self.last_message is None:
+                    self.last_message = time()
+                if time() - self.last_message >= 0.5:
+                    self.send_command(
+                        TargetMessageBuilder.send_track_command_start(camera),
+                        TrackingEnums.MQTT_COMMAND_TOPIC.value,
+                    )
 
     def get_vision_map(self) -> Dict[Any, Any]:
         """Retrieve the latest vision response messages.
