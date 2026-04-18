@@ -561,11 +561,11 @@ class MotionProfile(Enum):
     DEAD_ZONE_LR = 3.0
     DEAD_ZONE_UD = 4.0
     # Saccadic movement: fast head snap for large repositions
-    SACCADE_THRESHOLD = 10.0       # degrees — head delta above this triggers fast snap
+    SACCADE_THRESHOLD = 20.0       # degrees — head delta above this triggers fast snap
     SACCADE_SPEED = 4              # speed level for snaps (omega=11, zeta=0.78)
     # Saccadic suppression: time-based cooldown after large head moves
     SACCADE_COOLDOWN_DIVISOR = 30.0    # cooldown = head_delta / this (1s per 30°)
-    SACCADE_COOLDOWN_MAX = 2.0         # max cooldown duration in seconds
+    SACCADE_COOLDOWN_MAX = 0.8         # max cooldown duration in seconds
     # Minimum confidence for a detection to be considered a tracking target
     TARGET_MIN_CONFIDENCE = 0.50
     # Separate UD smoothing — vertical is noisier than horizontal
