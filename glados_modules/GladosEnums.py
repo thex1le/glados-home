@@ -555,7 +555,7 @@ class MotionProfile(Enum):
     CAMERA_RIGHT_MOUNTING_PITCH = 0.0
     # IK rate limiting: max degrees body targets can change per frame
     BODY_LR_MAX_STEP_DEG = 8.0   # 8 deg/frame at 20Hz = 160 deg/s, tracks body spring omega=3
-    BODY_UD_MAX_STEP_DEG = 8.0   # matched to LR for consistent body speed
+    BODY_UD_MAX_STEP_DEG = 15.0  # UD needs faster rate — side camera UD estimate drives steep pitch
     BODY_UD_MAX_STEP_DEG_URGENT = 25.0  # wider limit when head UD is near its physical limit
     # Dead zone: don't reposition for changes smaller than this (reduces fidgeting)
     DEAD_ZONE_LR = 3.0

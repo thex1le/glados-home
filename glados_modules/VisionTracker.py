@@ -1454,10 +1454,15 @@ class MotionTrack(MQTTClient):
         side_ud = self._fusion.get_best_side_world_ud()
         head_ud_age = now - self._world_ud_time if self._world_ud_time > 0 else float('inf')
         if side_ud is not None:
-            # Side camera has a UD estimate — use it directly
-            world_ud = side_ud
+            # Side camera has a UD estimate — clamp to keep servos in mid-range.
+            # The head has 77° down but only 42° up from center, plus a 22.5°
+            # camera down-tilt. Driving to extremes (-40°+) pins the servos at
+            # their pushrod limits where the head can't pick up to find faces.
+            # Clamping to [-30, +10] keeps ~15° of headroom in both directions
+            # for the head camera to refine with nose tracking.
+            world_ud = max(-30.0, min(10.0, side_ud))
             self._ud_search_active = False
-            self.logger.debug(f"SIDE_DRIVE: using side camera UD estimate {side_ud:.1f}")
+            self.logger.debug(f"SIDE_DRIVE: side UD raw={side_ud:.1f} clamped={world_ud:.1f}")
         elif self._world_ud is not None and head_ud_age < 2.0:
             world_ud = self._world_ud
             self._ud_search_active = False
