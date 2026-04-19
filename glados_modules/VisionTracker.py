@@ -1248,10 +1248,14 @@ class MotionTrack(MQTTClient):
             return
         self._side_drive_last_send = now
 
-        # UD pitch from side camera estimate or default
+        # UD pitch from side camera estimate or default.
+        # Side cameras aim at the body center (chest/lap). The face is
+        # above that by ~8 degrees for a seated person at typical distance.
+        # Apply an upward bias so the head camera sees the face, not the chest.
         side_ud = self._fusion.get_best_side_world_ud()
+        face_bias = 8.0  # degrees upward from body center to face
         if side_ud is not None:
-            world_ud = max(-38.0, min(10.0, side_ud))
+            world_ud = max(-38.0, min(10.0, side_ud + face_bias))
         else:
             world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
@@ -1603,8 +1607,10 @@ class MotionTrack(MQTTClient):
                 self._fusion.head_contributing = False
                 return
 
+            # Apply same face bias as _drive_from_room_state
+            face_bias = 8.0
             if side_ud is not None:
-                side_ud = max(-38.0, min(10.0, side_ud))
+                side_ud = max(-38.0, min(10.0, side_ud + face_bias))
             else:
                 side_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
