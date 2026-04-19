@@ -353,6 +353,10 @@ class MotionTrack(MQTTClient):
         self._nose_miss_threshold: int = 3
         # Last known positions for memory glances (face_id -> world_lr)
         self._last_known_positions: Dict[str, float] = {}
+        # Smoothed head camera refinement offset — decays toward zero when
+        # no head detection, preventing jitter from sporadic detections
+        self._refinement_lr: float = 0.0
+        self._refinement_ud: float = 0.0
 
         # Feature toggles (read from config, default to True)
         def _toggle(section: str, key: str, fallback: bool = True) -> bool:
@@ -1577,47 +1581,63 @@ class MotionTrack(MQTTClient):
 
             from glados_modules.RoomStateManager import RoomStateManager
             composite = RoomStateManager.compute_frame_composite(best_target)
-            if composite < MotionProfile.HEAD_REFINEMENT_MIN_COMPOSITE.value:
-                self._fusion.head_contributing = False
-                self._fusion.update_head_count(target_data.get(self.count, 0))
-                return
 
-            # Get tracking point (nose preferred, bbox fallback)
-            use_point = False
-            target_data_for_calc = best_target.get(TrackingEnums.KEY_BOX.value, {})
-            if TrackingEnums.KEY_POSE.value in best_target:
-                pose_data = best_target[TrackingEnums.KEY_POSE.value]
-                if self.pose_target in pose_data:
-                    nose_conf = pose_data[self.pose_target].get("confidence", 0.0)
-                    if nose_conf >= self._nose_min_confidence:
-                        target_data_for_calc = pose_data[self.pose_target]
-                        use_point = True
+            # Smoothed refinement: blend new offset when detection is good,
+            # decay toward zero when detection is absent or weak. Prevents
+            # jitter from sporadic detections toggling the offset on/off.
+            decay = 0.85  # 85% retain per frame without detection (~1s to halve at 15fps)
+            blend = 0.4   # 40% new, 60% old when detection is present
 
-            # Compute head camera world angle via FK
-            head_world_lr = self._pixel_to_world_angle(
-                target_data_for_calc, camera, ServoEnum.X_AXIS.value, point=use_point)
-            head_world_ud = self._pixel_to_world_angle(
-                target_data_for_calc, camera, ServoEnum.Y_AXIS.value, point=use_point)
-            head_world_ud -= self._eye_ud_offset
+            if composite >= MotionProfile.HEAD_REFINEMENT_MIN_COMPOSITE.value:
+                # Good detection — compute raw refinement and blend
+                use_point = False
+                target_data_for_calc = best_target.get(TrackingEnums.KEY_BOX.value, {})
+                if TrackingEnums.KEY_POSE.value in best_target:
+                    pose_data = best_target[TrackingEnums.KEY_POSE.value]
+                    if self.pose_target in pose_data:
+                        nose_conf = pose_data[self.pose_target].get("confidence", 0.0)
+                        if nose_conf >= self._nose_min_confidence:
+                            target_data_for_calc = pose_data[self.pose_target]
+                            use_point = True
 
-            # Compute refinement as delta from side base, clamped
-            refinement_lr = head_world_lr - side_lr
-            refinement_ud = head_world_ud - side_ud
-            max_lr = MotionProfile.HEAD_REFINEMENT_MAX_LR.value
-            max_ud = MotionProfile.HEAD_REFINEMENT_MAX_UD.value
-            refinement_lr = max(-max_lr, min(max_lr, refinement_lr))
-            refinement_ud = max(-max_ud, min(max_ud, refinement_ud))
+                head_world_lr = self._pixel_to_world_angle(
+                    target_data_for_calc, camera, ServoEnum.X_AXIS.value, point=use_point)
+                head_world_ud = self._pixel_to_world_angle(
+                    target_data_for_calc, camera, ServoEnum.Y_AXIS.value, point=use_point)
+                head_world_ud -= self._eye_ud_offset
 
-            final_lr = side_lr + refinement_lr
-            final_ud = side_ud + refinement_ud
+                # Raw refinement, clamped
+                raw_lr = head_world_lr - side_lr
+                raw_ud = head_world_ud - side_ud
+                max_lr = MotionProfile.HEAD_REFINEMENT_MAX_LR.value
+                max_ud = MotionProfile.HEAD_REFINEMENT_MAX_UD.value
+                raw_lr = max(-max_lr, min(max_lr, raw_lr))
+                raw_ud = max(-max_ud, min(max_ud, raw_ud))
 
-            self._fusion.head_contributing = True
-            self._fusion._head_last_seen = time.time()
+                # Blend into smoothed refinement
+                self._refinement_lr = (1 - blend) * self._refinement_lr + blend * raw_lr
+                self._refinement_ud = (1 - blend) * self._refinement_ud + blend * raw_ud
+
+                self._fusion.head_contributing = True
+                self._fusion._head_last_seen = time.time()
+            else:
+                # No good detection — decay refinement toward zero
+                self._refinement_lr *= decay
+                self._refinement_ud *= decay
+                if abs(self._refinement_lr) < 0.1:
+                    self._refinement_lr = 0.0
+                if abs(self._refinement_ud) < 0.1:
+                    self._refinement_ud = 0.0
+                self._fusion.head_contributing = abs(self._refinement_lr) > 0.1 or abs(self._refinement_ud) > 0.1
+
             self._fusion.update_head_count(target_data.get(self.count, 0))
+
+            final_lr = side_lr + self._refinement_lr
+            final_ud = side_ud + self._refinement_ud
 
             self.logger.debug(
                 f"HEAD_REFINE: side=({side_lr:.1f},{side_ud:.1f}) "
-                f"refine=({refinement_lr:.1f},{refinement_ud:.1f}) "
+                f"refine=({self._refinement_lr:.1f},{self._refinement_ud:.1f}) "
                 f"final=({final_lr:.1f},{final_ud:.1f}) comp={composite:.2f}")
 
             self._update_targets(final_lr, final_ud, trace_id=trace_id, source="head")

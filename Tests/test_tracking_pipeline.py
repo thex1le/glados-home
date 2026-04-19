@@ -72,6 +72,8 @@ def _make_motion_track():
     mt._nose_miss_count = 0
     mt._nose_min_confidence = 0.4
     mt._nose_miss_threshold = 3
+    mt._refinement_lr = 0.0
+    mt._refinement_ud = 0.0
 
     # Behavior state machine
     from glados_modules.GladosEnums import BehaviorEnums
