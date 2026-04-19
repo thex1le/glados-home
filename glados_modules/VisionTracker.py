@@ -1551,16 +1551,45 @@ class MotionTrack(MQTTClient):
                         f"arrivals={arrivals} departures={departures}")
 
         # Side cameras: record both LR and UD world angles in fusion state.
-        # UD from side cameras is a rough estimate (fisheye distortion) but
-        # far better than the blind sweep for initial head pitch acquisition.
+        # For UD, aim at the FACE (top ~30% of bbox), not the bbox center
+        # (which is chest/lap for a seated person). Use face keypoints from
+        # pose if available, otherwise bias toward top of bbox.
         if camera in (self.left_camera, self.right_camera):
             bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
             if bbox:
                 side_world_lr = self._pixel_to_world_angle(bbox, camera, ServoEnum.X_AXIS.value)
-                side_world_ud = self._pixel_to_world_angle(bbox, camera, ServoEnum.Y_AXIS.value)
+
+                # UD: prefer face keypoints from pose, fall back to top-biased bbox
+                face_y = None
+                pose = best_target.get(TrackingEnums.KEY_POSE.value, {})
+                if pose:
+                    _FACE_KPS = ("Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear")
+                    face_ys = [pose[k]["y"] for k in _FACE_KPS
+                               if k in pose and isinstance(pose[k], dict)
+                               and pose[k].get("confidence", 0) >= 0.3]
+                    if len(face_ys) >= 2:
+                        face_y = sum(face_ys) / len(face_ys)
+
+                if face_y is not None:
+                    # Use face keypoint centroid for precise UD
+                    face_point = {"x": (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2,
+                                  "y": face_y, "confidence": 1.0}
+                    side_world_ud = self._pixel_to_world_angle(
+                        face_point, camera, ServoEnum.Y_AXIS.value, point=True)
+                else:
+                    # Bias toward top 30% of bbox (face region)
+                    y1 = bbox.get('y1', 0)
+                    y2 = bbox.get('y2', 0)
+                    face_biased_bbox = dict(bbox)
+                    face_biased_bbox['y2'] = y1 + (y2 - y1) * 0.6  # shrink bbox to upper 60%
+                    side_world_ud = self._pixel_to_world_angle(
+                        face_biased_bbox, camera, ServoEnum.Y_AXIS.value)
+
                 bbox_cx = (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2
                 bbox_cy = (bbox.get('y1', 0) + bbox.get('y2', 0)) / 2
+                face_y_str = f"{face_y:.0f}" if face_y is not None else "N/A"
                 self.logger.debug(f"Side raw: {camera} bbox_cx={bbox_cx:.0f} bbox_cy={bbox_cy:.0f} "
+                                  f"face_y={face_y_str} "
                                   f"raw_world_lr={side_world_lr:.1f} raw_world_ud={side_world_ud:.1f}")
                 self._fusion.update_side_detection(camera, side_world_lr,
                                                     target_data.get(self.count, 0),
