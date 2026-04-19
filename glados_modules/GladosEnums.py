@@ -582,7 +582,7 @@ class MotionProfile(Enum):
     # Head camera refinement: clamped offset added to side camera base position
     HEAD_REFINEMENT_MAX_LR = 10.0    # max degrees of LR refinement from head camera
     HEAD_REFINEMENT_MAX_UD = 8.0     # max degrees of UD refinement from head camera
-    HEAD_REFINEMENT_MIN_COMPOSITE = 0.50  # min composite confidence for head to contribute
+    HEAD_REFINEMENT_MIN_COMPOSITE = 0.35  # min composite confidence for head to contribute
     # Pose-guided correction: use visible keypoints to steer toward face
     POSE_CORRECTION_SCALE_UD = 8.0   # max degrees of UD correction from partial body
     POSE_CORRECTION_SCALE_LR = 5.0   # max degrees of LR correction from partial body
