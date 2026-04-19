@@ -1589,16 +1589,30 @@ class MotionTrack(MQTTClient):
             blend = 0.4   # 40% new, 60% old when detection is present
 
             if composite >= MotionProfile.HEAD_REFINEMENT_MIN_COMPOSITE.value:
-                # Good detection — compute raw refinement and blend
+                # Good detection — compute raw refinement and blend.
+                # Use centroid of visible face keypoints (more stable than
+                # single nose point). Falls back to bbox center if no face.
+                _FACE_KPS = ("Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear")
                 use_point = False
                 target_data_for_calc = best_target.get(TrackingEnums.KEY_BOX.value, {})
                 if TrackingEnums.KEY_POSE.value in best_target:
                     pose_data = best_target[TrackingEnums.KEY_POSE.value]
-                    if self.pose_target in pose_data:
-                        nose_conf = pose_data[self.pose_target].get("confidence", 0.0)
-                        if nose_conf >= self._nose_min_confidence:
-                            target_data_for_calc = pose_data[self.pose_target]
-                            use_point = True
+                    face_xs = []
+                    face_ys = []
+                    for kp_name in _FACE_KPS:
+                        if kp_name in pose_data:
+                            kp = pose_data[kp_name]
+                            if isinstance(kp, dict) and kp.get("confidence", 0) >= 0.3:
+                                face_xs.append(kp["x"])
+                                face_ys.append(kp["y"])
+                    if len(face_xs) >= 2:
+                        # Centroid of visible face keypoints
+                        target_data_for_calc = {
+                            "x": sum(face_xs) / len(face_xs),
+                            "y": sum(face_ys) / len(face_ys),
+                            "confidence": composite,
+                        }
+                        use_point = True
 
                 head_world_lr = self._pixel_to_world_angle(
                     target_data_for_calc, camera, ServoEnum.X_AXIS.value, point=use_point)
