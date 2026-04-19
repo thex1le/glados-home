@@ -1251,7 +1251,7 @@ class MotionTrack(MQTTClient):
         # UD pitch from side camera estimate or default
         side_ud = self._fusion.get_best_side_world_ud()
         if side_ud is not None:
-            world_ud = max(-35.0, min(10.0, side_ud))
+            world_ud = max(-38.0, min(10.0, side_ud))
         else:
             world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
@@ -1604,7 +1604,7 @@ class MotionTrack(MQTTClient):
                 return
 
             if side_ud is not None:
-                side_ud = max(-35.0, min(10.0, side_ud))
+                side_ud = max(-38.0, min(10.0, side_ud))
             else:
                 side_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
