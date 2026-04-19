@@ -827,11 +827,12 @@ class CameraEnum(Enum):
     CAMERA_RIGHT_FLIP = f"{CAMERA_RIGHT}_flip"
     CAMERA_HEAD_FOV_X = 54
     CAMERA_HEAD_FOV_Y = 41
-    CAMERA_RIGHT_FOV = 160
-    CAMERA_LEFT_FOV = 160
-    # Vertical FOV derived from horizontal FOV and 4:3 aspect ratio (equidistant fisheye)
-    CAMERA_RIGHT_FOV_Y = 120
-    CAMERA_LEFT_FOV_Y = 120
+    CAMERA_RIGHT_FOV = 128      # horizontal FOV (160° diagonal on 4:3 OV5647 sensor)
+    CAMERA_LEFT_FOV = 128       # horizontal FOV (160° diagonal on 4:3 OV5647 sensor)
+    # Vertical FOV — 160° is likely diagonal for fisheye, giving ~96° vertical
+    # on 4:3 sensor (diagonal × 3/5). Previous 120° over-estimated pitch angles.
+    CAMERA_RIGHT_FOV_Y = 96
+    CAMERA_LEFT_FOV_Y = 96
     X_RESOLUTION = 'x'
     Y_RESOLUTION = 'y'
     # Camera FPS telemetry (published by Camera process, consumed by dashboard)
