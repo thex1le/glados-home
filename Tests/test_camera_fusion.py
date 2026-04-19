@@ -1,4 +1,4 @@
-"""Tests for CameraFusionState: state machine transitions and handoff blending."""
+"""Tests for CameraFusionState: simplified side-authority fusion with head refinement."""
 
 import time
 import pytest
@@ -9,79 +9,30 @@ from glados_modules.GladosEnums import CameraEnum, FusionEnums, ServoEnum
 
 
 class TestCameraFusionState:
-    """Unit tests for the camera fusion state machine."""
+    """Unit tests for the camera fusion state."""
 
     def test_initial_state_is_side_only(self):
+        """New fusion starts in side_only with head not contributing."""
         fusion = CameraFusionState()
         assert fusion.state == FusionEnums.STATE_SIDE_ONLY.value
+        assert not fusion.head_contributing
+
+    def test_head_contributing_default_false(self):
+        """head_contributing defaults to False on construction."""
+        fusion = CameraFusionState()
+        assert fusion.head_contributing is False
+
+    def test_head_contributing_changes_state(self):
+        """Setting head_contributing=True switches state to refinement."""
+        fusion = CameraFusionState()
+        fusion.head_contributing = True
+        assert fusion.state == FusionEnums.STATE_REFINEMENT.value
 
     def test_side_detection_updates_world_angle(self):
         fusion = CameraFusionState()
         fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 35.0, 1)
         assert fusion._left_world_lr == 35.0
         assert fusion._left_count == 1
-
-    def test_head_detection_without_side_goes_straight_to_head_tracking(self):
-        """If no side camera data exists, skip handoff blend entirely."""
-        fusion = CameraFusionState()
-        fusion.update_head_detection()
-        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
-
-    def test_head_detection_goes_straight_to_head_tracking(self):
-        """Head detection should go directly to HEAD_TRACKING to stop side drives."""
-        fusion = CameraFusionState()
-        fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 40.0, 1)
-        fusion.update_head_detection()
-        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
-
-    def test_head_detection_blocks_side_drives(self):
-        """After head detection, side cameras should not drive servos."""
-        fusion = CameraFusionState()
-        fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 40.0, 1)
-        fusion.update_head_detection()
-        assert not fusion.side_can_drive_servos()
-
-    def test_handoff_blend_completes_to_head(self):
-        """After blend duration, should return head's angle and transition to HEAD_TRACKING."""
-        fusion = CameraFusionState()
-        fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 40.0, 1)
-        fusion.update_head_detection()
-        # Fast-forward past blend duration
-        fusion._handoff_start_time = time.time() - FusionEnums.HANDOFF_BLEND_DURATION.value - 0.1
-        blended = fusion.get_blended_world_lr(90.0)
-        assert blended == 90.0
-        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
-
-    def test_head_lost_with_side_detection_triggers_handoff_to_side(self):
-        fusion = CameraFusionState()
-        fusion.update_side_detection(CameraEnum.CAMERA_LEFT.value, 35.0, 1)
-        fusion.update_head_detection()
-        # Fast-forward to HEAD_TRACKING
-        fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        # Requires 5 consecutive misses before transitioning
-        for i in range(4):
-            fusion.head_lost()
-            assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value  # still holding
-        fusion.head_lost()  # 5th miss
-        assert fusion.state == FusionEnums.STATE_HANDOFF_TO_SIDE.value  # now transitions
-
-    def test_head_lost_without_side_goes_to_side_only(self):
-        fusion = CameraFusionState()
-        fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        # Requires 5 consecutive misses
-        for _ in range(5):
-            fusion.head_lost()
-        assert fusion.state == FusionEnums.STATE_SIDE_ONLY.value
-
-    def test_head_lost_resets_on_detection(self):
-        """A successful detection resets the miss counter."""
-        fusion = CameraFusionState()
-        fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        for _ in range(3):
-            fusion.head_lost()  # 3 misses
-        fusion.update_head_detection()  # resets counter
-        fusion.head_lost()  # miss 1 again
-        assert fusion.state == FusionEnums.STATE_HEAD_TRACKING.value  # still holding
 
     def test_stale_side_detection_ignored(self):
         """Side detection older than staleness threshold returns None."""
@@ -90,15 +41,6 @@ class TestCameraFusionState:
         # Make it stale
         fusion._left_last_seen = time.time() - FusionEnums.SIDE_CAMERA_STALENESS.value - 1.0
         assert fusion.get_best_side_world_lr() is None
-
-    def test_side_can_drive_servos_in_side_only(self):
-        fusion = CameraFusionState()
-        assert fusion.side_can_drive_servos()
-
-    def test_side_cannot_drive_servos_during_head_tracking(self):
-        fusion = CameraFusionState()
-        fusion.state = FusionEnums.STATE_HEAD_TRACKING.value
-        assert not fusion.side_can_drive_servos()
 
     def test_best_side_uses_most_recent(self):
         """When both side cameras have fresh data, use the more recent one."""

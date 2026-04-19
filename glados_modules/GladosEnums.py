@@ -579,6 +579,10 @@ class MotionProfile(Enum):
     FROZEN_ANGLE_TIMEOUT = 5.0     # seconds — force world angle re-init if stale this long
     # Body UD urgency: head UD within this margin of its limit triggers faster body follow
     BODY_UD_URGENCY_MARGIN = 15.0
+    # Head camera refinement: clamped offset added to side camera base position
+    HEAD_REFINEMENT_MAX_LR = 10.0    # max degrees of LR refinement from head camera
+    HEAD_REFINEMENT_MAX_UD = 8.0     # max degrees of UD refinement from head camera
+    HEAD_REFINEMENT_MIN_COMPOSITE = 0.50  # min composite confidence for head to contribute
     # Pose-guided correction: use visible keypoints to steer toward face
     POSE_CORRECTION_SCALE_UD = 8.0   # max degrees of UD correction from partial body
     POSE_CORRECTION_SCALE_LR = 5.0   # max degrees of LR correction from partial body
@@ -598,6 +602,7 @@ class FusionEnums(Enum):
     STATE_SIDE_ONLY = "side_only"
     STATE_HANDOFF_TO_HEAD = "handoff_to_head"
     STATE_HANDOFF_TO_SIDE = "handoff_to_side"
+    STATE_REFINEMENT = "refinement"
     HANDOFF_BLEND_DURATION = 0.5       # seconds to lerp during camera handoff
     HANDOFF_AGREEMENT_THRESHOLD = 25.0  # degrees — cameras agree within this (wide due to fisheye vs rectilinear geometry)
     SIDE_CAMERA_STALENESS = 1.0        # seconds before side detection is stale

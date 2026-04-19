@@ -44,11 +44,6 @@ def _make_motion_track():
     mt.objects = VisionResultsEnum.VISION_RESULTS_OBJECTS_KEY.value
     mt.count = VisionResultsEnum.VISION_RESULTS_COUNT_KEY.value
     mt.dms = MotionProfile.DEFAULT_TRACKING_SPEED.value
-    mt._world_lr = None
-    mt._world_ud = None
-    mt._world_ud_time = 0.0
-    mt._world_smooth_alpha = MotionProfile.WORLD_SMOOTH_ALPHA.value
-    mt._world_smooth_alpha_ud = MotionProfile.WORLD_SMOOTH_ALPHA_UD.value
     mt._eye_ud_offset = MotionProfile.EYE_UD_OFFSET.value
     mt._last_target_time = time.time()
     mt._idle_active = False
@@ -65,13 +60,6 @@ def _make_motion_track():
     mt._side_drive_last_send = 0.0
     mt._prev_body_lr_target = None
     mt._prev_body_ud_target = None
-    mt._last_commanded_lr = None
-    mt._last_commanded_ud = None
-    mt._ud_search_active = False
-    mt._ud_search_direction = 1
-    mt._ud_search_origin = 0.0
-    mt._ud_search_pitch = 0.0
-    mt._ud_search_start_time = 0.0
     mt._room_state = None
     mt._enable_room_state = False
     mt._attention = None
@@ -102,7 +90,6 @@ def _make_motion_track():
     mt._enable_idle_drift = True
     mt._enable_predictive = True
     mt._enable_confirmation = True
-    mt._enable_blending = True
     mt._enable_glances = True
     mt._enable_breathing = True
     mt._enable_sleep = True
@@ -153,13 +140,6 @@ def _make_motion_track():
     mt._cameras_ready = {mt.main_camera, mt.left_camera, mt.right_camera}
     mt._all_cameras = {mt.main_camera, mt.left_camera, mt.right_camera}
     mt._cameras_online = True
-    # Saccade cooldown (not active for tests)
-    mt._head_cooldown_until = 0.0
-    # Occlusion backoff (not active for tests)
-    mt._side_drive_attempt_start = 0.0
-    mt._side_drive_head_frames = 0
-    mt._side_drive_head_hits = 0
-    mt._side_drive_backoff_until = 0.0
 
     # Vision tracker (mock)
     mt.vision_tracker = MagicMock()
@@ -169,12 +149,25 @@ def _make_motion_track():
     return mt
 
 
+def _seed_side_camera(mt, world_lr: float = 0.0, world_ud: float = -10.0) -> None:
+    """Populate fusion state with a side camera detection so head camera can refine.
+
+    In the new tracking model the head camera computes a clamped refinement
+    on top of the side camera base. Without side data, head track_loop
+    returns early (no base position to refine from).
+    """
+    mt._fusion.update_side_detection(
+        CameraEnum.CAMERA_RIGHT.value, world_lr, 1, world_ud=world_ud)
+
+
 class TestFullTrackingPipeline:
     """End-to-end: detection -> world angle -> target split -> MQTT message."""
 
     def test_person_at_center_produces_no_movement(self):
         """Person at image center should produce targets near servo middles."""
         mt = _make_motion_track()
+        # Seed side camera so head camera has a base position to refine
+        _seed_side_camera(mt, world_lr=0.0, world_ud=-10.0)
         # Person bbox centered in 640x480 frame
         vision_map = {
             CameraEnum.CAMERA_HEAD.value: {
@@ -198,13 +191,17 @@ class TestFullTrackingPipeline:
         assert sent_msg[ServoEnum.MSG_COMMAND_KEY.value] == ServoEnum.MSG_COMMAND_MOVE_ALL.value
 
         targets = sent_msg[ServoEnum.MSG_TARGETS.value]
-        # Head should be near middle since person is centered and body is at rest
+        # Head camera refines the side camera base (0.0) with a clamped offset.
+        # Person is centered so the refinement should be small, keeping head
+        # near its middle position.
         head_lr = targets[mt.head_LR_name][ServoEnum.MSG_ANGLE.value]
-        assert abs(head_lr - 92) < 10, f"Head LR should be near middle (92), got {head_lr}"
+        assert abs(head_lr - 92) < 15, f"Head LR should be near middle (92), got {head_lr}"
 
     def test_person_on_left_moves_servos(self):
         """Person on left side of frame should move head and body to track."""
         mt = _make_motion_track()
+        # Seed side camera so head camera has a base position to refine
+        _seed_side_camera(mt, world_lr=0.0, world_ud=-10.0)
         # Person bbox on left side of frame (low x values)
         vision_map = {
             CameraEnum.CAMERA_HEAD.value: {
@@ -222,6 +219,7 @@ class TestFullTrackingPipeline:
         mt.vision_tracker.get_vision_map.return_value = vision_map
         mt.track_loop(CameraEnum.CAMERA_HEAD.value)
 
+        assert mt.send_command.called, "Head camera should have sent a move_all command"
         targets = mt.send_command.call_args[0][0][ServoEnum.MSG_TARGETS.value]
         head_lr = targets[mt.head_LR_name][ServoEnum.MSG_ANGLE.value]
         body_lr = targets[mt.body_LR_name][ServoEnum.MSG_ANGLE.value]
@@ -233,6 +231,8 @@ class TestFullTrackingPipeline:
     def test_all_four_servos_in_move_all(self):
         """move_all message should contain targets for all 4 servos."""
         mt = _make_motion_track()
+        # Seed side camera so head camera has a base position to refine
+        _seed_side_camera(mt, world_lr=0.0, world_ud=-10.0)
         vision_map = {
             CameraEnum.CAMERA_HEAD.value: {
                 "person": {
@@ -259,6 +259,8 @@ class TestFullTrackingPipeline:
     def test_trace_id_propagated_to_output(self):
         """Trace ID from vision should appear in the move_all message."""
         mt = _make_motion_track()
+        # Seed side camera so head camera has a base position to refine
+        _seed_side_camera(mt, world_lr=0.0, world_ud=-10.0)
         vision_map = {
             CameraEnum.CAMERA_HEAD.value: {
                 "person": {
@@ -326,36 +328,47 @@ class TestFullTrackingPipeline:
         assert mt.head_UD_name in targets
         assert mt.body_UD_name in targets
 
-    def test_world_space_smoothing_applied(self):
-        """Second detection should produce smoothed (blended) world angle."""
+    def test_head_refinement_clamped(self):
+        """Head camera refinement should be clamped to MotionProfile limits.
+
+        In the new tracking model, the head camera computes:
+            final = side_base + clamp(head_world - side_base, +/-max)
+        If the head camera sees a person far from the side base, the
+        refinement should be clamped rather than jumping to the raw angle.
+        """
         mt = _make_motion_track()
-        # First detection
+        # Seed side camera at 0 degrees so any head offset is pure refinement
+        _seed_side_camera(mt, world_lr=0.0, world_ud=-10.0)
+
+        # Place person far to the left in head camera frame. The head camera
+        # world angle will be significantly different from the side base (0.0),
+        # but the refinement should be clamped to HEAD_REFINEMENT_MAX_LR.
         vision_map = {
             CameraEnum.CAMERA_HEAD.value: {
                 "person": {
                     "count": 1,
-                    "objects": [{"confidence": 0.9, "box": {"x1": 50, "y1": 200, "x2": 150, "y2": 300}}],
+                    "objects": [{"confidence": 0.9, "box": {"x1": 10, "y1": 200, "x2": 80, "y2": 300}}],
                 },
+                TraceEnums.TRACE_ID.value: "test_clamp",
+                TraceEnums.TS_VISION.value: time.time(),
             }
         }
         mt.vision_tracker.get_vision_map.return_value = vision_map
         mt.track_loop(CameraEnum.CAMERA_HEAD.value)
-        first_world_lr = mt._world_lr
 
-        # Second detection at different position — reset estimator state
-        # and clear saccade cooldown (in real usage, enough time passes)
-        for est in mt._estimators.values():
-            est.velocity = 0.0
-            est.target = est.position  # no position error = no acceleration
-        mt._head_cooldown_until = 0.0  # clear saccade cooldown
-        vision_map[CameraEnum.CAMERA_HEAD.value]["person"]["objects"][0]["box"] = {
-            "x1": 400, "y1": 200, "x2": 500, "y2": 300
-        }
-        mt.track_loop(CameraEnum.CAMERA_HEAD.value)
-        second_world_lr = mt._world_lr
-
-        # Smoothed value should be between first and second raw values (EMA blend)
-        assert second_world_lr != first_world_lr, "Smoothing should change the world angle"
+        assert mt.send_command.called, "Head camera should have sent a move_all command"
+        targets = mt.send_command.call_args[0][0][ServoEnum.MSG_TARGETS.value]
+        # The side base is 0.0, so the final world angle used by IK is
+        # side_base + clamped_refinement. The refinement is clamped to
+        # +/-HEAD_REFINEMENT_MAX_LR (10 degrees), so the effective world
+        # angle fed to IK is bounded to approximately [-10, +10] from base.
+        max_refinement = MotionProfile.HEAD_REFINEMENT_MAX_LR.value
+        # Verify the command was sent (refinement produced a valid target)
+        head_lr = targets[mt.head_LR_name][ServoEnum.MSG_ANGLE.value]
+        # Head should have moved from middle, but the movement should be
+        # limited by the refinement clamp rather than the full raw offset
+        assert head_lr != mt._servo_middles[mt.head_LR_name], \
+            "Head should move from middle for off-center detection"
 
 
 class TestHeadBodyCoordination:

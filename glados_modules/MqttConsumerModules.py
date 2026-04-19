@@ -14,7 +14,7 @@ from glados_modules.PipelineDebug import PipelineDebug
 from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, VisionResultsEnum, TrackingEnums,
     LoggingEnums, IMUEnums, MQTTEnums, TOFEnums, THEnums, MOXEnums,
-    SocTempEnums, MotionProfile
+    SocTempEnums
 )
 
 
@@ -395,8 +395,9 @@ class VisionTracker(MQTTClient):
         """Parse a camera message and update vision tracking data.
 
         This method extracts camera information from the message, checks for
-        the target with sufficient confidence, updates the response cache and
-        map, and sends a tracking command if necessary.
+        the target with a basic YOLO confidence floor, updates the response
+        cache and map, and sends a tracking command. Downstream track_loop
+        applies composite confidence re-filtering.
 
         Args:
             msg (Dict[str, Any]): The dictionary containing the camera message.
@@ -405,51 +406,36 @@ class VisionTracker(MQTTClient):
         sight_results: Dict[str, Any] = msg.get(self.results_key, {})
         if self.target in sight_results:
             with self._lock:
-                passed_gate = False
+                has_person = False
                 for p in sight_results[self.target][self.objects_key]:
-                    # Use composite confidence (YOLO + pose + face) for gating.
-                    # All cameras run pose estimation, so pose-confirmed detections
-                    # at low YOLO confidence pass through. Phantoms without pose
-                    # evidence are filtered by the downstream re-filter in track_loop.
-                    from glados_modules.RoomStateManager import RoomStateManager
-                    c = RoomStateManager.compute_frame_composite(p)
-                    cf_score = MotionProfile.TARGET_MIN_CONFIDENCE.value
-                    if c >= cf_score:
-                        passed_gate = True
-                        self.logger.debug(f"Confidence of {c} found for {self.target}")
-                        # Update response_map with current sight results
-                        self.response_map[camera] = sight_results
-                        current_time: float = time()
-                        last_ts: float = self.response_map[camera].get(self.ts_key, 0)
-                        if current_time - last_ts <= 0.5:
-                            self.response_map[camera][self.count] = (
-                                self.response_map[camera].get(self.count, 0) + 1
-                            )
-                        else:
-                            self.response_map[camera][self.count] = max(
-                                0, self.response_map[camera].get(self.count, 1) - 1
-                            )
-                        self.response_map[camera][self.ts_key] = current_time
-                        # Update response_cache for the camera
-                        if camera in self.response_cache:
-                            self.response_cache[camera][current_time] = sight_results
-                        else:
-                            self.response_cache[camera] = {current_time: sight_results}
-                        self.logger.debug(
-                            f"Sending Start command to track object {self.target} with a score of {c}"
+                    # Basic YOLO confidence floor — composite re-filtering
+                    # happens in track_loop for finer-grained gating.
+                    yolo_conf = p.get(self.confidence_key, 0.0)
+                    if yolo_conf >= 0.20:
+                        has_person = True
+                        break
+                if has_person:
+                    self.response_map[camera] = sight_results
+                    current_time: float = time()
+                    last_ts: float = self.response_map[camera].get(self.ts_key, 0)
+                    if current_time - last_ts <= 0.5:
+                        self.response_map[camera][self.count] = (
+                            self.response_map[camera].get(self.count, 0) + 1
                         )
-                        break  # one passing detection is enough
-                # Clear stale data when no detection passes the composite gate.
-                # Without this, track_loop replays the old good detection on every
-                # frame, resetting the miss counter and preventing fusion from
-                # transitioning to side_only for up to FROZEN_ANGLE_TIMEOUT seconds.
-                if not passed_gate and camera in self.response_map:
+                    else:
+                        self.response_map[camera][self.count] = max(
+                            0, self.response_map[camera].get(self.count, 1) - 1
+                        )
+                    self.response_map[camera][self.ts_key] = current_time
+                    if camera in self.response_cache:
+                        self.response_cache[camera][current_time] = sight_results
+                    else:
+                        self.response_cache[camera] = {current_time: sight_results}
+                    self.logger.debug(
+                        f"Person detected for {self.target} on {camera}")
+                elif camera in self.response_map:
                     del self.response_map[camera]
-                # Always send the track command so track_loop runs on every
-                # frame. When response_map was cleared (no passing detection),
-                # track_loop sees no data and calls head_lost() to accumulate
-                # the miss counter. Without this, head_lost() never fires and
-                # fusion stays stuck in head_tracking.
+                # Always send the track command so track_loop runs on every frame
                 if self.last_message is None:
                     self.last_message = time()
                 if time() - self.last_message >= 0.5:

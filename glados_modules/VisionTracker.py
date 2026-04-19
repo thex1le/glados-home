@@ -83,23 +83,18 @@ class SpringDamperEstimator:
 
 
 class CameraFusionState:
-    """Tracks which cameras see the target and manages handoff blending.
+    """Tracks side camera detections and provides base position for tracking.
 
-    State machine:
-        SIDE_ONLY -> HANDOFF_TO_HEAD -> HEAD_TRACKING -> HANDOFF_TO_SIDE -> SIDE_ONLY
-
-    Side cameras are fixed to the ceiling mount and provide absolute world-space
-    yaw angles. The head camera provides precise yaw + pitch via FK/IK. During
-    handoff between cameras, the world_lr target is linearly blended to prevent
-    jerky transitions.
+    Side cameras ALWAYS drive base position (LR + UD). The head camera
+    computes a small clamped refinement offset. No state machine —
+    side cameras are always authoritative about person position.
     """
 
     def __init__(self) -> None:
         self.logger = setup_logger(name="CameraFusionState",
                                     console_logging=LoggingEnums.LOG_LEVEL_INFO.value)
-        self.state: str = FusionEnums.STATE_SIDE_ONLY.value
+        self.head_contributing: bool = False
         self._head_last_seen: float = 0.0
-        self._head_miss_count: int = 0
         self._head_count: int = 0
         self._left_last_seen: float = 0.0
         self._right_last_seen: float = 0.0
@@ -109,11 +104,16 @@ class CameraFusionState:
         self._right_world_ud: float = None
         self._left_count: int = 0
         self._right_count: int = 0
-        self._handoff_start_time: float = 0.0
-        self._handoff_start_lr: float = 0.0
         # Angle history for predictive rotation
         self._left_angle_history: list = []
         self._right_angle_history: list = []
+
+    @property
+    def state(self) -> str:
+        """Backward-compatible state string for diagnostics and recordings."""
+        if self.head_contributing:
+            return FusionEnums.STATE_REFINEMENT.value
+        return FusionEnums.STATE_SIDE_ONLY.value
 
     def update_side_detection(self, camera: str, world_lr: float, count: int,
                               world_ud: float = None) -> None:
@@ -143,41 +143,6 @@ class CameraFusionState:
         """Record head camera person count for room-level awareness."""
         self._head_count = count
 
-    def update_head_detection(self) -> None:
-        """Signal that the head camera has a detection this frame."""
-        now = time.time()
-        old_state = self.state
-        self._head_last_seen = now
-        self._head_miss_count = 0
-        # Go directly to HEAD_TRACKING. Side cameras must stop driving immediately
-        # when the head camera has a detection — the head camera's FK-based world
-        # angles are far more accurate than the side camera's fixed-mount estimates.
-        if self.state != FusionEnums.STATE_HEAD_TRACKING.value:
-            self.state = FusionEnums.STATE_HEAD_TRACKING.value
-            self.logger.debug(f"FUSION: {old_state} -> {self.state}")
-
-    def head_lost(self) -> None:
-        """Signal that the head camera lost the target.
-
-        Requires 3 consecutive misses before transitioning back to side-only.
-        A single zero-detection frame (common with YOLO) should not reset tracking.
-        """
-        if self.state in (FusionEnums.STATE_HEAD_TRACKING.value,
-                          FusionEnums.STATE_HANDOFF_TO_HEAD.value):
-            self._head_miss_count += 1
-            if self._head_miss_count < 5:
-                self.logger.debug(f"FUSION: head_lost miss {self._head_miss_count}/5, holding {self.state}")
-                return
-            old_state = self.state
-            best_side = self.get_best_side_world_lr()
-            if best_side is not None:
-                self.state = FusionEnums.STATE_HANDOFF_TO_SIDE.value
-                self._handoff_start_time = time.time()
-            else:
-                self.state = FusionEnums.STATE_SIDE_ONLY.value
-            self._head_miss_count = 0
-            self.logger.debug(f"FUSION: head_lost {old_state} -> {self.state} (side_lr={best_side})")
-
     def get_best_side_world_lr(self) -> float:
         """Return the most recent non-stale side camera world angle, or None."""
         now = time.time()
@@ -186,7 +151,6 @@ class CameraFusionState:
         right_fresh = (now - self._right_last_seen) < staleness if self._right_last_seen > 0 else False
 
         if left_fresh and right_fresh:
-            # Both fresh — use the more recent one
             if self._left_last_seen >= self._right_last_seen:
                 return self._left_world_lr
             return self._right_world_lr
@@ -214,11 +178,7 @@ class CameraFusionState:
         return None
 
     def get_best_side_camera(self) -> str:
-        """Return the camera name that produced the best side detection, or None.
-
-        Uses the same freshness logic as get_best_side_world_lr but returns the
-        camera name string instead of the angle, for use with get_predicted_world_lr.
-        """
+        """Return the camera name that produced the best side detection, or None."""
         now = time.time()
         staleness = FusionEnums.SIDE_CAMERA_STALENESS.value
         left_fresh = (now - self._left_last_seen) < staleness if self._left_last_seen > 0 else False
@@ -234,41 +194,8 @@ class CameraFusionState:
             return CameraEnum.CAMERA_RIGHT.value
         return None
 
-    def get_blended_world_lr(self, head_world_lr: float) -> float:
-        """During handoff to head, blend from side angle to head angle.
-
-        Args:
-            head_world_lr: The head camera's computed world yaw angle.
-
-        Returns:
-            Blended world_lr (lerp from side to head over blend duration).
-        """
-        if self.state != FusionEnums.STATE_HANDOFF_TO_HEAD.value:
-            return head_world_lr
-
-        elapsed = time.time() - self._handoff_start_time
-        duration = FusionEnums.HANDOFF_BLEND_DURATION.value
-        if elapsed >= duration:
-            self.state = FusionEnums.STATE_HEAD_TRACKING.value
-            return head_world_lr
-
-        # Linear interpolation: t=0 -> side angle, t=1 -> head angle
-        t = elapsed / duration
-        return self._handoff_start_lr + t * (head_world_lr - self._handoff_start_lr)
-
     def get_predicted_world_lr(self, camera: str) -> float:
-        """Predict where the side camera target will be based on angular velocity.
-
-        Uses angle history to estimate velocity, then leads the target
-        by PREDICTION_LEAD_TIME seconds. Returns current angle if the
-        target is stationary or history is insufficient.
-
-        Args:
-            camera: Which side camera to predict for.
-
-        Returns:
-            Predicted world_lr angle.
-        """
+        """Predict where the side camera target will be based on angular velocity."""
         if camera == CameraEnum.CAMERA_LEFT.value:
             history = self._left_angle_history
             current = self._left_world_lr
@@ -297,14 +224,7 @@ class CameraFusionState:
         return latest_a + offset
 
     def is_confirmed_by_side(self, head_world_lr: float) -> bool:
-        """Check if any non-stale side camera agrees with head's world angle.
-
-        Args:
-            head_world_lr: The head camera's computed world yaw angle.
-
-        Returns:
-            True if a side camera sees a target within the agreement threshold.
-        """
+        """Check if any non-stale side camera agrees with head's world angle."""
         threshold = FusionEnums.HANDOFF_AGREEMENT_THRESHOLD.value
         best_side = self.get_best_side_world_lr()
         if best_side is None:
@@ -312,31 +232,8 @@ class CameraFusionState:
         return abs(head_world_lr - best_side) <= threshold
 
     def get_room_person_count(self) -> int:
-        """Rough estimate of total people visible across all cameras.
-
-        Uses max(head_count, left_count + right_count) to avoid
-        double-counting people in overlapping FOVs.
-        """
+        """Rough estimate of total people visible across all cameras."""
         return max(self._head_count, self._left_count + self._right_count)
-
-    def side_can_drive_servos(self) -> bool:
-        """Return True if side cameras should command servo movement.
-
-        Also transitions back to SIDE_ONLY if the head camera has gone stale
-        (e.g., RTSP stream dropped without sending a 'no target' frame).
-        """
-        if self.state in (FusionEnums.STATE_SIDE_ONLY.value,
-                          FusionEnums.STATE_HANDOFF_TO_SIDE.value):
-            return True
-
-        # Head camera stream may have dropped — force transition after staleness timeout
-        if self._head_last_seen > 0:
-            head_age = time.time() - self._head_last_seen
-            if head_age > FusionEnums.HEAD_CAMERA_DROPOUT_TIMEOUT.value:
-                self.state = FusionEnums.STATE_SIDE_ONLY.value
-                return True
-
-        return False
 
 
 class MotionTrack(MQTTClient):
@@ -420,25 +317,6 @@ class MotionTrack(MQTTClient):
         self._cameras_gate_start: float = 0.0  # set on first detection, not init
         self._cameras_gate_timeout: float = 30.0
         self._diagnostic_cache: Dict[str, Any] = {}
-        # Saccade cooldown: suppress head camera for a duration after large servo moves
-        self._head_cooldown_until: float = 0.0
-        # Occlusion backoff: if the head repeatedly fails to see anyone at a
-        # side-camera-driven angle, stop trying for a while (the person is likely
-        # occluded by furniture from the head camera's viewpoint).
-        # Uses time-based window: tracks when the head started looking and how
-        # many successes vs failures since then. Only triggers when the head has
-        # been settled (not mid-slew) long enough to give YOLO a fair chance.
-        self._side_drive_attempt_start: float = 0.0  # when side cameras last drove head
-        self._side_drive_head_frames: int = 0  # head camera frames since attempt start
-        self._side_drive_head_hits: int = 0  # frames where head saw a person
-        self._side_drive_backoff_until: float = 0.0
-
-        # World-space angle estimates (smoothed)
-        self._world_lr: float = None
-        self._world_ud: float = None
-        self._world_ud_time: float = 0.0  # timestamp of last head camera world_ud update
-        self._world_smooth_alpha: float = MotionProfile.WORLD_SMOOTH_ALPHA.value
-        self._world_smooth_alpha_ud: float = MotionProfile.WORLD_SMOOTH_ALPHA_UD.value
         self._eye_ud_offset: float = MotionProfile.EYE_UD_OFFSET.value
 
         # Idle state tracking
@@ -464,17 +342,6 @@ class MotionTrack(MQTTClient):
         self._prev_body_lr_target: float = None
         self._prev_body_ud_target: float = None
 
-        # Dead zone: skip _update_targets when world angles haven't moved enough
-        self._last_commanded_lr: float = None
-        self._last_commanded_ud: float = None
-
-        # UD search sweep: scan vertically when side cameras see someone but head can't
-        self._ud_search_active: bool = False
-        self._ud_search_direction: int = 1  # 1 = up, -1 = down
-        self._ud_search_origin: float = 0.0
-        self._ud_search_pitch: float = 0.0
-        self._ud_search_start_time: float = 0.0
-
         # Last tracked target state for multi-person selection
         self._last_tracked_world_lr: float = None
         self._last_tracked_bbox_height: float = None
@@ -497,8 +364,6 @@ class MotionTrack(MQTTClient):
                                            FeatureToggles.PREDICTIVE_ROTATION.value)
         self._enable_confirmation = _toggle(FeatureToggles.CONFIG_HEAD.value,
                                              FeatureToggles.PERIPHERAL_CONFIRMATION.value)
-        self._enable_blending = _toggle(FeatureToggles.CONFIG_HEAD.value,
-                                         FeatureToggles.HANDOFF_BLENDING.value)
         self._enable_glances = _toggle(FeatureToggles.CONFIG_HEAD.value,
                                         FeatureToggles.MEMORY_GLANCES.value)
         self._enable_breathing = _toggle(PersonalityEnums.CONFIG_HEAD.value,
@@ -567,8 +432,8 @@ class MotionTrack(MQTTClient):
         can restore it for deterministic frame-1 output.
         """
         initial_state = {
-            "smooth_lr": self._world_lr,
-            "smooth_ud": self._world_ud,
+            "smooth_lr": self._fusion.get_best_side_world_lr(),
+            "smooth_ud": self._fusion.get_best_side_world_ud(),
             "prev_body_lr_target": self._prev_body_lr_target,
             "prev_body_ud_target": self._prev_body_ud_target,
         }
@@ -621,16 +486,15 @@ class MotionTrack(MQTTClient):
             else:
                 diag["estimators"] = {}
 
-            # Saccade cooldown state
-            if hasattr(self, '_head_cooldown_until'):
-                diag["head_cooldown_remaining"] = max(0.0, round(
-                    self._head_cooldown_until - time.time(), 2))
+            diag["head_cooldown_remaining"] = 0
 
             diag["cameras_online"] = getattr(self, '_cameras_online', False)
             diag["cameras_ready"] = list(getattr(self, '_cameras_ready', set()))
             diag["fusion_state"] = self._fusion.state if hasattr(self, '_fusion') and self._fusion else ""
-            diag["world_lr"] = round(self._world_lr, 2) if getattr(self, '_world_lr', None) is not None else None
-            diag["world_ud"] = round(self._world_ud, 2) if getattr(self, '_world_ud', None) is not None else None
+            side_lr = self._fusion.get_best_side_world_lr() if hasattr(self, '_fusion') and self._fusion else None
+            side_ud = self._fusion.get_best_side_world_ud() if hasattr(self, '_fusion') and self._fusion else None
+            diag["world_lr"] = round(side_lr, 2) if side_lr is not None else None
+            diag["world_ud"] = round(side_ud, 2) if side_ud is not None else None
 
             if hasattr(self, '_attention') and self._attention:
                 diag["attention"] = self._attention.get_state()
@@ -736,45 +600,6 @@ class MotionTrack(MQTTClient):
         if servo_name in self._estimators:
             return self._estimators[servo_name].get_position()
         return self._servo_middles.get(servo_name, MotionProfile.DEFAULT_SERVO_CENTER.value)
-
-    def _check_occlusion_backoff(self, head_saw_person: bool) -> None:
-        """Track head camera success/failure and trigger backoff if occluded.
-
-        Only counts frames that arrive at least 1.5 seconds after the last
-        side-driven command, giving the servos time to physically arrive
-        before judging whether the head camera can see the person. This
-        prevents motion blur frames from being counted as occlusion failures.
-
-        After 2 seconds of settled observation with <20% hit rate across
-        at least 15 frames, triggers a 5-second backoff on side-driven
-        movement. A single phantom detection doesn't prevent the backoff
-        since the threshold is hit rate, not zero-tolerance.
-
-        Args:
-            head_saw_person: True if the head camera detected a person.
-        """
-        # Only count frames after the head has had time to settle
-        time_since_drive = time.time() - self._side_drive_attempt_start
-        if self._side_drive_attempt_start == 0 or time_since_drive < 1.5:
-            return
-
-        self._side_drive_head_frames += 1
-        if head_saw_person:
-            self._side_drive_head_hits += 1
-
-        # Need at least 15 frames (~1 second at 15 FPS) of settled observation
-        if self._side_drive_head_frames >= 15:
-            hit_rate = self._side_drive_head_hits / self._side_drive_head_frames
-            if hit_rate < 0.2:
-                # Less than 20% of settled frames saw a person — occluded
-                self._side_drive_backoff_until = time.time() + 2.0
-                self.logger.info(
-                    f"Occlusion backoff: head saw person in "
-                    f"{self._side_drive_head_hits}/{self._side_drive_head_frames} "
-                    f"settled frames ({hit_rate:.0%}), pausing side drive for 2s")
-            # Reset counters regardless (start fresh observation window)
-            self._side_drive_head_frames = 0
-            self._side_drive_head_hits = 0
 
     def _compute_pose_correction(self, pose_data: dict) -> Optional[tuple]:
         """Compute world-angle correction from partial body keypoints.
@@ -1122,12 +947,6 @@ class MotionTrack(MQTTClient):
             # Side-camera-driven saccades happen during UD sweep (large IK deltas from
             # changing world_ud) and should NOT suppress the head camera — it needs to
             # process frames to lock on and stop the sweep.
-            if source == "head":
-                cooldown = min(head_delta / MotionProfile.SACCADE_COOLDOWN_DIVISOR.value,
-                               MotionProfile.SACCADE_COOLDOWN_MAX.value)
-                self._head_cooldown_until = time.time() + cooldown
-                self.logger.debug(f"SACCADE: cooldown={cooldown:.2f}s")
-
         # Body UD urgency: when head UD is near its physical limit, speed up body UD
         # and widen the rate limit so the body can catch up
         head_ud_margin = min(
@@ -1387,23 +1206,6 @@ class MotionTrack(MQTTClient):
         target isn't in the roster. This prevents oscillation when left
         and right cameras see different people.
         """
-        # Occlusion backoff: if the head repeatedly fails to see anyone at
-        # the side-camera-driven angle, the person is likely occluded from
-        # the head camera's viewpoint (e.g., behind a monitor). Stop driving
-        # the head for a while to avoid futile slewing and motion blur.
-        if time.time() < self._side_drive_backoff_until:
-            return
-
-        # Head camera offline safety: if the head camera hasn't produced a
-        # frame in 10+ seconds, don't drive servos. Without head camera
-        # feedback, the robot nods back and forth chasing the UD sweep with
-        # no way to confirm it found the target or trigger occlusion backoff.
-        head_last = self._fusion._head_last_seen
-        if head_last > 0 and (time.time() - head_last) > 10.0:
-            self.logger.debug("SIDE_DRIVE: skipped — head camera offline "
-                              f"({time.time() - head_last:.0f}s since last frame)")
-            return
-
         best_lr = None
 
         # Prefer attention model target — prevents oscillation between people
@@ -1437,41 +1239,16 @@ class MotionTrack(MQTTClient):
                 f"alpha={alpha:.2f}")
 
         # Throttle servo commands to match Pi4's 50Hz physics loop.
-        # Without this, 100+ commands/sec from alternating L/R cameras flood the Pi4
-        # and the spring-damper can't build momentum (body doesn't rotate).
-        # IMPORTANT: this must happen BEFORE the UD sweep so the sweep only
-        # advances at 20Hz. Previously it was after, causing the sweep to race
-        # through its range at 30+ Hz and oscillate world_ud between extremes.
         now = time.time()
         if now - self._side_drive_last_send < 0.05:
             return
         self._side_drive_last_send = now
 
-        # UD pitch: use side camera estimate if available, otherwise last head
-        # value, otherwise default pitch. Side cameras give a rough but useful
-        # pitch from the person's Y-position in the fisheye frame — far better
-        # than a blind sweep for initial acquisition.
+        # UD pitch from side camera estimate or default
         side_ud = self._fusion.get_best_side_world_ud()
-        head_ud_age = now - self._world_ud_time if self._world_ud_time > 0 else float('inf')
         if side_ud is not None:
-            # Side camera has a UD estimate — clamp to keep servos in mid-range.
-            # The head has 77° down but only 42° up from center, plus a 22.5°
-            # camera down-tilt. Driving to extremes (-40°+) pins the servos at
-            # their pushrod limits where the head can't pick up to find faces.
-            # Clamping to [-30, +10] keeps ~15° of headroom in both directions
-            # for the head camera to refine with nose tracking.
             world_ud = max(-30.0, min(10.0, side_ud))
-            self._ud_search_active = False
-            self.logger.debug(f"SIDE_DRIVE: side UD raw={side_ud:.1f} clamped={world_ud:.1f}")
-        elif self._world_ud is not None and head_ud_age < 2.0:
-            world_ud = self._world_ud
-            self._ud_search_active = False
         else:
-            # No side UD and no recent head data — fall back to default pitch.
-            # Reset stale world angles so EMA initializes fresh on re-acquisition.
-            if self._world_ud is not None:
-                self._world_ud = None
-                self._world_lr = None
             world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
         self.logger.debug(
@@ -1481,19 +1258,6 @@ class MotionTrack(MQTTClient):
             "world_ud": round(world_ud, 1),
             "fusion_state": self._fusion.state,
         })
-        # Reset occlusion tracking only when the target direction changes
-        # significantly. If side cameras keep commanding the same angle, the
-        # head has been aimed there and the occlusion check should continue
-        # counting. Resetting on every 20Hz command prevents the 1.5s settling
-        # delay from ever expiring.
-        prev_lr = getattr(self, '_side_drive_last_lr', None)
-        if (self._side_drive_attempt_start == 0.0 or
-                prev_lr is None or
-                abs(self._side_world_lr_smooth - prev_lr) > 5.0):
-            self._side_drive_attempt_start = time.time()
-            self._side_drive_head_frames = 0
-            self._side_drive_head_hits = 0
-        self._side_drive_last_lr = self._side_world_lr_smooth
         self._update_targets(self._side_world_lr_smooth, world_ud, source="side")
 
     def __select_target(self, seen_data: list, camera: str) -> dict:
@@ -1665,27 +1429,10 @@ class MotionTrack(MQTTClient):
         # MachineVision's tracker threads read the cached copy.
         self._update_diagnostic_cache()
 
-        # Saccadic suppression: skip head camera for a timed cooldown after
-        # large servo moves. Set by _update_targets() when a saccade is detected.
-        # Time-based instead of velocity-based because the spring-damper estimator
-        # velocity proved unreliable (diverged numerically when called frequently).
-        if camera == self.main_camera and time.time() < self._head_cooldown_until:
-            self.logger.debug(
-                f"HEAD_COOLDOWN: suppressed ({self._head_cooldown_until - time.time():.2f}s remaining)")
-            # During cooldown, only count misses if NOT already locked in
-            # head_tracking. If locked, the cooldown is just servo settling
-            # from a saccade — the person is still there. If not locked
-            # (handoff_to_side or acquiring), count misses so phantoms can't
-            # prevent fusion from transitioning to side_only.
-            if self._fusion.state != FusionEnums.STATE_HEAD_TRACKING.value:
-                self._fusion.head_lost()
-            return
-
         vision_map = self.vision_tracker.get_vision_map()
         if camera not in vision_map:
             if camera == self.main_camera:
-                self._fusion.head_lost()
-                self._check_occlusion_backoff(False)
+                self._fusion.head_contributing = False
             # Clear stale camera from roster so fuzzy matching isn't poisoned
             if self._room_state:
                 self._room_state.clear_camera(camera)
@@ -1697,8 +1444,7 @@ class MotionTrack(MQTTClient):
         target_data = vision_map[camera].get(self.target, {})
         if target_data.get(self.count, 0) == 0:
             if camera == self.main_camera:
-                self._fusion.head_lost()
-                self._check_occlusion_backoff(False)
+                self._fusion.head_contributing = False
             # Clear stale camera from roster so fuzzy matching isn't poisoned
             if self._room_state:
                 self._room_state.clear_camera(camera)
@@ -1731,7 +1477,7 @@ class MotionTrack(MQTTClient):
                            if RoomStateManager.compute_frame_composite(d) >= composite_threshold]
         if not filtered_objects:
             if camera == self.main_camera:
-                self._fusion.head_lost()
+                self._fusion.head_contributing = False
             if self._room_state:
                 self._room_state.clear_camera(camera)
             return
@@ -1816,197 +1562,84 @@ class MotionTrack(MQTTClient):
                                                     target_data.get(self.count, 0),
                                                     world_ud=side_world_ud)
 
-        # Head camera: full tracking with world-space angles
+        # Head camera: compute refinement offset on side camera base
         if camera == self.main_camera:
-            # Safety: detect frozen world angles (prevents the 894-frame catastrophic
-            # freeze where world angles are set once and never updated). If we're
-            # processing a head detection but world angles haven't been updated in
-            # >5s, force re-initialization.
-            if (self._world_ud is not None and
-                    self._world_ud_time > 0 and
-                    time.time() - self._world_ud_time > MotionProfile.FROZEN_ANGLE_TIMEOUT.value):
-                self.logger.warning(
-                    f"FROZEN_ANGLE: world angles stale for "
-                    f"{time.time() - self._world_ud_time:.1f}s — forcing re-init "
-                    f"(world_lr={self._world_lr}, world_ud={self._world_ud})")
-                self._world_lr = None
-                self._world_ud = None
-
-            # Trustworthiness check for claiming head_tracking:
-            # - During ACQUISITION (not yet head_tracking): require high YOLO
-            #   (>= 0.50) or side camera confirmation. Prevents phantoms from
-            #   claiming head_tracking.
-            # - During SUSTAINED TRACKING (already head_tracking for 10+ frames):
-            #   any detection that passed the composite gate is trusted. YOLO
-            #   fluctuates frame-to-frame (0.71 -> 0.37 -> 0.38) and brief dips
-            #   should not break an established lock.
-            confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
-            head_yolo = best_target.get(confidence_key, 0.0)
-            already_tracking = (self._fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
-                                and self._fusion._head_miss_count == 0)
-            if already_tracking:
-                # Sustained lock — trust any detection that passed composite gate
-                head_trustworthy = True
-            else:
-                # Acquisition — require strong evidence
-                head_trustworthy = (head_yolo >= 0.50 or
-                                    self._fusion.is_confirmed_by_side(
-                                        self._pixel_to_world_angle(
-                                            best_target.get(TrackingEnums.KEY_BOX.value, {}),
-                                            camera, ServoEnum.X_AXIS.value)))
-            if head_trustworthy:
-                self._fusion.update_head_detection()
-                self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
-                self._ud_search_active = False  # head found target, stop UD sweep
-                self._check_occlusion_backoff(True)  # head can see — record success
-            else:
-                self.logger.debug(
-                    f"HEAD_WEAK: yolo={head_yolo:.2f}, not side-confirmed — "
-                    f"skipping update_head_detection")
-                self._fusion.head_lost()
+            side_lr = self._fusion.get_best_side_world_lr()
+            side_ud = self._fusion.get_best_side_world_ud()
+            if side_lr is None:
+                self._fusion.head_contributing = False
                 return
 
-            # Check for pose data (prefer nose point over bounding box).
-            # Hysteresis prevents rapid switching: once on nose, stay until 3
-            # consecutive misses; once on bbox, require confidence ≥ threshold.
+            if side_ud is not None:
+                side_ud = max(-30.0, min(10.0, side_ud))
+            else:
+                side_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
+
+            from glados_modules.RoomStateManager import RoomStateManager
+            composite = RoomStateManager.compute_frame_composite(best_target)
+            if composite < MotionProfile.HEAD_REFINEMENT_MIN_COMPOSITE.value:
+                self._fusion.head_contributing = False
+                self._fusion.update_head_count(target_data.get(self.count, 0))
+                return
+
+            # Get tracking point (nose preferred, bbox fallback)
             use_point = False
             target_data_for_calc = best_target.get(TrackingEnums.KEY_BOX.value, {})
-            nose_available = False
-            nose_conf = 0.0
             if TrackingEnums.KEY_POSE.value in best_target:
                 pose_data = best_target[TrackingEnums.KEY_POSE.value]
                 if self.pose_target in pose_data:
-                    nose_available = True
                     nose_conf = pose_data[self.pose_target].get("confidence", 0.0)
+                    if nose_conf >= self._nose_min_confidence:
+                        target_data_for_calc = pose_data[self.pose_target]
+                        use_point = True
 
-            if nose_available:
-                if self._nose_miss_count > 0 or nose_conf >= self._nose_min_confidence:
-                    # Already tracking nose (miss_count > 0 means we were on nose), or
-                    # new nose detection meets confidence threshold
-                    target_data_for_calc = best_target[TrackingEnums.KEY_POSE.value][self.pose_target]
-                    use_point = True
-                    self._nose_miss_count = 0
-            else:
-                if self._nose_miss_count < self._nose_miss_threshold:
-                    # Nose missing but within tolerance — keep using last bbox
-                    # (don't switch back to bbox center yet)
-                    self._nose_miss_count += 1
+            # Compute head camera world angle via FK
+            head_world_lr = self._pixel_to_world_angle(
+                target_data_for_calc, camera, ServoEnum.X_AXIS.value, point=use_point)
+            head_world_ud = self._pixel_to_world_angle(
+                target_data_for_calc, camera, ServoEnum.Y_AXIS.value, point=use_point)
+            head_world_ud -= self._eye_ud_offset
 
-            self.logger.debug(
-                f"TRACK: cam={camera} count={target_data.get(self.count, 0)} "
-                f"use_pose={use_point} nose_conf={nose_conf:.2f} nose_miss={self._nose_miss_count} "
-                f"data={target_data_for_calc}")
+            # Compute refinement as delta from side base, clamped
+            refinement_lr = head_world_lr - side_lr
+            refinement_ud = head_world_ud - side_ud
+            max_lr = MotionProfile.HEAD_REFINEMENT_MAX_LR.value
+            max_ud = MotionProfile.HEAD_REFINEMENT_MAX_UD.value
+            refinement_lr = max(-max_lr, min(max_lr, refinement_lr))
+            refinement_ud = max(-max_ud, min(max_ud, refinement_ud))
 
-            # Convert to world-space angles
-            world_lr = self._pixel_to_world_angle(target_data_for_calc, camera,
-                                                   ServoEnum.X_AXIS.value, point=use_point)
-            world_ud = self._pixel_to_world_angle(target_data_for_calc, camera,
-                                                   ServoEnum.Y_AXIS.value, point=use_point)
+            final_lr = side_lr + refinement_lr
+            final_ud = side_ud + refinement_ud
 
-            # Compensate for camera being below the eye — tilt up so the eye
-            # looks at the person's face instead of their chest/floor
-            world_ud -= self._eye_ud_offset
-
-            # Directional correction when nose tracking failed (use_point=False).
-            # Priority chain: pose keypoints > bbox edge clipping > nothing.
-            # Pose gives precise "I see legs, face is above" signals.
-            # Bbox edge gives coarse "person is clipped on this side" signals.
-            if not use_point:
-                correction = None
-                # Tier 1: pose keypoints (more precise)
-                if TrackingEnums.KEY_POSE.value in best_target:
-                    correction = self._compute_pose_correction(
-                        best_target[TrackingEnums.KEY_POSE.value])
-                # Tier 2: bbox edge clipping (less precise fallback)
-                if correction is None:
-                    bbox = best_target.get(TrackingEnums.KEY_BOX.value, {})
-                    if bbox:
-                        correction = self._compute_bbox_edge_correction(bbox)
-                # Apply whichever correction was found
-                if correction:
-                    lr_corr, ud_corr = correction
-                    world_lr += lr_corr
-                    world_ud += ud_corr
-
-            # Apply handoff blending if transitioning from side camera
-            if self._enable_blending:
-                world_lr = self._fusion.get_blended_world_lr(world_lr)
-
-            # Update head person count for room-level awareness
+            self._fusion.head_contributing = True
+            self._fusion._head_last_seen = time.time()
             self._fusion.update_head_count(target_data.get(self.count, 0))
 
-            # Smooth in world space — separate alphas for LR and UD (UD is noisier)
-            # Tighter alpha when side camera confirms the detection
-            if self._world_lr is None:
-                self._world_lr = world_lr
-                self._world_ud = world_ud
-                self._world_ud_time = time.time()
-                self.logger.debug(f"EMA: init world_lr={world_lr:.1f} world_ud={world_ud:.1f}")
-            else:
-                alpha_lr = self._world_smooth_alpha
-                alpha_ud = self._world_smooth_alpha_ud
-                confirmed = self._enable_confirmation and self._fusion.is_confirmed_by_side(world_lr)
-                if confirmed:
-                    alpha_lr = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
-                    alpha_ud = FusionEnums.CONFIRMED_SMOOTH_ALPHA.value
+            self.logger.debug(
+                f"HEAD_REFINE: side=({side_lr:.1f},{side_ud:.1f}) "
+                f"refine=({refinement_lr:.1f},{refinement_ud:.1f}) "
+                f"final=({final_lr:.1f},{final_ud:.1f}) comp={composite:.2f}")
 
-                # Adaptive smoothing: very large angle jumps (>30°) are almost
-                # certainly phantom switches — smooth heavily. Medium jumps
-                # (20-30°) get moderate damping. Smaller changes pass through
-                # normally for responsive tracking of a moving person.
-                lr_delta = abs(world_lr - self._world_lr)
-                ud_delta = abs(world_ud - self._world_ud)
-                if lr_delta > 30.0:
-                    alpha_lr = max(alpha_lr, 0.85)  # heavy: 85% old, 15% new
-                elif lr_delta > 20.0:
-                    alpha_lr = max(alpha_lr, 0.65)  # moderate smoothing
-                if ud_delta > 25.0:
-                    alpha_ud = max(alpha_ud, 0.85)
-                elif ud_delta > 15.0:
-                    alpha_ud = max(alpha_ud, 0.65)
+            self._update_targets(final_lr, final_ud, trace_id=trace_id, source="head")
 
-                old_lr, old_ud = self._world_lr, self._world_ud
-                self._world_lr = alpha_lr * self._world_lr + (1 - alpha_lr) * world_lr
-                self._world_ud = alpha_ud * self._world_ud + (1 - alpha_ud) * world_ud
-                self._world_ud_time = time.time()
+            # Save tracking state
+            self._last_tracked_world_lr = final_lr
+            bbox_for_height = best_target.get(TrackingEnums.KEY_BOX.value, {})
+            if bbox_for_height:
+                self._last_tracked_bbox_height = float(
+                    bbox_for_height.get('y2', 0) - bbox_for_height.get('y1', 0))
+            face_data = best_target.get(
+                VisionResultsEnum.VISION_RESULTS_FACE_KEY.value, {})
+            if face_data:
+                fid = face_data.get(VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value)
+                if fid and fid != "unknown":
+                    self._last_tracked_face_id = fid
+                    self._last_known_positions[fid] = final_lr
 
-                # Drift correction: gently pull head camera's world_lr toward
-                # the side camera's estimate. The side cameras are fixed-mount
-                # so their world_lr doesn't drift. A 5% blend per frame prevents
-                # the slow EMA accumulation that causes the head to gradually
-                # drift off-target over 10-15 seconds.
-                side_lr = self._fusion.get_best_side_world_lr()
-                if side_lr is not None:
-                    drift = abs(self._world_lr - side_lr)
-                    if drift < 30.0:  # only correct if roughly agreeing
-                        self._world_lr = 0.95 * self._world_lr + 0.05 * side_lr
-                self.logger.debug(
-                    f"EMA: raw_lr={world_lr:.1f} raw_ud={world_ud:.1f} "
-                    f"alpha_lr={alpha_lr:.2f} alpha_ud={alpha_ud:.2f} "
-                    f"confirmed={confirmed} smooth_lr={old_lr:.1f}->{self._world_lr:.1f} "
-                    f"smooth_ud={old_ud:.1f}->{self._world_ud:.1f}")
-                self._pdebug.log("MotionTrack", "EMA", {
-                    "raw_lr": round(world_lr, 1), "raw_ud": round(world_ud, 1),
-                    "alpha_lr": round(alpha_lr, 2), "alpha_ud": round(alpha_ud, 2),
-                    "confirmed": confirmed,
-                    "smooth_lr": round(self._world_lr, 1), "smooth_ud": round(self._world_ud, 1),
-                }, trace_id=trace_id)
-
-            # Dead zone: skip _update_targets if world angles haven't moved enough.
-            # Keeps GLaDOS still between repositions — only breathing/sway moves.
-            in_dead_zone = False
-            if self._last_commanded_lr is not None:
-                lr_delta = abs(self._world_lr - self._last_commanded_lr)
-                ud_delta = abs(self._world_ud - self._last_commanded_ud)
-                if lr_delta < MotionProfile.DEAD_ZONE_LR.value and ud_delta < MotionProfile.DEAD_ZONE_UD.value:
-                    in_dead_zone = True
-
-            # Record frame even during dead zone (for lock-on analysis)
-            estimator_snapshot = self._get_estimator_snapshot() if self._recorder else None
-
-            if in_dead_zone:
-                # Still log the frame to the recorder so we can measure lock-on duration
-                if self._recorder and estimator_snapshot is not None:
+            # Recording
+            if self._recorder:
+                estimator_snapshot = self._get_estimator_snapshot()
+                if estimator_snapshot is not None:
                     output_targets = {
                         self.head_LR_name: {"angle": round(self._estimators[self.head_LR_name].target, 2)},
                         self.head_UD_name: {"angle": round(self._estimators[self.head_UD_name].target, 2)},
@@ -2020,94 +1653,13 @@ class MotionTrack(MQTTClient):
                         servo_mins=self._servo_mins.copy(),
                         servo_maxs=self._servo_maxs.copy(),
                         cam_resolution=(self.cam_x, self.cam_y),
-                        raw_world_lr=world_lr, raw_world_ud=world_ud,
-                        smoothed_world_lr=self._world_lr,
-                        smoothed_world_ud=self._world_ud,
+                        raw_world_lr=head_world_lr, raw_world_ud=head_world_ud,
+                        smoothed_world_lr=final_lr, smoothed_world_ud=final_ud,
                         output_targets=output_targets,
-                        fusion_state="dead_zone",
-                        composite_score=RoomStateManager.compute_frame_composite(best_target) if self._room_state else 0.0,
+                        fusion_state=self._fusion.state,
+                        composite_score=composite,
                     )
                     self._recorder.log_frame(record)
-                return
-
-            # Trace: mark tracking start
-            ts_track_start = time.time()
-
-            self._update_targets(self._world_lr, self._world_ud, trace_id=trace_id)
-            self._last_commanded_lr = self._world_lr
-            self._last_commanded_ud = self._world_ud
-
-            # Save tracking state for multi-person target selection scoring
-            self._last_tracked_world_lr = self._world_lr
-            bbox_for_height = best_target.get(TrackingEnums.KEY_BOX.value, {})
-            if bbox_for_height:
-                self._last_tracked_bbox_height = float(
-                    bbox_for_height.get('y2', 0) - bbox_for_height.get('y1', 0))
-            # Store face ID for identity-based target selection
-            face_data = best_target.get(VisionResultsEnum.VISION_RESULTS_FACE_KEY.value, {})
-            if face_data.get(VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value):
-                self._last_tracked_face_id = face_data[VisionResultsEnum.VISION_RESULTS_FACE_ID_KEY.value]
-                # Remember where this person was for memory glances
-                if self._last_tracked_face_id != "unknown":
-                    self._last_known_positions[self._last_tracked_face_id] = self._world_lr
-
-            # Update debug overlay for RTSP stream visualization
-            if self.debug_overlay_enabled:
-                self._debug_overlay = {
-                    "state": self._fusion.state,
-                    "world_lr": round(self._world_lr, 1),
-                    "world_ud": round(self._world_ud, 1),
-                    "head_lr": round(self._estimators[self.head_LR_name].target, 1),
-                    "head_ud": round(self._estimators[self.head_UD_name].target, 1),
-                    "body_lr": round(self._estimators[self.body_LR_name].target, 1),
-                    "body_ud": round(self._estimators[self.body_UD_name].target, 1),
-                    "est_head_lr": round(self._get_estimated_position(self.head_LR_name), 1),
-                    "est_head_ud": round(self._get_estimated_position(self.head_UD_name), 1),
-                    "est_body_lr": round(self._get_estimated_position(self.body_LR_name), 1),
-                    "est_body_ud": round(self._get_estimated_position(self.body_UD_name), 1),
-                }
-
-            # Trace: log the full pipeline record
-            if trace_id:
-                self._tracer.end_trace(trace_id,
-                    ts_track_start=ts_track_start,
-                    ts_track_end=time.time(),
-                    world_lr=round(self._world_lr, 2),
-                    world_ud=round(self._world_ud, 2),
-                    targets={
-                        self.head_LR_name: round(self._estimators[self.head_LR_name].target, 1),
-                        self.head_UD_name: round(self._estimators[self.head_UD_name].target, 1),
-                        self.body_LR_name: round(self._estimators[self.body_LR_name].target, 1),
-                        self.body_UD_name: round(self._estimators[self.body_UD_name].target, 1),
-                    }
-                )
-
-            # Log frame to recorder if enabled
-            if self._recorder and estimator_snapshot is not None:
-                output_targets = {
-                    self.head_LR_name: {"angle": round(self._estimators[self.head_LR_name].target, 2)},
-                    self.head_UD_name: {"angle": round(self._estimators[self.head_UD_name].target, 2)},
-                    self.body_LR_name: {"angle": round(self._estimators[self.body_LR_name].target, 2)},
-                    self.body_UD_name: {"angle": round(self._estimators[self.body_UD_name].target, 2)},
-                }
-                record = build_frame_record(
-                    camera=camera,
-                    detection=target_data_for_calc,
-                    use_point=use_point,
-                    estimator_state=estimator_snapshot,
-                    servo_middles=self._servo_middles.copy(),
-                    servo_mins=self._servo_mins.copy(),
-                    servo_maxs=self._servo_maxs.copy(),
-                    cam_resolution=(self.cam_x, self.cam_y),
-                    raw_world_lr=world_lr,
-                    raw_world_ud=world_ud,
-                    smoothed_world_lr=self._world_lr,
-                    smoothed_world_ud=self._world_ud,
-                    output_targets=output_targets,
-                    fusion_state=self._fusion.state,
-                    composite_score=RoomStateManager.compute_frame_composite(best_target) if self._room_state else 0.0,
-                )
-                self._recorder.log_frame(record)
 
         # Side cameras: drive servos from fused room state (single decision point)
         elif camera in (self.left_camera, self.right_camera):
@@ -2135,8 +1687,7 @@ class MotionTrack(MQTTClient):
                         composite_score=RoomStateManager.compute_frame_composite(best_target) if self._room_state else 0.0,
                     )
                     self._recorder.log_frame(side_record)
-            if self._fusion.side_can_drive_servos():
-                self._drive_from_room_state()
+            self._drive_from_room_state()
 
     def _handle_personality_modifier(self, msg: MQTTMessage) -> None:
         """Handle personality modifier from GLaDOSLocal (grudge + mood speed).
