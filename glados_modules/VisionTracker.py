@@ -1672,10 +1672,13 @@ class MotionTrack(MQTTClient):
         if camera == self.main_camera and time.time() < self._head_cooldown_until:
             self.logger.debug(
                 f"HEAD_COOLDOWN: suppressed ({self._head_cooldown_until - time.time():.2f}s remaining)")
-            # Still count misses during cooldown so phantoms can't prevent
-            # fusion from transitioning to side_only. Cooldown prevents angle
-            # updates (motion blur), but shouldn't prevent the miss counter.
-            self._fusion.head_lost()
+            # During cooldown, only count misses if NOT already locked in
+            # head_tracking. If locked, the cooldown is just servo settling
+            # from a saccade — the person is still there. If not locked
+            # (handoff_to_side or acquiring), count misses so phantoms can't
+            # prevent fusion from transitioning to side_only.
+            if self._fusion.state != FusionEnums.STATE_HEAD_TRACKING.value:
+                self._fusion.head_lost()
             return
 
         vision_map = self.vision_tracker.get_vision_map()
