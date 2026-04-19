@@ -1829,19 +1829,28 @@ class MotionTrack(MQTTClient):
                 self._world_lr = None
                 self._world_ud = None
 
-            # Only claim head_tracking if the detection is trustworthy:
-            # either high raw YOLO confidence (>= 0.50) or confirmed by a side
-            # camera seeing a person at a similar angle. Low-confidence
-            # unconfirmed detections are likely phantoms (workbench clutter at
-            # YOLO 0.35 with hallucinated pose) and should not reset the miss
-            # counter or kill the UD sweep.
+            # Trustworthiness check for claiming head_tracking:
+            # - During ACQUISITION (not yet head_tracking): require high YOLO
+            #   (>= 0.50) or side camera confirmation. Prevents phantoms from
+            #   claiming head_tracking.
+            # - During SUSTAINED TRACKING (already head_tracking for 10+ frames):
+            #   any detection that passed the composite gate is trusted. YOLO
+            #   fluctuates frame-to-frame (0.71 -> 0.37 -> 0.38) and brief dips
+            #   should not break an established lock.
             confidence_key = VisionResultsEnum.VISION_RESULTS_CONFIDENCE_KEY.value
             head_yolo = best_target.get(confidence_key, 0.0)
-            head_trustworthy = (head_yolo >= 0.50 or
-                                self._fusion.is_confirmed_by_side(
-                                    self._pixel_to_world_angle(
-                                        best_target.get(TrackingEnums.KEY_BOX.value, {}),
-                                        camera, ServoEnum.X_AXIS.value)))
+            already_tracking = (self._fusion.state == FusionEnums.STATE_HEAD_TRACKING.value
+                                and self._fusion._head_miss_count == 0)
+            if already_tracking:
+                # Sustained lock — trust any detection that passed composite gate
+                head_trustworthy = True
+            else:
+                # Acquisition — require strong evidence
+                head_trustworthy = (head_yolo >= 0.50 or
+                                    self._fusion.is_confirmed_by_side(
+                                        self._pixel_to_world_angle(
+                                            best_target.get(TrackingEnums.KEY_BOX.value, {}),
+                                            camera, ServoEnum.X_AXIS.value)))
             if head_trustworthy:
                 self._fusion.update_head_detection()
                 self._side_world_lr_smooth = None  # reset side EMA so it restarts fresh
