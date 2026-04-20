@@ -279,7 +279,20 @@ def move():
         current = servo_state.get(servo, {}).get("current", 90)
     target = current + step
 
+    # Clamp to safe range
+    servo_limits = {
+        "head_left_right": (6, 125),
+        "head_up_down": (6, 125),
+        "body_left_right": (52, 120),
+        "body_up_down": (52, 120),
+    }
+    lo, hi = servo_limits.get(servo, (0, 180))
+    target = max(lo, min(hi, target))
+
     _send_servo_command(servo, target, speed)
+    # Track commanded position locally in case MQTT status isn't flowing
+    with lock:
+        servo_state[servo]["current"] = float(target)
     return jsonify(ok=True, servo=servo, target=round(target, 1))
 
 
@@ -291,6 +304,8 @@ def move_to():
     speed = data.get("speed", 3)
 
     _send_servo_command(servo, angle, speed)
+    with lock:
+        servo_state[servo]["current"] = float(angle)
     return jsonify(ok=True, servo=servo, target=angle)
 
 
