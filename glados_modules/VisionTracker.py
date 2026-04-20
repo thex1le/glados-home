@@ -1253,7 +1253,7 @@ class MotionTrack(MQTTClient):
         # above that by ~8 degrees for a seated person at typical distance.
         # Apply an upward bias so the head camera sees the face, not the chest.
         side_ud = self._fusion.get_best_side_world_ud()
-        face_bias = 8.0  # degrees upward from body center to face
+        face_bias = 12.0  # degrees upward from body center to face
         if side_ud is not None:
             world_ud = max(-38.0, min(10.0, side_ud + face_bias))
         else:
@@ -1608,7 +1608,7 @@ class MotionTrack(MQTTClient):
                 return
 
             # Apply same face bias as _drive_from_room_state
-            face_bias = 8.0
+            face_bias = 12.0
             if side_ud is not None:
                 side_ud = max(-38.0, min(10.0, side_ud + face_bias))
             else:
