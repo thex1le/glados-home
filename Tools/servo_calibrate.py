@@ -113,9 +113,9 @@ HTML = """
             <div class="servo-group">
                 <h3>Head Up/Down</h3>
                 <div class="servo-row">
-                    <button class="btn" onclick="move('head_up_down', -1)">&uarr; Up</button>
+                    <button class="btn" onclick="move('head_up_down', 1)">&uarr; Up</button>
                     <span class="servo-val" id="hud">--</span>
-                    <button class="btn" onclick="move('head_up_down', 1)">&darr; Down</button>
+                    <button class="btn" onclick="move('head_up_down', -1)">&darr; Down</button>
                     <button class="btn-center" onclick="center('head_up_down', 83)">Center</button>
                 </div>
             </div>
@@ -131,9 +131,9 @@ HTML = """
             <div class="servo-group">
                 <h3>Body Up/Down</h3>
                 <div class="servo-row">
-                    <button class="btn" onclick="move('body_up_down', -1)">&uarr; Up</button>
+                    <button class="btn" onclick="move('body_up_down', 1)">&uarr; Up</button>
                     <span class="servo-val" id="bud">--</span>
-                    <button class="btn" onclick="move('body_up_down', 1)">&darr; Down</button>
+                    <button class="btn" onclick="move('body_up_down', -1)">&darr; Down</button>
                     <button class="btn-center" onclick="center('body_up_down', 92)">Center</button>
                 </div>
             </div>
@@ -209,12 +209,12 @@ HTML = """
         // Keyboard controls
         document.addEventListener('keydown', function(e) {
             switch(e.key.toLowerCase()) {
-                case 'w': move('head_up_down', -1); break;
-                case 's': move('head_up_down', 1); break;
+                case 'w': move('head_up_down', 1); break;
+                case 's': move('head_up_down', -1); break;
                 case 'a': move('head_left_right', -1); break;
                 case 'd': move('head_left_right', 1); break;
-                case 'i': move('body_up_down', -1); break;
-                case 'k': move('body_up_down', 1); break;
+                case 'i': move('body_up_down', 1); break;
+                case 'k': move('body_up_down', -1); break;
                 case 'j': move('body_left_right', -1); break;
                 case 'l': move('body_left_right', 1); break;
                 case ' ': e.preventDefault(); snapshot(); break;
@@ -279,11 +279,14 @@ def move():
         current = servo_state.get(servo, {}).get("current", 90)
     target = current + step
 
-    # Clamp to safe range
+    # Clamp to physical range (from glog.conf)
+    # head: min=6, max=125, center=83
+    # body LR: full 180 range (0-180), center=90
+    # body UD: min=52, max=120, center=92
     servo_limits = {
         "head_left_right": (6, 125),
         "head_up_down": (6, 125),
-        "body_left_right": (52, 120),
+        "body_left_right": (0, 180),
         "body_up_down": (52, 120),
     }
     lo, hi = servo_limits.get(servo, (0, 180))
@@ -429,27 +432,23 @@ def main():
     else:
         print("WARNING: Could not open head camera feed — servo controls still work")
 
-    # FK
+    # FK — use known servo config values
     try:
         from glados_modules.RobotKinematics import RobotKinematics
-        head_min_max = config.get("SERVOS", "head_min_max_center").split(",")
-        neck_min_max = config.get("SERVOS", "neck_min_max_center").split(",")
-        middles = {"body_left_right": float(neck_min_max[2]),
-                   "body_up_down": float(neck_min_max[2]),
-                   "head_left_right": float(head_min_max[2]),
-                   "head_up_down": float(head_min_max[2])}
-        mins = {"body_left_right": float(neck_min_max[1]),
-                "body_up_down": float(neck_min_max[1]),
-                "head_left_right": float(head_min_max[1]),
-                "head_up_down": float(head_min_max[1])}
-        maxs = {"body_left_right": float(neck_min_max[0]),
-                "body_up_down": float(neck_min_max[0]),
-                "head_left_right": float(head_min_max[0]),
-                "head_up_down": float(head_min_max[0])}
+        middles = {"body_left_right": 92.0, "body_up_down": 92.0,
+                   "head_left_right": 83.0, "head_up_down": 83.0}
+        mins = {"body_left_right": 52.0, "body_up_down": 52.0,
+                "head_left_right": 6.0, "head_up_down": 6.0}
+        maxs = {"body_left_right": 120.0, "body_up_down": 120.0,
+                "head_left_right": 125.0, "head_up_down": 125.0}
         kin = RobotKinematics(middles, mins, maxs)
-        print("FK computation ready")
+        # Verify FK works
+        test_yaw, test_pitch = kin.forward_kinematics(middles)
+        print(f"FK ready (center test: yaw={test_yaw:+.1f} pitch={test_pitch:+.1f})")
     except Exception as e:
+        import traceback
         print(f"WARNING: FK unavailable: {e}")
+        traceback.print_exc()
 
     print(f"\nOpen http://<this-server>:{args.port} in a browser")
     print("Use arrows to position head, click Snapshot when face is centered.\n")
