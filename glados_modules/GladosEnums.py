@@ -554,7 +554,7 @@ class MotionProfile(Enum):
     CAMERA_LEFT_MOUNTING_PITCH = 0.0
     CAMERA_RIGHT_MOUNTING_PITCH = 0.0
     # IK rate limiting: max degrees body targets can change per frame
-    BODY_LR_MAX_STEP_DEG = 20.0  # 20 deg/frame at 20Hz = 400 deg/s, snappy body rotation
+    BODY_LR_MAX_STEP_DEG = 15.0  # 15 deg/frame at 20Hz = 300 deg/s
     BODY_UD_MAX_STEP_DEG = 15.0  # UD needs faster rate — side camera UD estimate drives steep pitch
     BODY_UD_MAX_STEP_DEG_URGENT = 25.0  # wider limit when head UD is near its physical limit
     # Dead zone: don't reposition for changes smaller than this (reduces fidgeting)
@@ -699,7 +699,7 @@ class AttentionEnums(Enum):
     BUDGET_SPEAKER = 5.0           # overridden by speech duration + 2s when available
     BUDGET_CONVERSATION = 5.0
     BUDGET_FATIGUE_GLANCE = 2.0
-    BUDGET_PROXIMITY = 2.0         # hold target for 2s before re-evaluating
+    BUDGET_PROXIMITY = 10.0        # hold target for 10s before re-evaluating
 
     # Fatigue: glance at neglected person after this many seconds
     FATIGUE_NEGLECT_THRESHOLD = 30.0
