@@ -701,13 +701,22 @@ class IMU(MQTTClient, Thread):
         """
         self.logger.info("IMU Sensor polling started")
         calibration_saved = path.exists(self.CALIBRATION_FILE)
+        backoff = 0.1
+        max_backoff = 5.0
         while True:
-            status = IMUMessageBuilder.send_imu_status_message(self.get_sensor())
-            self.send_command(topic=MQTTEnums.IMU_STATUS_TOPIC.value, command=status)
-            # Auto-save calibration once all sensors reach status 3
-            if not calibration_saved:
-                if self.save_calibration():
-                    calibration_saved = True
+            try:
+                status = IMUMessageBuilder.send_imu_status_message(self.get_sensor())
+                self.send_command(topic=MQTTEnums.IMU_STATUS_TOPIC.value, command=status)
+                # Auto-save calibration once all sensors reach status 3
+                if not calibration_saved:
+                    if self.save_calibration():
+                        calibration_saved = True
+                backoff = 0.1  # reset on success
+            except OSError as e:
+                self.logger.error(f"IMU I2C error: {e} — retrying in {backoff:.1f}s")
+                sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+                continue
             sleep(0.1)
 
 
