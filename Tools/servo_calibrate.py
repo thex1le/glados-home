@@ -11,9 +11,14 @@ Usage:
 """
 import argparse
 import json
+import os
+import sys
 import threading
 import time
 from configparser import ConfigParser
+
+# Add repo root to path so glados_modules can be imported
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import cv2
 from flask import Flask, Response, render_template_string, jsonify, request
