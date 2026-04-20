@@ -294,11 +294,13 @@ def move_to():
 
 def _send_servo_command(servo, angle, speed):
     if mqtt_client:
+        from uuid import uuid4
         msg = {
             "cmd": "move",
             "location": servo,
             "angle": round(angle, 1),
             "speed": speed,
+            "uuid": str(uuid4()),
         }
         mqtt_client.publish("body/servo", json.dumps(msg))
 
