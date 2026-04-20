@@ -769,7 +769,7 @@ class KinematicsEnums(Enum):
     SIGN_BODY_LR = -1.0
     SIGN_BODY_UD = 1.0
     SIGN_HEAD_LR = 1.0
-    SIGN_HEAD_UD = 1.0
+    SIGN_HEAD_UD = -1.0
 
     # Joint ordering (matches ServoEnum.LOCATION_* values)
     JOINT_ORDER = ("body_left_right", "body_up_down",
