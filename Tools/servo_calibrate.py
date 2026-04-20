@@ -314,7 +314,7 @@ def _send_servo_command(servo, angle, speed):
         from uuid import uuid4
         msg = {
             "cmd": "move",
-            "location": servo,
+            "servo": servo,
             "angle": int(round(angle)),
             "speed": int(speed),
             "uuid": str(uuid4()),
