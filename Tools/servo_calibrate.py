@@ -82,7 +82,7 @@ HTML = """
 </head>
 <body>
     <h1>GLaDOS Servo Calibration</h1>
-    <p class="help">Move servos with arrows until your face is centered on crosshair. Click Snapshot.<br>
+    <p class="help"><b>IMPORTANT:</b> Stop AiServer before using this tool, otherwise tracking overrides servo commands.<br>
     Keyboard: <span class="kbd">W</span>/<span class="kbd">S</span> = Head UD,
     <span class="kbd">A</span>/<span class="kbd">D</span> = Head LR,
     <span class="kbd">I</span>/<span class="kbd">K</span> = Body UD,
