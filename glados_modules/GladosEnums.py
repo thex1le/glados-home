@@ -554,15 +554,15 @@ class MotionProfile(Enum):
     CAMERA_LEFT_MOUNTING_PITCH = 0.0
     CAMERA_RIGHT_MOUNTING_PITCH = 0.0
     # IK rate limiting: max degrees body targets can change per frame
-    BODY_LR_MAX_STEP_DEG = 8.0   # 8 deg/frame at 20Hz = 160 deg/s, tracks body spring omega=3
+    BODY_LR_MAX_STEP_DEG = 20.0  # 20 deg/frame at 20Hz = 400 deg/s, snappy body rotation
     BODY_UD_MAX_STEP_DEG = 15.0  # UD needs faster rate — side camera UD estimate drives steep pitch
     BODY_UD_MAX_STEP_DEG_URGENT = 25.0  # wider limit when head UD is near its physical limit
     # Dead zone: don't reposition for changes smaller than this (reduces fidgeting)
     DEAD_ZONE_LR = 3.0
     DEAD_ZONE_UD = 4.0
     # Saccadic movement: fast head snap for large repositions
-    SACCADE_THRESHOLD = 20.0       # degrees — head delta above this triggers fast snap
-    SACCADE_SPEED = 4              # speed level for snaps (omega=11, zeta=0.78)
+    SACCADE_THRESHOLD = 10.0       # degrees — head delta above this triggers fast snap
+    SACCADE_SPEED = 5              # speed level for snaps (omega=14, zeta=0.70)
     # Saccadic suppression: time-based cooldown after large head moves
     SACCADE_COOLDOWN_DIVISOR = 30.0    # cooldown = head_delta / this (1s per 30°)
     SACCADE_COOLDOWN_MAX = 0.8         # max cooldown duration in seconds
