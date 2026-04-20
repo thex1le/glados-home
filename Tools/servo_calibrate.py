@@ -131,9 +131,9 @@ HTML = """
             <div class="servo-group">
                 <h3>Body Up/Down</h3>
                 <div class="servo-row">
-                    <button class="btn" onclick="move('body_up_down', 1)">&uarr; Up</button>
+                    <button class="btn" onclick="move('body_up_down', -1)">&uarr; Up</button>
                     <span class="servo-val" id="bud">--</span>
-                    <button class="btn" onclick="move('body_up_down', -1)">&darr; Down</button>
+                    <button class="btn" onclick="move('body_up_down', 1)">&darr; Down</button>
                     <button class="btn-center" onclick="center('body_up_down', 92)">Center</button>
                 </div>
             </div>
@@ -213,8 +213,8 @@ HTML = """
                 case 's': move('head_up_down', -1); break;
                 case 'a': move('head_left_right', -1); break;
                 case 'd': move('head_left_right', 1); break;
-                case 'i': move('body_up_down', 1); break;
-                case 'k': move('body_up_down', -1); break;
+                case 'i': move('body_up_down', -1); break;
+                case 'k': move('body_up_down', 1); break;
                 case 'j': move('body_left_right', -1); break;
                 case 'l': move('body_left_right', 1); break;
                 case ' ': e.preventDefault(); snapshot(); break;
@@ -336,10 +336,23 @@ def snapshot():
         bud = servo_state["body_up_down"]["current"]
 
     fk_yaw, fk_pitch = 0.0, 0.0
-    if kin:
+    try:
+        from glados_modules.RobotKinematics import RobotKinematics
+        fk_kin = RobotKinematics(
+            {"body_left_right": 92.0, "body_up_down": 92.0,
+             "head_left_right": 83.0, "head_up_down": 83.0},
+            {"body_left_right": 52.0, "body_up_down": 52.0,
+             "head_left_right": 6.0, "head_up_down": 6.0},
+            {"body_left_right": 120.0, "body_up_down": 120.0,
+             "head_left_right": 125.0, "head_up_down": 125.0})
         angles = {"head_left_right": hlr, "head_up_down": hud,
                   "body_left_right": blr, "body_up_down": bud}
-        fk_yaw, fk_pitch = kin.forward_kinematics(angles)
+        fk_yaw, fk_pitch = fk_kin.forward_kinematics(angles)
+        print(f"    FK computed: angles={angles} -> yaw={fk_yaw:+.1f} pitch={fk_pitch:+.1f}")
+    except Exception as e:
+        print(f"    FK FAILED: {e}")
+        import traceback
+        traceback.print_exc()
 
     snap = {
         "id": len(snapshots) + 1,
