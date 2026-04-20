@@ -219,7 +219,7 @@ HTML = """
             }
         });
 
-        setInterval(update, 200);
+        setInterval(update, 500);
     </script>
 </body>
 </html>
@@ -298,11 +298,13 @@ def _send_servo_command(servo, angle, speed):
         msg = {
             "cmd": "move",
             "location": servo,
-            "angle": round(angle, 1),
-            "speed": speed,
+            "angle": int(round(angle)),
+            "speed": int(speed),
             "uuid": str(uuid4()),
         }
-        mqtt_client.publish("body/servo", json.dumps(msg))
+        payload = json.dumps(msg)
+        mqtt_client.publish("body/servo", payload)
+        print(f"  MQTT -> body/servo: {payload}")
 
 
 @app.route('/snapshot', methods=['POST'])
