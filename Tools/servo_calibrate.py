@@ -163,6 +163,8 @@ HTML = """
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({servo: servo, step: step, speed: speed})
+            }).then(r => r.json()).then(data => {
+                console.log('Moved ' + servo + ' to ' + data.target);
             });
         }
 
@@ -366,6 +368,8 @@ def main():
     rtsp_port = config.get("RTSP", "rtsp_port")
 
     # MQTT
+    status_count = [0]
+
     def on_message(client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
@@ -374,14 +378,26 @@ def main():
             if location in servo_state:
                 with lock:
                     servo_state[location]["current"] = float(results.get("current", 0))
-        except (json.JSONDecodeError, KeyError, ValueError):
-            pass
+                status_count[0] += 1
+                if status_count[0] <= 5:
+                    print(f"  SERVO STATUS: {location} = {results.get('current', '?')}")
+                elif status_count[0] == 6:
+                    print(f"  (suppressing further status logs)")
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            print(f"  MQTT parse error: {e}")
+
+    def on_connect(client, userdata, flags, rc):
+        print(f"  MQTT connected (rc={rc}), subscribing to body/servo/status")
+        client.subscribe("body/servo/status")
 
     mqtt_client = mqtt.Client()
     mqtt_client.on_message = on_message
+    mqtt_client.on_connect = on_connect
+    print(f"Connecting to MQTT broker at {broker_ip}:{broker_port}")
     mqtt_client.connect(broker_ip, broker_port)
-    mqtt_client.subscribe("body/servo/status")
     mqtt_client.loop_start()
+    time.sleep(1)  # wait for connection + first status messages
+    print(f"  Received {status_count[0]} servo status messages in first second")
 
     # RTSP feed
     rtsp_uri = f"rtsp://{rtsp_ip}:{rtsp_port}/camera_head"
