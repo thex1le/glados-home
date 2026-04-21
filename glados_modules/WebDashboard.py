@@ -114,7 +114,8 @@ DASHBOARD_HTML = """
                     {% for feed in pair.feeds %}
                     <div>
                         <div class="video-label">{{ feed.label }}</div>
-                        <img src="/feed/{{ feed.key }}" alt="{{ feed.label }}"
+                        <img data-feed="/feed/{{ feed.key }}" alt="{{ feed.label }}"
+                             class="lazy-feed"
                              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
                         <div class="no-feed" style="display:none">No Feed</div>
                     </div>
@@ -126,7 +127,8 @@ DASHBOARD_HTML = """
             {% for label, path in unpaired_feeds.items() %}
             <div class="card">
                 <h2>{{ label }}</h2>
-                <img src="/feed/{{ path }}" alt="{{ label }}"
+                <img data-feed="/feed/{{ path }}" alt="{{ label }}"
+                     class="lazy-feed"
                      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
                 <div class="no-feed" style="display:none">No Feed</div>
             </div>
@@ -352,9 +354,20 @@ DASHBOARD_HTML = """
             } catch(e) {}
         }
 
-        updateHealth();
-        updateTracking();
-        updateSensors();
+        // Load API data first, then start video feeds.
+        // MJPEG streams hold HTTP connections open — browsers limit to 6
+        // concurrent connections per host. If feeds start first, API fetches
+        // queue behind them and the sidebar appears empty.
+        async function init() {
+            await updateHealth();
+            await updateTracking();
+            await updateSensors();
+            // Now start video feeds
+            document.querySelectorAll('.lazy-feed').forEach(img => {
+                img.src = img.dataset.feed;
+            });
+        }
+        init();
         setInterval(updateHealth, 2000);
         setInterval(updateTracking, 500);
         setInterval(updateSensors, 1000);
