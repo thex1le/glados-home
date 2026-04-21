@@ -183,7 +183,10 @@ DASHBOARD_HTML = """
             return h > 0 ? h+'h '+m+'m' : m > 0 ? m+'m '+sec+'s' : sec+'s';
         }
 
-        async function updateHealth() {
+        // Legacy individual update functions removed — using /api/all combined endpoint.
+        // Keeping the old endpoint routes for backward compatibility with external tools.
+
+        async function _unused_updateHealth() {
             try {
                 const r = await fetch('/api/health');
                 const d = await r.json();
@@ -354,23 +357,133 @@ DASHBOARD_HTML = """
             } catch(e) {}
         }
 
-        // Load API data first, then start video feeds.
-        // MJPEG streams hold HTTP connections open — browsers limit to 6
-        // concurrent connections per host. If feeds start first, API fetches
-        // queue behind them and the sidebar appears empty.
+        // Combined poll — single HTTP request for all sidebar data.
+        // MJPEG streams consume most of the browser's 6 connections per host.
+        // Using one endpoint keeps the API responsive even with 4+ video feeds.
+        async function updateAll() {
+            try {
+                const r = await fetch('/api/all');
+                const all = await r.json();
+                // Unpack and call individual update functions with the data
+                if (all.health) updateHealthData(all.health);
+                if (all.tracking) updateTrackingData(all.tracking);
+                if (all.sensors) updateSensorsData(all.sensors);
+            } catch(e) {}
+        }
+
+        function updateHealthData(d) {
+            document.getElementById('mqtt-status').textContent = d.local && d.local.mqtt_connected ? 'Connected' : 'Disconnected';
+            document.getElementById('mqtt-status').className = 'status-value ' + (d.local && d.local.mqtt_connected ? 'alive' : 'dead');
+            document.getElementById('sys-uptime').textContent = formatUptime((d.local && d.local.uptime_s) || 0);
+            document.getElementById('uptime').textContent = new Date().toLocaleTimeString();
+            const tDiv = document.getElementById('threads');
+            let html = '';
+            const threads = (d.local && d.local.threads) || {};
+            for (const [name, info] of Object.entries(threads)) {
+                const cls = info.alive ? 'alive' : 'dead';
+                const err = info.errors > 0 ? '<span class="error-count">(' + info.errors + ' errors)</span>' : '';
+                html += '<div class="thread-row"><span class="thread-name">' + name + '</span>'
+                      + '<span class="' + cls + '">' + (info.alive ? 'ALIVE' : 'DEAD') + '</span>' + err + '</div>';
+            }
+            tDiv.innerHTML = html || '<div style="color:#555">No threads registered</div>';
+            const pDiv = document.getElementById('peers');
+            let phtml = '';
+            const peers = d.peers || {};
+            for (const [host, info] of Object.entries(peers)) {
+                const age = Math.round(Date.now()/1000 - (info.ts || 0));
+                const peerThreads = info.threads || {};
+                const deadCount = Object.values(peerThreads).filter(t => !t.alive).length;
+                const cardCls = age > 15 ? 'stale' : deadCount > 0 ? 'unhealthy' : 'healthy';
+                const mqttStr = info.mqtt_connected ? '<span class="alive">MQTT OK</span>' : '<span class="dead">MQTT DOWN</span>';
+                phtml += '<div class="peer-card ' + cardCls + '">'
+                       + '<span class="peer-name">' + host + '</span>'
+                       + ' <span class="peer-info">(' + (info.system||'?') + ')</span>'
+                       + '<div class="peer-info">' + mqttStr
+                       + ' &bull; uptime ' + formatUptime(info.uptime_s || 0)
+                       + ' &bull; <span class="' + (age < 15 ? 'alive' : 'dead') + '">' + age + 's ago</span></div>'
+                       + '<div class="peer-threads">';
+                for (const [tname, tinfo] of Object.entries(peerThreads)) {
+                    const tcls = tinfo.alive ? 'alive' : 'dead';
+                    const terr = tinfo.errors > 0 ? '<span class="error-count">(' + tinfo.errors + ' errors)</span>' : '';
+                    phtml += '<div class="thread-row"><span class="thread-name">' + tname + '</span>'
+                           + '<span class="' + tcls + '">' + (tinfo.alive ? 'ALIVE' : 'DEAD') + '</span>' + terr + '</div>';
+                }
+                phtml += '</div></div>';
+            }
+            pDiv.innerHTML = phtml || '<div style="color:#555">Waiting for heartbeats...</div>';
+        }
+
+        function updateTrackingData(d) {
+            const div = document.getElementById('tracking-state');
+            let html = '';
+            if (d.overlay) {
+                const o = d.overlay;
+                html += '<div class="status-grid">';
+                html += '<div class="status-item"><div class="status-label">State</div>'
+                      + '<div class="status-value">' + (o.state || '?') + '</div></div>';
+                html += '<div class="status-item"><div class="status-label">World</div>'
+                      + '<div class="status-value">LR ' + (o.world_lr||0).toFixed(1) + '&deg; UD ' + (o.world_ud||0).toFixed(1) + '&deg;</div></div>';
+                html += '<div class="status-item"><div class="status-label">Head Target</div>'
+                      + '<div class="status-value">LR ' + Math.round(o.head_lr||0) + '&deg; UD ' + Math.round(o.head_ud||0) + '&deg;</div></div>';
+                html += '<div class="status-item"><div class="status-label">Body Target</div>'
+                      + '<div class="status-value">LR ' + Math.round(o.body_lr||0) + '&deg; UD ' + Math.round(o.body_ud||0) + '&deg;</div></div>';
+                html += '</div>';
+            }
+            if (d.room && d.room.count > 0) {
+                html += '<h2 style="margin-top:8px">Room (' + d.room.count + ')</h2>';
+                for (const p of d.room.roster || []) {
+                    const emo = p.emotion && p.emotion !== 'neutral' ? ' &bull; ' + p.emotion : '';
+                    const cams = (p.cameras||[]).map(c => c.replace('camera_','')).join(',');
+                    html += '<div class="thread-row"><span class="thread-name">' + p.person_id + emo + '</span>'
+                          + '<span style="color:#888">[' + cams + '] ' + (p.world_lr||0).toFixed(0) + '&deg;</span></div>';
+                }
+            }
+            if (d.attention) {
+                const a = d.attention;
+                html += '<div style="margin-top:6px;font-size:11px;color:#888">'
+                      + 'Target: ' + (a.attention_target||'none')
+                      + ' (' + (a.attention_reason||'') + ')'
+                      + ' budget=' + (a.attention_budget||0).toFixed(1) + 's</div>';
+            }
+            div.innerHTML = html || '<div style="color:#555">Waiting for data...</div>';
+        }
+
+        function updateSensorsData(sensors) {
+            const div = document.getElementById('sensors');
+            const labels = {imu:'IMU', tof:'TOF Distance', th:'Temp/Humidity', mox:'Air Quality'};
+            let html = '';
+            for (const [key, entry] of Object.entries(sensors)) {
+                const age = entry.age_ms >= 0 ? (entry.age_ms/1000).toFixed(1)+'s' : '?';
+                const dotColor = entry.age_ms >= 0 && entry.age_ms < 3000 ? '#00ff44' : '#ff4444';
+                let vals = '';
+                if (key.startsWith('cam_')) {
+                    vals = entry.data.fps ? entry.data.fps.toFixed(1) + ' FPS' : '?';
+                } else if (key.startsWith('soc_')) {
+                    vals = entry.data.temperature ? entry.data.temperature.toFixed(1) + '&deg;C' : '?';
+                } else if (key === 'imu' && entry.data) {
+                    const e = entry.data.euler || [];
+                    vals = e.length >= 3 ? 'Y:'+e[0].toFixed(0)+' P:'+e[1].toFixed(0)+' R:'+e[2].toFixed(0) : '?';
+                } else {
+                    vals = JSON.stringify(entry.data).substring(0, 40);
+                }
+                html += '<div class="thread-row">'
+                      + '<span style="color:' + dotColor + '">&#9679;</span> '
+                      + '<span class="thread-name">' + (labels[key]||key) + '</span>'
+                      + '<span style="color:#aaa;font-size:11px">' + vals + '</span>'
+                      + '<span style="color:#555;font-size:10px;margin-left:4px">(' + age + ')</span></div>';
+            }
+            div.innerHTML = html || '<div style="color:#555">No sensor data</div>';
+        }
+
+        // Initial load then start polling + video
         async function init() {
-            await updateHealth();
-            await updateTracking();
-            await updateSensors();
-            // Now start video feeds
+            await updateAll();
             document.querySelectorAll('.lazy-feed').forEach(img => {
                 img.src = img.dataset.feed;
             });
         }
         init();
-        setInterval(updateHealth, 2000);
-        setInterval(updateTracking, 500);
-        setInterval(updateSensors, 1000);
+        setInterval(updateAll, 1000);
     </script>
 </body>
 </html>
@@ -668,6 +781,55 @@ class WebDashboard(Thread):
                 last = st._last_update.get(f"soc_temp_{hostname}", 0)
                 age_ms = int((now - last) * 1000) if last > 0 else -1
                 result[f"soc_{hostname}"] = {"data": temp_data, "age_ms": age_ms}
+            return jsonify(result)
+
+        @app.route('/api/all')
+        def all_api():
+            """Combined endpoint — returns health + tracking + sensors in one request.
+
+            Reduces HTTP connections needed for polling. MJPEG streams consume
+            most of the browser's 6 connections per host, leaving few for API.
+            """
+            result = {"health": {}, "tracking": {}, "sensors": {}}
+            # Health
+            if dashboard.health_monitor:
+                result["health"]["local"] = dashboard.health_monitor.get_status()
+                result["health"]["peers"] = dict(dashboard.health_monitor._peer_status)
+            # Tracking
+            mt = dashboard.motion_tracking
+            if mt:
+                if hasattr(mt, '_debug_overlay'):
+                    result["tracking"]["overlay"] = mt._debug_overlay
+                if hasattr(mt, '_room_state') and mt._room_state:
+                    result["tracking"]["room"] = mt._room_state.get_room_summary()
+                if hasattr(mt, '_attention') and mt._attention:
+                    result["tracking"]["attention"] = mt._attention.get_state()
+            # Sensors
+            st = dashboard.sensor_tracker
+            if st:
+                now = time.time()
+                sensors_data = {}
+                sensors = {
+                    "imu": {"attr": "imu_status", "key": "imu_status"},
+                    "tof": {"attr": "tof_status", "key": "tof_status"},
+                    "th": {"attr": "th_status", "key": "th_status"},
+                    "mox": {"attr": "mox_status", "key": "mox_status"},
+                }
+                for name, info in sensors.items():
+                    data = getattr(st, info["attr"], {})
+                    last = st._last_update.get(info["key"], 0)
+                    age_ms = int((now - last) * 1000) if last > 0 else -1
+                    if data:
+                        sensors_data[name] = {"data": data, "age_ms": age_ms}
+                for location, fps_data in getattr(st, "camera_fps", {}).items():
+                    last = st._last_update.get(f"camera_fps_{location}", 0)
+                    age_ms = int((now - last) * 1000) if last > 0 else -1
+                    sensors_data[f"cam_{location}"] = {"data": fps_data, "age_ms": age_ms}
+                for hostname, temp_data in getattr(st, "soc_temp", {}).items():
+                    last = st._last_update.get(f"soc_temp_{hostname}", 0)
+                    age_ms = int((now - last) * 1000) if last > 0 else -1
+                    sensors_data[f"soc_{hostname}"] = {"data": temp_data, "age_ms": age_ms}
+                result["sensors"] = sensors_data
             return jsonify(result)
 
         return app
