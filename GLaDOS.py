@@ -52,8 +52,12 @@ if __name__ == "__main__":
     # pull the MQTT server connection info from the config
     mqtt_broker = IMU.broker_tuple(mqtt_c[SystemEnums.MQTT_SERVER_IP.value], mqtt_c[SystemEnums.MQTT_PORT.value])
     # pass it to the imu body module and start the IMU polling server
-    imu = IMU(broker=mqtt_broker)
-    imu.start()
+    imu = None
+    try:
+        imu = IMU(broker=mqtt_broker)
+        imu.start()
+    except (ValueError, OSError, TimeoutError) as e:
+        logger.error(f"IMU initialization failed: {e} — continuing without IMU")
     gl = GladosLocal(configp, LLMConnector)
     gl.start()
     # Greeting in background thread — retries if TTS isn't ready yet
@@ -91,7 +95,8 @@ if __name__ == "__main__":
     print(f"Published camera ready signal for left + right cameras")
     # Start health monitoring
     health = HealthMonitor(broker=mqtt_broker, system_name="glados_main")
-    health.register("IMU", imu)
+    if imu:
+        health.register("IMU", imu)
     health.register("GladosLocal", gl)
     health.register("STT", gstt)
     health.register("left_camera", left_camera)
