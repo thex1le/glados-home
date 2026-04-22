@@ -187,18 +187,24 @@ def main():
         client.publish("body/servo", json.dumps(msg))
 
     def get_imu_samples(n=5, interval=0.15):
-        """Collect n IMU samples and return averaged euler + raw quaternions."""
+        """Collect n valid IMU samples and return averaged euler + raw quaternions."""
         samples = []
-        for _ in range(n):
+        attempts = 0
+        max_attempts = n * 3  # retry up to 3x to get n valid samples
+        while len(samples) < n and attempts < max_attempts:
+            attempts += 1
             imu_received.clear()
             if imu_received.wait(timeout=1):
                 with imu_lock:
-                    if imu_data["euler"]:
+                    euler = imu_data["euler"]
+                    if euler and len(euler) >= 3 and all(v is not None for v in euler):
                         samples.append({
-                            "euler": list(imu_data["euler"]),
-                            "quaternion": list(imu_data["quaternion"]) if imu_data["quaternion"] else None,
-                            "gyroscope": list(imu_data["gyroscope"]) if imu_data["gyroscope"] else None,
+                            "euler": [float(v) for v in euler],
+                            "quaternion": [float(v) for v in imu_data["quaternion"]] if imu_data["quaternion"] and all(v is not None for v in imu_data["quaternion"]) else None,
+                            "gyroscope": [float(v) for v in imu_data["gyroscope"]] if imu_data["gyroscope"] and all(v is not None for v in imu_data["gyroscope"]) else None,
                         })
+                    else:
+                        print(f"    IMU: corrupt sample (attempt {attempts}), retrying...")
             time.sleep(interval)
 
         if not samples:
