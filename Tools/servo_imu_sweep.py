@@ -461,7 +461,7 @@ def main():
             print(f"  {entry['angle']:>8.1f} {e[0]:>8.1f} {e[1]:>8.1f} {e[2]:>8.1f} {fy:>8} {fp:>8} {gm:>6.3f}")
 
     # ============================================================
-    # PHASE 3: ANALYSIS — Generate correction data
+    # PHASE 3: ANALYSIS — Auto-detect axis mapping, compute corrections
     # ============================================================
     print(f"\n{'='*60}")
     print("  PHASE 3: ANALYSIS")
@@ -469,110 +469,174 @@ def main():
 
     analysis = {}
 
-    # --- 3a. EYE_UD_OFFSET calibration ---
-    # At center position, the FK says pitch = -22.5° (camera tilt).
-    # The IMU gives the actual head orientation. The difference between
-    # FK pitch and IMU pitch at center IS the true camera mounting offset.
-    if center_imu and center_fk:
-        imu_pitch = center_imu["euler_avg"][1]  # BNO055 pitch
-        fk_pitch = center_fk["pitch"]
-        eye_offset = fk_pitch - imu_pitch
-        analysis["eye_ud_offset"] = {
-            "imu_pitch_at_center": round(imu_pitch, 2),
-            "fk_pitch_at_center": round(fk_pitch, 2),
-            "measured_offset": round(eye_offset, 2),
-            "current_config": 2.0,
-        }
-        print(f"\n  EYE_UD_OFFSET Calibration:")
-        print(f"    IMU pitch at center:  {imu_pitch:+.1f}°")
-        print(f"    FK pitch at center:   {fk_pitch:+.1f}°")
-        print(f"    Measured offset:      {eye_offset:+.1f}°")
-        print(f"    Current config:       2.0°")
+    # IMU euler axes: [0]=Heading, [1]=Roll, [2]=Pitch
+    # FK axes: yaw, pitch
+    # The IMU is mounted at an arbitrary orientation — we need to find
+    # which IMU axis corresponds to FK yaw and which to FK pitch.
+    # We do this by correlating: for each servo sweep, which IMU axis
+    # has the strongest delta correlation with each FK axis?
+    imu_axis_names = ["Heading", "Roll", "Pitch"]
 
-    # --- 3b. Per-servo pushrod nonlinearity + FK error ---
-    for servo_name, sweep_data in results["sweeps"].items():
-        if not sweep_data or not sweep_data[0].get("fk"):
-            continue
-
-        # Reference IMU at center (first point should be near center)
+    def _compute_deltas(sweep_data, servo_name):
+        """Compute IMU and FK deltas from center for a sweep."""
         center_entry = None
         for e in sweep_data:
             if abs(e["angle"] - servo_defs[servo_name]["center"]) < 1:
                 center_entry = e
                 break
         if not center_entry:
-            continue
+            return None
 
         ref_euler = center_entry["imu"]["euler_avg"]
+        fk_center = center_entry["fk"]
+        deltas = []
+        for entry in sweep_data:
+            imu = entry["imu"]["euler_avg"]
+            fk = entry["fk"]
+            imu_d = [imu[i] - ref_euler[i] for i in range(3)]
+            # Heading wrap-around
+            if imu_d[0] > 180: imu_d[0] -= 360
+            elif imu_d[0] < -180: imu_d[0] += 360
+            fk_d = [fk["yaw"] - fk_center["yaw"], fk["pitch"] - fk_center["pitch"]]
+            deltas.append({
+                "angle": entry["angle"],
+                "imu_delta": imu_d,     # [heading, roll, pitch]
+                "fk_delta": fk_d,        # [yaw, pitch]
+            })
+        return deltas
 
-        # Compute FK error at each position
+    # --- 3a. Auto-detect IMU axis mapping ---
+    print("\n  Auto-detecting IMU axis mapping...")
+    # Use all individual sweeps to find the best correlation
+    all_imu_deltas = {ax: [] for ax in range(3)}  # per IMU axis
+    all_fk_deltas = {ax: [] for ax in range(2)}   # per FK axis (0=yaw, 1=pitch)
+
+    for servo_name, sweep_data in results["sweeps"].items():
+        if not sweep_data or not sweep_data[0].get("fk"):
+            continue
+        deltas = _compute_deltas(sweep_data, servo_name)
+        if not deltas:
+            continue
+        for d in deltas:
+            for i in range(3):
+                all_imu_deltas[i].append(d["imu_delta"][i])
+            for i in range(2):
+                all_fk_deltas[i].append(d["fk_delta"][i])
+
+    # Find best IMU axis for each FK axis using correlation
+    try:
+        import numpy as np
+
+        axis_map = {}  # fk_axis_idx -> (imu_axis_idx, sign, correlation)
+        fk_axis_labels = ["yaw", "pitch"]
+
+        for fk_idx in range(2):
+            fk_arr = np.array(all_fk_deltas[fk_idx])
+            best_corr = 0
+            best_imu_idx = 0
+            best_sign = 1
+
+            for imu_idx in range(3):
+                imu_arr = np.array(all_imu_deltas[imu_idx])
+                if len(fk_arr) < 3 or np.std(fk_arr) < 0.1 or np.std(imu_arr) < 0.1:
+                    continue
+                corr = np.corrcoef(fk_arr, imu_arr)[0, 1]
+                if abs(corr) > abs(best_corr):
+                    best_corr = corr
+                    best_imu_idx = imu_idx
+                    best_sign = 1 if corr > 0 else -1
+
+            axis_map[fk_idx] = {
+                "imu_axis": best_imu_idx,
+                "imu_axis_name": imu_axis_names[best_imu_idx],
+                "sign": best_sign,
+                "correlation": round(best_corr, 4),
+            }
+            print(f"    FK {fk_axis_labels[fk_idx]} -> IMU {imu_axis_names[best_imu_idx]} "
+                  f"(sign={'+' if best_sign > 0 else '-'}, r={best_corr:.3f})")
+
+        analysis["axis_mapping"] = axis_map
+    except ImportError:
+        print("    numpy not available — skipping axis mapping")
+        axis_map = {0: {"imu_axis": 0, "sign": 1}, 1: {"imu_axis": 1, "sign": 1}}
+
+    # --- 3b. EYE_UD_OFFSET calibration (using correct axis mapping) ---
+    if center_imu and center_fk and axis_map:
+        pitch_imu_idx = axis_map[1]["imu_axis"]
+        pitch_sign = axis_map[1]["sign"]
+        imu_pitch_mapped = pitch_sign * center_imu["euler_avg"][pitch_imu_idx]
+        fk_pitch = center_fk["pitch"]
+        eye_offset = fk_pitch - imu_pitch_mapped
+        analysis["eye_ud_offset"] = {
+            "imu_axis_used": imu_axis_names[pitch_imu_idx],
+            "imu_raw_value": round(center_imu["euler_avg"][pitch_imu_idx], 2),
+            "imu_mapped_value": round(imu_pitch_mapped, 2),
+            "fk_pitch_at_center": round(fk_pitch, 2),
+            "measured_offset": round(eye_offset, 2),
+            "current_config": 2.0,
+        }
+        print(f"\n  EYE_UD_OFFSET Calibration (using IMU {imu_axis_names[pitch_imu_idx]}):")
+        print(f"    IMU {imu_axis_names[pitch_imu_idx]} at center: {center_imu['euler_avg'][pitch_imu_idx]:+.1f}°")
+        print(f"    IMU mapped pitch:     {imu_pitch_mapped:+.1f}°")
+        print(f"    FK pitch at center:   {fk_pitch:+.1f}°")
+        print(f"    Measured offset:      {eye_offset:+.1f}°")
+
+    # --- 3c. Per-servo FK error with correct axis mapping ---
+    for servo_name, sweep_data in results["sweeps"].items():
+        if not sweep_data or not sweep_data[0].get("fk"):
+            continue
+        deltas = _compute_deltas(sweep_data, servo_name)
+        if not deltas:
+            continue
+
         errors = []
-        # Separate ascending (center→max) from descending (max→min) for backlash
         ascending = []
         descending = []
-        prev_angle = sweep_data[0]["angle"]
-        for entry in sweep_data:
-            imu_euler = entry["imu"]["euler_avg"]
-            fk = entry["fk"]
+        prev_angle = deltas[0]["angle"]
 
-            # IMU delta from center (heading and pitch)
-            imu_delta_h = imu_euler[0] - ref_euler[0]
-            imu_delta_p = imu_euler[1] - ref_euler[1]
-            imu_delta_r = imu_euler[2] - ref_euler[2]
-
-            # Handle heading wrap-around
-            if imu_delta_h > 180:
-                imu_delta_h -= 360
-            elif imu_delta_h < -180:
-                imu_delta_h += 360
-
-            # FK delta from center
-            fk_center = center_entry["fk"]
-            fk_delta_yaw = fk["yaw"] - fk_center["yaw"]
-            fk_delta_pitch = fk["pitch"] - fk_center["pitch"]
+        for d in deltas:
+            # Map IMU deltas to FK frame using auto-detected mapping
+            imu_yaw = axis_map[0]["sign"] * d["imu_delta"][axis_map[0]["imu_axis"]]
+            imu_pitch = axis_map[1]["sign"] * d["imu_delta"][axis_map[1]["imu_axis"]]
 
             error_entry = {
-                "angle": entry["angle"],
-                "imu_delta_heading": round(imu_delta_h, 2),
-                "imu_delta_pitch": round(imu_delta_p, 2),
-                "imu_delta_roll": round(imu_delta_r, 2),
-                "fk_delta_yaw": round(fk_delta_yaw, 2),
-                "fk_delta_pitch": round(fk_delta_pitch, 2),
-                "error_yaw": round(fk_delta_yaw - imu_delta_h, 2),
-                "error_pitch": round(fk_delta_pitch - imu_delta_p, 2),
+                "angle": d["angle"],
+                "imu_yaw": round(imu_yaw, 2),
+                "imu_pitch": round(imu_pitch, 2),
+                "fk_yaw": round(d["fk_delta"][0], 2),
+                "fk_pitch": round(d["fk_delta"][1], 2),
+                "error_yaw": round(d["fk_delta"][0] - imu_yaw, 2),
+                "error_pitch": round(d["fk_delta"][1] - imu_pitch, 2),
+                "imu_raw": [round(v, 2) for v in d["imu_delta"]],
             }
             errors.append(error_entry)
 
-            # Track direction for backlash
-            if entry["angle"] >= prev_angle:
+            if d["angle"] >= prev_angle:
                 ascending.append(error_entry)
             else:
                 descending.append(error_entry)
-            prev_angle = entry["angle"]
+            prev_angle = d["angle"]
 
-        # Backlash: find overlapping angles in ascending vs descending
+        # Backlash
         backlash_points = []
         asc_by_angle = {e["angle"]: e for e in ascending}
         desc_by_angle = {e["angle"]: e for e in descending}
         for angle in asc_by_angle:
             if angle in desc_by_angle:
                 a = asc_by_angle[angle]
-                d = desc_by_angle[angle]
+                dd = desc_by_angle[angle]
                 bl = {
                     "angle": angle,
-                    "heading_backlash": round(abs(a["imu_delta_heading"] - d["imu_delta_heading"]), 2),
-                    "pitch_backlash": round(abs(a["imu_delta_pitch"] - d["imu_delta_pitch"]), 2),
+                    "yaw_backlash": round(abs(a["imu_yaw"] - dd["imu_yaw"]), 2),
+                    "pitch_backlash": round(abs(a["imu_pitch"] - dd["imu_pitch"]), 2),
                 }
                 backlash_points.append(bl)
 
-        # Max FK error
         max_yaw_err = max(abs(e["error_yaw"]) for e in errors) if errors else 0
         max_pitch_err = max(abs(e["error_pitch"]) for e in errors) if errors else 0
         mean_yaw_err = sum(abs(e["error_yaw"]) for e in errors) / len(errors) if errors else 0
         mean_pitch_err = sum(abs(e["error_pitch"]) for e in errors) / len(errors) if errors else 0
-
-        # Backlash summary
-        max_backlash = max((bl["heading_backlash"] + bl["pitch_backlash"])
+        max_backlash = max((bl["yaw_backlash"] + bl["pitch_backlash"])
                           for bl in backlash_points) if backlash_points else 0
 
         servo_analysis = {
@@ -585,16 +649,12 @@ def main():
             "max_backlash": round(max_backlash, 2),
         }
 
-        # Try polynomial fit: servo_angle → FK_error
-        # This gives us a correction function
+        # Polynomial fit with correct axis mapping
         try:
-            import numpy as np
             angles_arr = np.array([e["angle"] for e in errors])
             yaw_errors = np.array([e["error_yaw"] for e in errors])
             pitch_errors = np.array([e["error_pitch"] for e in errors])
 
-            # Fit 3rd-degree polynomial: correction = poly(servo_angle)
-            # Normalize angles to [-1, 1] for numerical stability
             center = servo_defs[servo_name]["center"]
             half_range = max(servo_defs[servo_name]["max"] - center,
                             center - servo_defs[servo_name]["min"])
@@ -603,7 +663,6 @@ def main():
             yaw_poly = np.polyfit(angles_norm, yaw_errors, 3)
             pitch_poly = np.polyfit(angles_norm, pitch_errors, 3)
 
-            # Compute R² to see how well the poly fits
             yaw_pred = np.polyval(yaw_poly, angles_norm)
             pitch_pred = np.polyval(pitch_poly, angles_norm)
             yaw_ss_res = np.sum((yaw_errors - yaw_pred) ** 2)
@@ -614,30 +673,35 @@ def main():
             pitch_r2 = 1 - pitch_ss_res / pitch_ss_tot if pitch_ss_tot > 0 else 0
 
             servo_analysis["correction_poly"] = {
-                "yaw_coefficients": [round(c, 6) for c in yaw_poly.tolist()],
-                "pitch_coefficients": [round(c, 6) for c in pitch_poly.tolist()],
+                "yaw_coefficients": [round(float(c), 6) for c in yaw_poly.tolist()],
+                "pitch_coefficients": [round(float(c), 6) for c in pitch_poly.tolist()],
                 "center": center,
                 "half_range": half_range,
-                "yaw_r_squared": round(yaw_r2, 4),
-                "pitch_r_squared": round(pitch_r2, 4),
-                "usage": "correction = poly(((servo_angle - center) / half_range))",
+                "yaw_r_squared": round(float(yaw_r2), 4),
+                "pitch_r_squared": round(float(pitch_r2), 4),
             }
             print(f"\n  {servo_name} correction polynomial:")
-            print(f"    Yaw:   coeffs={[round(c,3) for c in yaw_poly]} R²={yaw_r2:.3f}")
-            print(f"    Pitch: coeffs={[round(c,3) for c in pitch_poly]} R²={pitch_r2:.3f}")
-        except ImportError:
-            print(f"\n  {servo_name}: numpy not available, skipping polynomial fit")
+            print(f"    Yaw:   R²={yaw_r2:.3f}")
+            print(f"    Pitch: R²={pitch_r2:.3f}")
+        except Exception as e:
+            print(f"\n  {servo_name}: polynomial fit failed: {e}")
 
         analysis[servo_name] = servo_analysis
 
-        print(f"\n  {servo_name} FK Error:")
-        print(f"    Max yaw error:   {max_yaw_err:+.1f}°")
-        print(f"    Max pitch error: {max_pitch_err:+.1f}°")
+        print(f"\n  {servo_name} FK Error (mapped axes):")
+        print(f"    Max yaw error:   {max_yaw_err:.1f}°")
+        print(f"    Max pitch error: {max_pitch_err:.1f}°")
         print(f"    Mean yaw error:  {mean_yaw_err:.1f}°")
         print(f"    Mean pitch error:{mean_pitch_err:.1f}°")
         print(f"    Max backlash:    {max_backlash:.1f}°")
 
-    # --- 3c. Cross-coupling analysis ---
+        # Print detailed error table
+        print(f"    {'Angle':>8} {'FK_Yaw':>8} {'IMU_Yaw':>8} {'Err_Y':>7} {'FK_Pit':>8} {'IMU_Pit':>8} {'Err_P':>7}")
+        for e in errors:
+            print(f"    {e['angle']:>8.1f} {e['fk_yaw']:>+8.1f} {e['imu_yaw']:>+8.1f} {e['error_yaw']:>+7.1f} "
+                  f"{e['fk_pitch']:>+8.1f} {e['imu_pitch']:>+8.1f} {e['error_pitch']:>+7.1f}")
+
+    # --- 3d. Cross-coupling analysis (using mapped axes) ---
     if results["interactions"]:
         print(f"\n  Cross-Coupling Analysis:")
         coupling_summary = []
@@ -651,7 +715,6 @@ def main():
             if not data:
                 continue
 
-            # Find the same sweep at context=center for comparison
             center_sweep = None
             for other in results["interactions"]:
                 if (other["sweep_servo"] == sweep_s and
@@ -661,63 +724,64 @@ def main():
                     break
 
             if center_sweep and ctx_a != ctx_center:
-                # Compare: how much did changing the context servo shift the IMU?
-                max_shift_h = 0
-                max_shift_p = 0
+                max_shift_yaw = 0
+                max_shift_pitch = 0
                 for entry in data:
-                    # Find matching angle in center sweep
                     for centry in center_sweep:
                         if abs(centry["angle"] - entry["angle"]) < 1:
-                            dh = abs(entry["imu"]["euler_avg"][0] - centry["imu"]["euler_avg"][0])
-                            dp = abs(entry["imu"]["euler_avg"][1] - centry["imu"]["euler_avg"][1])
-                            if dh > 180:
-                                dh = 360 - dh
-                            max_shift_h = max(max_shift_h, dh)
-                            max_shift_p = max(max_shift_p, dp)
+                            # Use mapped axes for comparison
+                            yaw_idx = axis_map[0]["imu_axis"]
+                            pitch_idx = axis_map[1]["imu_axis"]
+                            dy = abs(entry["imu"]["euler_avg"][yaw_idx] - centry["imu"]["euler_avg"][yaw_idx])
+                            dp = abs(entry["imu"]["euler_avg"][pitch_idx] - centry["imu"]["euler_avg"][pitch_idx])
+                            if dy > 180: dy = 360 - dy
+                            max_shift_yaw = max(max_shift_yaw, dy)
+                            max_shift_pitch = max(max_shift_pitch, dp)
                             break
 
                 coupling_entry = {
-                    "sweep": sweep_s,
-                    "context": ctx_s,
+                    "sweep": sweep_s, "context": ctx_s,
                     "context_angle": ctx_a,
-                    "context_offset_from_center": ctx_a - ctx_center,
-                    "max_heading_shift": round(max_shift_h, 2),
-                    "max_pitch_shift": round(max_shift_p, 2),
+                    "context_offset": ctx_a - ctx_center,
+                    "max_yaw_shift": round(max_shift_yaw, 2),
+                    "max_pitch_shift": round(max_shift_pitch, 2),
                 }
                 coupling_summary.append(coupling_entry)
                 print(f"    {sweep_s} + {ctx_s}={ctx_a} (offset {ctx_a-ctx_center:+.0f}): "
-                      f"max shift H={max_shift_h:.1f}° P={max_shift_p:.1f}°")
+                      f"yaw_shift={max_shift_yaw:.1f}° pitch_shift={max_shift_pitch:.1f}°")
 
         analysis["cross_coupling"] = coupling_summary
 
-    # Save analysis alongside raw data
+    # Save analysis
     results["analysis"] = analysis
-
-    # Re-save with analysis
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nFull results + analysis saved to: {output_path}")
 
-    # --- 3d. Generate Python correction code ---
+    # --- 3e. Generate Python correction code ---
     correction_file = output_path.replace(".json", "_corrections.py")
     with open(correction_file, "w") as f:
         f.write('"""Auto-generated servo FK correction from IMU sweep data.\n\n')
         f.write(f'Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}\n')
         f.write(f'Source: {output_path}\n')
+        f.write(f'IMU axis mapping: FK_yaw -> IMU_{axis_map[0]["imu_axis_name"]} (sign={axis_map[0]["sign"]})\n')
+        f.write(f'                  FK_pitch -> IMU_{axis_map[1]["imu_axis_name"]} (sign={axis_map[1]["sign"]})\n')
         f.write('"""\n\n')
+
+        f.write('# IMU to FK axis mapping\n')
+        f.write(f'IMU_YAW_AXIS = {axis_map[0]["imu_axis"]}  # IMU euler index for FK yaw\n')
+        f.write(f'IMU_YAW_SIGN = {axis_map[0]["sign"]}\n')
+        f.write(f'IMU_PITCH_AXIS = {axis_map[1]["imu_axis"]}  # IMU euler index for FK pitch\n')
+        f.write(f'IMU_PITCH_SIGN = {axis_map[1]["sign"]}\n\n')
+
+        if "eye_ud_offset" in analysis:
+            f.write(f'EYE_UD_OFFSET_MEASURED = {analysis["eye_ud_offset"]["measured_offset"]}\n\n')
+
         f.write('def correct_fk(servo_name: str, servo_angle: float,\n')
         f.write('               fk_yaw: float, fk_pitch: float) -> tuple:\n')
-        f.write('    """Apply IMU-calibrated correction to FK output.\n\n')
-        f.write('    Args:\n')
-        f.write('        servo_name: Which servo is being evaluated.\n')
-        f.write('        servo_angle: Current servo angle in degrees.\n')
-        f.write('        fk_yaw: FK-computed yaw.\n')
-        f.write('        fk_pitch: FK-computed pitch.\n\n')
-        f.write('    Returns:\n')
-        f.write('        Corrected (yaw, pitch).\n')
-        f.write('    """\n')
+        f.write('    """Apply IMU-calibrated correction to FK output."""\n')
 
-        for servo_name, sa in analysis.items():
+        for sname, sa in analysis.items():
             if not isinstance(sa, dict) or "correction_poly" not in sa:
                 continue
             poly = sa["correction_poly"]
@@ -725,25 +789,20 @@ def main():
             half_range = poly["half_range"]
             yc = poly["yaw_coefficients"]
             pc = poly["pitch_coefficients"]
-            f.write(f'    if servo_name == "{servo_name}":\n')
+            f.write(f'    if servo_name == "{sname}":\n')
             f.write(f'        t = (servo_angle - {center}) / {half_range}\n')
             f.write(f'        yaw_err = {yc[0]}*t**3 + {yc[1]}*t**2 + {yc[2]}*t + {yc[3]}\n')
             f.write(f'        pitch_err = {pc[0]}*t**3 + {pc[1]}*t**2 + {pc[2]}*t + {pc[3]}\n')
             f.write(f'        return fk_yaw - yaw_err, fk_pitch - pitch_err\n')
 
-        f.write('    return fk_yaw, fk_pitch\n')
-        f.write('\n\n')
+        f.write('    return fk_yaw, fk_pitch\n\n')
 
-        # Also output summary constants
-        f.write('# Summary\n')
-        if "eye_ud_offset" in analysis:
-            f.write(f'EYE_UD_OFFSET_MEASURED = {analysis["eye_ud_offset"]["measured_offset"]}\n')
-        for servo_name, sa in analysis.items():
+        for sname, sa in analysis.items():
             if not isinstance(sa, dict) or "max_backlash" not in sa:
                 continue
-            f.write(f'# {servo_name}: max_yaw_err={sa["max_yaw_error"]}° '
-                    f'max_pitch_err={sa["max_pitch_error"]}° '
-                    f'backlash={sa["max_backlash"]}°\n')
+            f.write(f'# {sname}: yaw_err={sa["mean_yaw_error"]:.1f}° (max {sa["max_yaw_error"]:.1f}°) '
+                    f'pitch_err={sa["mean_pitch_error"]:.1f}° (max {sa["max_pitch_error"]:.1f}°) '
+                    f'backlash={sa["max_backlash"]:.1f}°\n')
 
     print(f"  Correction code saved to: {correction_file}")
 

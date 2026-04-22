@@ -864,6 +864,15 @@ class Gservo(MQTTClient, Thread):
         vel_thresh = MotionProfile.MOVING_VELOCITY_THRESHOLD.value
         pos_thresh = MotionProfile.MOVING_POSITION_THRESHOLD.value
 
+        # Gentle startup: skip hardware writes for 2 seconds so the
+        # servo doesn't snap from its physical position. The spring-damper
+        # physics still run (position/velocity update), and the first
+        # external command (from tracking or calibration) sets the real
+        # target. After 2 seconds, writes begin and the servo eases to
+        # wherever the spring-damper has reached.
+        startup_grace = time() + 2.0
+        self.logger.info(f"{self.location}: startup grace period (2s)")
+
         _prev_moving = False
         _prev_clamped = False
         _physics_log_counter = 0
@@ -896,8 +905,11 @@ class Gservo(MQTTClient, Thread):
                     vel = 0.0
                 clamped = True
 
-            # Write to hardware
-            self.servo.angle = pos
+            # Write to hardware (skip during startup grace to avoid snap)
+            if time() > startup_grace:
+                self.servo.angle = pos
+            elif _physics_log_counter == 0:
+                self.logger.debug(f"{self.location}: startup grace — skipping hardware write")
 
             # Update state under lock
             with self._lock:
