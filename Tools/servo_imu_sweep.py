@@ -47,26 +47,34 @@ def main():
     broker_port = config.getint("MQTT", "mqtt_port")
 
     # Servo definitions from config
-    servo_defs = {
-        "body_left_right": {"min": 0, "max": 180, "center": 90},
-        "body_up_down": {"min": 52, "max": 120, "center": 92},
-        "head_left_right": {"min": 6, "max": 125, "center": 83},
-        "head_up_down": {"min": 6, "max": 125, "center": 83},
-    }
-
-    # Override from config if available
+    # body_lr and body_ud use default_max_min_center (0-180)
+    # head_lr uses neck_min_max_center (52-120)
+    # head_ud uses head_min_max_center (6-125)
     try:
+        default_vals = config.get("SERVOS", "default_max_min_center").split(",")
         head_vals = config.get("SERVOS", "head_min_max_center").split(",")
         neck_vals = config.get("SERVOS", "neck_min_max_center").split(",")
-        servo_defs["head_left_right"] = {"max": int(head_vals[0]), "min": int(head_vals[1]),
-                                          "center": int(head_vals[2])}
-        servo_defs["head_up_down"] = {"max": int(head_vals[0]), "min": int(head_vals[1]),
-                                       "center": int(head_vals[2])}
-        servo_defs["body_left_right"]["center"] = int(neck_vals[2])
-        servo_defs["body_up_down"] = {"max": int(neck_vals[0]), "min": int(neck_vals[1]),
-                                       "center": int(neck_vals[2])}
+        servo_defs = {
+            "body_left_right": {"max": int(default_vals[0]), "min": int(default_vals[1]),
+                                "center": int(default_vals[2])},
+            "body_up_down": {"max": int(default_vals[0]), "min": int(default_vals[1]),
+                             "center": int(default_vals[2])},
+            "head_left_right": {"max": int(neck_vals[0]), "min": int(neck_vals[1]),
+                                "center": int(neck_vals[2])},
+            "head_up_down": {"max": int(head_vals[0]), "min": int(head_vals[1]),
+                             "center": int(head_vals[2])},
+        }
+        print(f"Servo ranges from config:")
+        for s, d in servo_defs.items():
+            print(f"  {s}: {d['min']}-{d['max']}, center={d['center']}")
     except Exception as e:
         print(f"Warning: could not read servo config: {e}, using defaults")
+        servo_defs = {
+            "body_left_right": {"min": 0, "max": 180, "center": 90},
+            "body_up_down": {"min": 0, "max": 180, "center": 90},
+            "head_left_right": {"min": 52, "max": 120, "center": 92},
+            "head_up_down": {"min": 6, "max": 125, "center": 83},
+        }
 
     # FK
     try:
