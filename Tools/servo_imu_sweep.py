@@ -89,11 +89,13 @@ def main():
     def on_message(client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
-            if "euler" in data:
+            # IMU publishes as {"imu_status": {"euler": [...], ...}}
+            imu_payload = data.get("imu_status", data)
+            if "euler" in imu_payload:
                 with imu_lock:
-                    imu_data["euler"] = data.get("euler")
-                    imu_data["quaternion"] = data.get("quaternion")
-                    imu_data["gyroscope"] = data.get("gyroscope")
+                    imu_data["euler"] = imu_payload.get("euler")
+                    imu_data["quaternion"] = imu_payload.get("quaternion")
+                    imu_data["gyroscope"] = imu_payload.get("gyroscope")
                     imu_data["ts"] = time.time()
                 imu_received.set()
         except (json.JSONDecodeError, KeyError):
