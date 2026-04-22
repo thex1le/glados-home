@@ -258,6 +258,18 @@ def main():
         center_fk = {"yaw": round(yaw, 2), "pitch": round(pitch, 2)}
         print(f"Center FK: yaw={yaw:.1f} pitch={pitch:.1f}")
 
+    # Output path — set early so incremental saves work
+    if args.output:
+        output_path = args.output
+    else:
+        output_path = f"servo_imu_sweep_{time.strftime('%Y%m%d_%H%M%S')}.json"
+
+    def save_progress():
+        """Incremental save after each section so data isn't lost on error."""
+        with open(output_path, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"  [saved progress to {output_path}]")
+
     # Results
     results = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -362,6 +374,7 @@ def main():
 
         send_servo(servo_name, sdef["center"], args.speed)
         time.sleep(1)
+        save_progress()
 
     # ============================================================
     # PHASE 2: Interaction sweeps (test cross-coupling)
@@ -409,6 +422,7 @@ def main():
                 send_servo(sweep_servo, servo_defs[sweep_servo]["center"], args.speed)
                 send_servo(ctx_servo, servo_defs[ctx_servo]["center"], args.speed)
                 time.sleep(1)
+                save_progress()
     else:
         print("\n  Skipping interaction sweeps (single-servo mode)")
         print("  Run without -servo to include cross-coupling tests")
@@ -418,15 +432,7 @@ def main():
     for servo_name, sdef in servo_defs.items():
         send_servo(servo_name, sdef["center"], args.speed)
 
-    # Save results
-    if args.output:
-        output_path = args.output
-    else:
-        output_path = f"servo_imu_sweep_{time.strftime('%Y%m%d_%H%M%S')}.json"
-
-    with open(output_path, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"\nResults saved to: {output_path}")
+    save_progress()
 
     # Print summary
     print(f"\n{'='*60}")
