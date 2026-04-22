@@ -168,17 +168,25 @@ def main():
         client.loop_stop()
         sys.exit(1)
 
-    # Verify IMU data is updating (not stale from a previous session)
-    imu_received.clear()
-    if not imu_received.wait(timeout=2):
-        print("ERROR: IMU data is stale — received once but not updating.")
-        print("The IMU thread may have crashed after startup.")
+    # Verify IMU data is updating with valid values
+    valid_euler = None
+    for attempt in range(10):
+        imu_received.clear()
+        if imu_received.wait(timeout=2):
+            with imu_lock:
+                euler = imu_data["euler"]
+                if euler and len(euler) >= 3 and all(v is not None for v in euler):
+                    valid_euler = [float(v) for v in euler]
+                    break
+        print(f"  IMU: waiting for valid data (attempt {attempt + 1})...")
+
+    if not valid_euler:
+        print("ERROR: IMU is publishing but euler values are None.")
+        print("The BNO055 sensor may need recalibration or power cycle.")
         client.loop_stop()
         sys.exit(1)
 
-    with imu_lock:
-        euler = imu_data["euler"]
-    print(f"  IMU data flowing: euler={[round(e,1) for e in euler]}")
+    print(f"  IMU data flowing: euler={[round(e,1) for e in valid_euler]}")
     print("  IMU OK")
 
     def send_servo(servo_name, angle, speed):
