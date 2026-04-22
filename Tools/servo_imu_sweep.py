@@ -99,20 +99,77 @@ def main():
         except (json.JSONDecodeError, KeyError):
             pass
 
+    # Also track health status for IMU thread
+    imu_health = {"alive": None, "checked": False}
+    health_lock = threading.Lock()
+
+    def on_health_message(client, userdata, msg):
+        try:
+            data = json.loads(msg.payload.decode())
+            threads = data.get("threads", {})
+            if "IMU" in threads:
+                with health_lock:
+                    imu_health["alive"] = threads["IMU"].get("alive", False)
+                    imu_health["checked"] = True
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     client = mqtt.Client()
     client.on_message = on_message
     print(f"Connecting to MQTT broker at {broker_ip}:{broker_port}")
     client.connect(broker_ip, broker_port)
     client.subscribe("body/imu/status")
+    client.subscribe("system/health/#")
+    # Route health messages to separate handler
+    client.message_callback_add("system/health/#", on_health_message)
     client.loop_start()
 
-    # Wait for first IMU message
-    print("Waiting for IMU data...")
+    # Wait for health check first (up to 8 seconds for heartbeat)
+    print("Checking IMU health status...")
+    health_deadline = time.time() + 8
+    while time.time() < health_deadline:
+        with health_lock:
+            if imu_health["checked"]:
+                break
+        time.sleep(0.5)
+
+    with health_lock:
+        if imu_health["checked"] and not imu_health["alive"]:
+            print("ERROR: IMU thread is DEAD on the Pi5.")
+            print("The BNO055 IMU has crashed (likely I2C bus error).")
+            print("Restart GLaDOS.py on the Pi5 to recover the IMU.")
+            client.loop_stop()
+            sys.exit(1)
+        elif imu_health["checked"] and imu_health["alive"]:
+            print("  IMU thread is ALIVE")
+        else:
+            print("  WARNING: No health heartbeat received — IMU status unknown")
+            print("  Continuing anyway, will check for IMU data directly...")
+
+    # Wait for actual IMU data
+    print("Waiting for IMU data on body/imu/status...")
     if not imu_received.wait(timeout=10):
         print("ERROR: No IMU data received in 10 seconds.")
-        print("Is GLaDOS.py (Pi5) running with the IMU?")
+        print("Possible causes:")
+        print("  - GLaDOS.py (Pi5) is not running")
+        print("  - IMU thread crashed (I2C bus error on BNO055)")
+        print("  - MQTT broker is not forwarding messages")
+        print("  - IMU sensor is not connected (check I2C: sudo i2cdetect -y 1)")
+        client.loop_stop()
         sys.exit(1)
-    print("IMU data received")
+
+    # Verify IMU data is updating (not stale from a previous session)
+    imu_received.clear()
+    if not imu_received.wait(timeout=2):
+        print("ERROR: IMU data is stale — received once but not updating.")
+        print("The IMU thread may have crashed after startup.")
+        client.loop_stop()
+        sys.exit(1)
+
+    with imu_lock:
+        euler = imu_data["euler"]
+    print(f"  IMU data flowing: euler={[round(e,1) for e in euler]}")
+    print("  IMU OK")
 
     def send_servo(servo_name, angle, speed):
         msg = {"cmd": "move", "servo": servo_name, "angle": int(round(angle)),
