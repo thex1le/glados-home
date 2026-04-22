@@ -667,27 +667,46 @@ class IMU(MQTTClient, Thread):
     def get_sensor(self) -> Dict[str, Any]:
         """Retrieve sensor data.
 
-        This method gathers sensor data including temperature, acceleration,
-        magnetic field, gyro, Euler angles, quaternion, linear acceleration, and
-        gravity. It also attaches a timestamp to the reading.
+        Reads each I2C register individually with error handling. The BNO055
+        returns (None, None, None) during calibration or bus glitches — those
+        are passed through and handled downstream. Only essential registers
+        (euler, gyro, quaternion, linear_accel) are read every cycle.
+        Temperature and calibration are read less frequently to reduce bus load.
 
         Returns:
-            Dict[str, Any]: A dictionary containing the sensor data, where the keys
-            are defined by the IMUEnums and the values are the corresponding sensor
-            readings.
+            Dict[str, Any]: A dictionary containing the sensor data.
         """
-        sdata: Dict[str, Any] = {
-            IMUEnums.TEMP_KEY.value: self.temperature(),
-            IMUEnums.ACCEL_KEY.value: self.sensor.acceleration,
-            IMUEnums.MAGNETO_KEY.value: self.sensor.magnetic,
-            IMUEnums.GYRO_KEY.value: self.sensor.gyro,
-            IMUEnums.EULER_KEY.value: self.sensor.euler,
-            IMUEnums.QUAT_KEY.value: self.sensor.quaternion,
-            IMUEnums.LINEAR_KEY.value: self.sensor.linear_acceleration,
-            IMUEnums.GRAVITY_KEY.value: self.sensor.gravity,
-            IMUEnums.IMU_TIME_STAMP_KEY.value: time(),
-            IMUEnums.CALIBRATION_STATUS_KEY.value: self.sensor.calibration_status,
-        }
+        sdata: Dict[str, Any] = {IMUEnums.IMU_TIME_STAMP_KEY.value: time()}
+
+        # Essential readings (every cycle)
+        for key, attr in [
+            (IMUEnums.EULER_KEY.value, "euler"),
+            (IMUEnums.GYRO_KEY.value, "gyro"),
+            (IMUEnums.QUAT_KEY.value, "quaternion"),
+            (IMUEnums.LINEAR_KEY.value, "linear_acceleration"),
+        ]:
+            try:
+                sdata[key] = getattr(self.sensor, attr)
+            except OSError:
+                sdata[key] = None
+
+        # Less critical readings (still included for completeness)
+        for key, attr in [
+            (IMUEnums.ACCEL_KEY.value, "acceleration"),
+            (IMUEnums.MAGNETO_KEY.value, "magnetic"),
+            (IMUEnums.GRAVITY_KEY.value, "gravity"),
+            (IMUEnums.CALIBRATION_STATUS_KEY.value, "calibration_status"),
+        ]:
+            try:
+                sdata[key] = getattr(self.sensor, attr)
+            except OSError:
+                sdata[key] = None
+
+        try:
+            sdata[IMUEnums.TEMP_KEY.value] = self.temperature()
+        except OSError:
+            sdata[IMUEnums.TEMP_KEY.value] = None
+
         self.logger.debug(f"IMU Data: {sdata}")
         return sdata
 
