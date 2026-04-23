@@ -1531,15 +1531,20 @@ class MotionTrack(MQTTClient):
             best_target = self.__select_target(filtered_objects, camera)
         if not best_target:
             # Still update room roster even without a tracking target — other
-            # people in the frame should be tracked in the roster
-            if self._room_state:
+            # people in the frame should be tracked in the roster.
+            # Only side cameras update roster world_lr — the head camera's
+            # FK-computed angle is frozen when servos don't move, and at 15fps
+            # it overwrites the side camera's correct position updates.
+            if self._room_state and camera != self.main_camera:
                 self._room_state.update_from_vision(
                     camera, filtered_objects,
                     lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
             return
 
-        # Update room roster with filtered detections from this camera
-        if self._room_state:
+        # Update room roster with filtered detections from this camera.
+        # Only side cameras provide roster world_lr — head camera FK is
+        # unreliable (cross-coupling errors, frozen when servos don't move).
+        if self._room_state and camera != self.main_camera:
             self._room_state.update_from_vision(
                 camera, filtered_objects,
                 lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
