@@ -1232,6 +1232,7 @@ class MotionTrack(MQTTClient):
         if best_lr is None:
             best_lr = self._fusion.get_best_side_world_lr()
         if best_lr is None:
+            self.logger.info("SIDE_DRIVE: no best_lr — skipping")
             return
 
         # Predictive rotation if enabled
@@ -1268,8 +1269,9 @@ class MotionTrack(MQTTClient):
         else:
             world_ud = MotionProfile.SIDE_DRIVE_DEFAULT_PITCH.value
 
-        self.logger.debug(
-            f"SIDE_DRIVE: target_lr={self._side_world_lr_smooth:.1f} world_ud={world_ud:.1f}")
+        self.logger.info(
+            f"SIDE_DRIVE: best_lr={best_lr:.1f} smooth_lr={self._side_world_lr_smooth:.1f} "
+            f"world_ud={world_ud:.1f} source=side")
         self._pdebug.log("MotionTrack", "SIDE_DRIVE", {
             "target_lr": round(self._side_world_lr_smooth, 1),
             "world_ud": round(world_ud, 1),
@@ -1530,6 +1532,9 @@ class MotionTrack(MQTTClient):
         else:
             best_target = self.__select_target(filtered_objects, camera)
         if not best_target:
+            if camera in (self.left_camera, self.right_camera):
+                self.logger.info(
+                    f"TRACK_LOOP: {camera} no best_target, filtered={len(filtered_objects)}")
             # Still update room roster and FUSION STATE even without a tracking
             # target. Side cameras must update their world angles or the robot
             # freezes when __select_target can't find a match.
