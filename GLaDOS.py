@@ -57,7 +57,7 @@ if __name__ == "__main__":
         imu = IMU(broker=mqtt_broker)
         imu.start()
     except (ValueError, OSError, TimeoutError) as e:
-        logger.error(f"IMU initialization failed: {e} — continuing without IMU")
+        print(f"WARNING: IMU initialization failed: {e} — continuing without IMU")
     gl = GladosLocal(configp, LLMConnector)
     gl.start()
     # Greeting in background thread — retries if TTS isn't ready yet
