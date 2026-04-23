@@ -1649,15 +1649,29 @@ class MotionTrack(MQTTClient):
                         }
                         use_point = True
 
-                head_world_lr = self._pixel_to_world_angle(
-                    target_data_for_calc, camera, ServoEnum.X_AXIS.value, point=use_point)
-                head_world_ud = self._pixel_to_world_angle(
-                    target_data_for_calc, camera, ServoEnum.Y_AXIS.value, point=use_point)
-                head_world_ud -= self._eye_ud_offset
+                # Compute refinement directly from pixel offset — no FK.
+                # "Person is N degrees from frame center" IS the refinement.
+                # FK has 10-25x cross-coupling errors (IMU sweep confirmed),
+                # so bypassing it eliminates the biggest error source.
+                if use_point:
+                    px = target_data_for_calc["x"]
+                    py = target_data_for_calc["y"]
+                else:
+                    px = (target_data_for_calc.get("x1", 0) + target_data_for_calc.get("x2", 0)) / 2
+                    py = (target_data_for_calc.get("y1", 0) + target_data_for_calc.get("y2", 0)) / 2
 
-                # Raw refinement, clamped
-                raw_lr = head_world_lr - side_lr
-                raw_ud = head_world_ud - side_ud
+                # Pixel offset from frame center (positive = person is left/above center)
+                lr_offset_px = (self.cam_x / 2) - px
+                ud_offset_px = (self.cam_y / 2) - py
+
+                # Convert to degrees using rectilinear projection (head camera is not fisheye)
+                fov_x = CameraEnum.CAMERA_HEAD_FOV_X.value
+                fov_y = CameraEnum.CAMERA_HEAD_FOV_Y.value
+                from math import atan, degrees as _deg
+                focal_x = (self.cam_x / 2) / atan(radians(fov_x) / 2)
+                focal_y = (self.cam_y / 2) / atan(radians(fov_y) / 2)
+                raw_lr = _deg(atan(lr_offset_px / focal_x))
+                raw_ud = _deg(atan(ud_offset_px / focal_y))
                 max_lr = MotionProfile.HEAD_REFINEMENT_MAX_LR.value
                 max_ud = MotionProfile.HEAD_REFINEMENT_MAX_UD.value
                 raw_lr = max(-max_lr, min(max_lr, raw_lr))
