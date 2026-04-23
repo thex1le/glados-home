@@ -9,6 +9,7 @@ import sys
 import configparser
 
 # glados imports
+from glados_modules.GlogConfig import setup_logger
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
 from glados_modules.CameraModule import Camera, CameraWatchdog
@@ -39,6 +40,8 @@ if __name__ == "__main__":
         configp.read(args.conf[0])
     else:
         raise GladosException("Unable to load file {}".format(args.conf[0]))
+
+    logger = setup_logger(name="GLaDOS_main")
     # Select LLM provider from config (default: openai for backward compatibility)
     llm_provider = configp.get(SystemEnums.CONFIG_HEAD_DEFAULT.value,
                                 SystemEnums.LLM_PROVIDER.value, fallback="openai").strip().lower()
@@ -57,7 +60,7 @@ if __name__ == "__main__":
         imu = IMU(broker=mqtt_broker)
         imu.start()
     except (ValueError, OSError, TimeoutError) as e:
-        print(f"WARNING: IMU initialization failed: {e} — continuing without IMU")
+        logger.error(f"IMU initialization failed: {e} — continuing without IMU")
     gl = GladosLocal(configp, LLMConnector)
     gl.start()
     # Greeting in background thread — retries if TTS isn't ready yet
