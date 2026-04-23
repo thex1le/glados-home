@@ -1768,7 +1768,7 @@ class MotionTrack(MQTTClient):
                         servo_mins=self._servo_mins.copy(),
                         servo_maxs=self._servo_maxs.copy(),
                         cam_resolution=(self.cam_x, self.cam_y),
-                        raw_world_lr=head_world_lr, raw_world_ud=head_world_ud,
+                        raw_world_lr=self._refinement_lr, raw_world_ud=self._refinement_ud,
                         smoothed_world_lr=final_lr, smoothed_world_ud=final_ud,
                         output_targets=output_targets,
                         fusion_state=self._fusion.state,
