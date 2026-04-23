@@ -1530,15 +1530,28 @@ class MotionTrack(MQTTClient):
         else:
             best_target = self.__select_target(filtered_objects, camera)
         if not best_target:
-            # Still update room roster even without a tracking target — other
-            # people in the frame should be tracked in the roster.
-            # Only side cameras update roster world_lr — the head camera's
-            # FK-computed angle is frozen when servos don't move, and at 15fps
-            # it overwrites the side camera's correct position updates.
-            if self._room_state and camera != self.main_camera:
-                self._room_state.update_from_vision(
-                    camera, filtered_objects,
-                    lambda bbox, cam: self._pixel_to_world_angle(bbox, cam, ServoEnum.X_AXIS.value))
+            # Still update room roster and FUSION STATE even without a tracking
+            # target. Side cameras must update their world angles or the robot
+            # freezes when __select_target can't find a match.
+            if camera in (self.left_camera, self.right_camera):
+                # Update fusion state directly from filtered_objects
+                if filtered_objects:
+                    top = max(filtered_objects,
+                              key=lambda d: d.get("confidence", 0))
+                    bbox = top.get(TrackingEnums.KEY_BOX.value, {})
+                    if bbox:
+                        side_lr = self._pixel_to_world_angle(
+                            bbox, camera, ServoEnum.X_AXIS.value)
+                        side_ud = self._pixel_to_world_angle(
+                            bbox, camera, ServoEnum.Y_AXIS.value)
+                        self._fusion.update_side_detection(
+                            camera, side_lr,
+                            len(filtered_objects), world_ud=side_ud)
+                if self._room_state:
+                    self._room_state.update_from_vision(
+                        camera, filtered_objects,
+                        lambda bbox, cam: self._pixel_to_world_angle(
+                            bbox, cam, ServoEnum.X_AXIS.value))
             return
 
         # Update room roster with filtered detections from this camera.
