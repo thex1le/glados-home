@@ -1212,12 +1212,21 @@ class MotionTrack(MQTTClient):
         """
         best_lr = None
 
-        # Prefer attention model target — prevents oscillation between people
+        # Prefer attention model target — prevents oscillation between people.
+        # But if the target's position is stale (>1s since last update), the
+        # person likely moved and got a new roster ID. Fall through to the
+        # raw side camera angle so the robot still tracks SOMEBODY.
         if self._attention and self._room_state:
             roster = self._room_state.get_roster()
             target_id = self._attention._current_target
             if target_id and target_id in roster:
-                best_lr = roster[target_id].world_lr
+                person = roster[target_id]
+                if (time.time() - person.last_seen) < 1.0:
+                    best_lr = person.world_lr
+                else:
+                    self.logger.debug(
+                        f"SIDE_DRIVE: target {target_id} stale "
+                        f"({time.time() - person.last_seen:.1f}s) — using raw side angle")
 
         # Fall back to raw side camera angle
         if best_lr is None:

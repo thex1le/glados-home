@@ -326,6 +326,24 @@ class RoomStateManager:
                     self.logger.debug(f"MATCH: track_id hit {pid} cam={camera} tid={track_id}")
                     return pid
 
+        # Tier 2.5: If only one person was recently seen on this camera
+        # and the detection has NO track_id (ByteTrack lost it during
+        # movement), it's probably the same person with a new track.
+        # Requires: no track_id, one person on camera, and that person
+        # was last seen >0.1s ago (not in the current frame — if they
+        # were JUST updated this frame, this detection is a different person).
+        if track_id is None and now > 0:
+            same_camera = [(pid, p) for pid, p in self._roster.items()
+                           if camera in p.cameras and (now - p.last_seen) < 2.0]
+            if len(same_camera) == 1:
+                sole_person = same_camera[0][1]
+                time_since = now - sole_person.last_seen
+                if time_since > 0.1:
+                    pid = same_camera[0][0]
+                    self.logger.debug(f"MATCH: sole person on {camera} (no track_id, "
+                                      f"last_seen {time_since:.1f}s ago) -> {pid}")
+                    return pid
+
         # Tier 3: Fuzzy matching by proximity + height + camera + cross-camera bonus
         best_score = 0.0
         best_id = None

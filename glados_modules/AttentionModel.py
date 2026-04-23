@@ -92,6 +92,31 @@ class AttentionModel:
         if self._budget_remaining > 0:
             self._budget_remaining -= dt
 
+        # Stale target migration: if the current target hasn't been seen
+        # in >1 second, look for a fresh person nearby. A moving person
+        # often gets a new roster ID when ByteTrack loses the track.
+        # Migrating to the nearest fresh entry preserves tracking continuity.
+        if self._current_target and self._current_target in roster:
+            target = roster[self._current_target]
+            if (now - target.last_seen) > 1.0:
+                best_fresh = None
+                best_dist = 30.0  # max degrees to consider "nearby"
+                for pid, person in roster.items():
+                    if pid == self._current_target:
+                        continue
+                    if (now - person.last_seen) > 0.5:
+                        continue
+                    dist = abs(person.world_lr - target.world_lr)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_fresh = pid
+                if best_fresh:
+                    self.logger.debug(
+                        f"ATTENTION migrate: {self._current_target} stale -> {best_fresh} "
+                        f"(dist={best_dist:.1f})")
+                    self._current_target = best_fresh
+                    self._budget_remaining = self._get_budget(self._current_priority)
+
         self.logger.debug(
             f"ATTENTION eval: current={self._current_target} budget={self._budget_remaining:.1f}s "
             f"priority={self._current_priority.name if self._current_priority else 'None'} "
