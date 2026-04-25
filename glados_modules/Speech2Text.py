@@ -145,7 +145,7 @@ class GladosSTT(Thread):
         self.audioTx = AudioServerTx(self.audioServer_broker)
         self.recognizer = sr.Recognizer()
         # create a manual context
-        self.mic = sr.Microphone(device_index=1)
+        self.mic = sr.Microphone(device_index=0)
         # open the stream
         self.mic.__enter__()
         while True:
