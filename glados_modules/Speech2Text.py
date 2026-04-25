@@ -124,8 +124,12 @@ class GladosSTT(Thread):
             self.logger.debug("Long audio recording complete")
         self.logger.debug("Recording audio complete & sending audio for transcription")
         self.audioTx.send_bytes(audio.get_wav_data())
-        audio_text = self.localsttrx.get_text(block=True)
-        self.logger.debug(f"Transcription complete, Audio: {audio_text.lower()}")
+        prev_text = self.localsttrx.last_text
+        audio_text = self.localsttrx.get_text(block=True, timeout=15)
+        if audio_text == "" or audio_text == prev_text:
+            self.logger.warning("Transcription timed out — no response from AI server (WhisperX may have crashed)")
+        else:
+            self.logger.debug(f"Transcription complete, Audio: {audio_text.lower()}")
         return audio_text
 
     def record(self, mp_list: List[Optional[str]]) -> None:

@@ -166,11 +166,31 @@ class LocalSTTtx(MQTTClient):
             console_logging=LoggingEnums.LOG_LEVEL_DEBUG.value
         )
         self.device = 'cuda'
+        self._load_models()
+        super().__init__(ip=broker.ip, port=broker.port)
+
+    def _load_models(self) -> None:
+        """Load (or reload) WhisperX and alignment models."""
+        import torch
+        torch.cuda.empty_cache()
         self.model = self.whisper.load_model(whisper_arch="large-v2", device=self.device, compute_type="float16")
-        # preload an english algiment model
+        # preload an english alignment model
         self.en_align_model, self.en_a_metadata = self.whisper.load_align_model(
             language_code=STTEnums.STT_EN_LANG_KEY.value, device=self.device)
-        super().__init__(ip=broker.ip, port=broker.port)
+        self.logger.info("WhisperX models loaded successfully")
+
+    def _transcribe(self, audio: np.ndarray) -> tuple:
+        """Run WhisperX transcription and English alignment.
+
+        Returns:
+            tuple: (aligned_results, language_code)
+        """
+        results = self.model.transcribe(audio, batch_size=16)
+        r_lang = results[STTEnums.STT_LANGUAGE_KEY.value]
+        if r_lang == STTEnums.STT_EN_LANG_KEY.value:
+            results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.en_align_model,
+                                         self.en_a_metadata, audio, self.device, return_char_alignments=False)
+        return results, r_lang
 
     def process_audio(self, byte_stream: bytes) -> None:
         """Process an audio byte stream, perform speech-to-text transcription, and publish results.
@@ -179,12 +199,16 @@ class LocalSTTtx(MQTTClient):
             byte_stream (bytes): The audio data as a byte stream.
         """
         audio: np.ndarray = self.load_audio_from_bytes(byte_stream)
-        results = self.model.transcribe(audio, batch_size=16)
-        r_lang = results[STTEnums.STT_LANGUAGE_KEY.value]
-        # align the output if its english
-        if r_lang == STTEnums.STT_EN_LANG_KEY.value:
-            results = self.whisper.align(results[STTEnums.STT_SEGMENTS_KEY.value], self.en_align_model,
-                                         self.en_a_metadata, audio, self.device, return_char_alignments=False)
+        try:
+            results, r_lang = self._transcribe(audio)
+        except Exception as e:
+            self.logger.error(f"WhisperX transcription failed: {e} — reloading models")
+            try:
+                self._load_models()
+                results, r_lang = self._transcribe(audio)
+            except Exception as retry_e:
+                self.logger.error(f"WhisperX reload failed, dropping audio: {retry_e}")
+                return
         # add extra timing info to results
         results, timing_map = self.add_time_metrics_word_segments(results)
         self.logger.debug(f"Detected language: {r_lang}")
