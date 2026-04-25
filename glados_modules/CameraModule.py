@@ -114,7 +114,11 @@ class Camera(Process):
                 self.logger.warning("Camera init failed — resetting kernel module and retrying...")
                 self._reset_camera_kernel_module()
                 sleep(3.0)
-                self.__init_camera()
+                try:
+                    self.__init_camera()
+                except (RuntimeError, IndexError) as e:
+                    self.logger.error(f"Camera not found after kernel reset, giving up: {e}")
+                    return
             self.logger.debug("Starting main camera loop...")
 
             frame_count = 0
