@@ -36,13 +36,16 @@ requests                         # OpenAI API calls + TTS HTTP calls
 homeassistant-api
 
 # Raspberry Pi GPIO & I2C
-# NOTE: BodyControlModules.py has top-level imports for these even though
-# Pi5 only uses the IMU class. These must be installed for the import to work.
-RPi.GPIO
-adafruit-blinka                  # board, busio, digitalio
+# Pi5 uses the RP1 chip — blinka/lgpio cannot claim GPIOs reliably.
+# LCD uses spidev + gpiod directly instead of adafruit-circuitpython-rgb-display.
+# RPi.GPIO does NOT work on Pi 5 but some deps still import it at module level.
+adafruit-blinka                  # board, busio, digitalio (needed by IMU/PCA9685)
+adafruit-platformdetect
 adafruit-circuitpython-pca9685
 adafruit-circuitpython-neopixel
-adafruit-circuitpython-rgb-display
+spidev                           # SPI for LCD display (Pi 5 RP1 native)
+gpiod                            # GPIO for LCD DC/RST pins (Pi 5 RP1 native)
+st7789                           # ST7789 LCD driver using spidev
 
 # IMU sensor (Pi5 runs IMU polling)
 adafruit-circuitpython-bno055

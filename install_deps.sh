@@ -98,6 +98,10 @@ case "$SYSTEM" in
             python3-libcamera
             python3-picamera2
             i2c-tools
+            python3-lgpio              # GPIO backend for adafruit-blinka on Pi 5 (RP1)
+            python3-spidev             # SPI for LCD display
+            python3-libgpiod           # gpiod for LCD DC/RST pins (Pi 5 RP1 native)
+            gpiod                      # gpiodetect/gpioinfo CLI tools
             libasound2-dev
             portaudio19-dev
             ffmpeg

@@ -32,11 +32,32 @@ from glados_modules.LedHelperModules import LedHelper, NeoPixelAnimations, PWMLe
 from glados_modules.PipelineDebug import PipelineDebug
 
 
+class _ST7789SpidevWrapper:
+    """Thin wrapper around the spidev-based st7789 driver so it exposes the
+    same ``.image(pil_image)`` API that the Adafruit driver uses."""
+
+    def __init__(self, port=0, cs=0, dc=25, rst=24, width=240, height=198,
+                 spi_speed_hz=25000000, offset_top=122):
+        import st7789 as _st7789
+        self._disp = _st7789.ST7789(
+            port=port, cs=cs, dc=dc, rst=rst,
+            width=width, height=height,
+            rotation=0,
+            spi_speed_hz=spi_speed_hz,
+            offset_left=0, offset_top=offset_top,
+        )
+
+    def image(self, pil_image):
+        self._disp.display(pil_image)
+
+
 class GladosLCD(Thread, MQTTClient):
+    # BCM pin numbers used for DC and RST (same on Pi 4 and Pi 5 hardware)
+    _DEFAULT_DC_BCM = 25
+    _DEFAULT_RST_BCM = 24
+
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
                  sck=board.SCK, mosi=board.MOSI, flip=False, sync_leader=False):
-        # Configuration for CS and DC pins (these are PiTFT defaults):
-        from adafruit_rgb_display import st7789
         Thread.__init__(self)
         self.daemon = True
         self.location = location
@@ -54,16 +75,31 @@ class GladosLCD(Thread, MQTTClient):
             self.cmd_topic: self.handle_cmd,
             self.sync_topic: self._handle_sync,
         }
-        # On Pi 5 the SPI kernel driver owns CE0, so DigitalInOut(CE0) fails
-        # with 'GPIO busy'. Fall back to cs=None (hardware-managed CS).
+        # Try the Adafruit blinka driver (works on Pi 4).
+        # If it fails (Pi 5 RP1 lgpio 'GPIO busy'), fall back to the
+        # spidev-based st7789 driver which uses the kernel SPI + gpiod.
         try:
-            cs_pin = DigitalInOut(cs)
-        except Exception:
-            self.logger.warning("Could not claim CS pin as GPIO (Pi 5 SPI driver owns it) — using hardware CS")
-            cs_pin = None
-        self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
-                                  y_offset=122, cs=cs_pin, dc=DigitalInOut(dc),
-                                  rst=DigitalInOut(rst), baudrate=25000000)
+            from adafruit_rgb_display import st7789
+            try:
+                cs_pin = DigitalInOut(cs)
+            except Exception:
+                cs_pin = None
+            self.disp = st7789.ST7789(
+                spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0,
+                width=240, height=198, x_offset=0, y_offset=122,
+                cs=cs_pin, dc=DigitalInOut(dc), rst=DigitalInOut(rst),
+                baudrate=25000000)
+            self.disp.spi_device.cs_active_value = False
+            self.logger.info("LCD using Adafruit blinka driver")
+        except Exception as e:
+            self.logger.warning(f"Adafruit LCD driver failed ({e}) — using spidev/gpiod driver (Pi 5)")
+            self.disp = _ST7789SpidevWrapper(
+                port=0, cs=0,
+                dc=self._DEFAULT_DC_BCM, rst=self._DEFAULT_RST_BCM,
+                width=240, height=198,
+                spi_speed_hz=25000000, offset_top=122,
+            )
+            self.logger.info("LCD using spidev st7789 driver")
         self.dot_on_positions: tuple = ((1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4),
                                         (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (4, 4),
                                         (5, 1), (5, 2), (5, 3), (5, 4), (6, 1), (6, 2), (6, 3), (6, 4),
@@ -72,7 +108,6 @@ class GladosLCD(Thread, MQTTClient):
         self.rainbow = False
         self.g_color = 0
         self.counter = 1
-        self.disp.spi_device.cs_active_value = False
         self.flip = flip
         self.breath_fast = False
         self.breath_animation = True
