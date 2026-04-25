@@ -14,7 +14,7 @@ from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
 from glados_modules.CameraModule import Camera, CameraWatchdog
 from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums, SocTempEnums
-from glados_modules.BodyControlModules import IMU, SocTemp
+from glados_modules.BodyControlModules import IMU, SocTemp, GladosLCD
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
@@ -61,6 +61,12 @@ if __name__ == "__main__":
         imu.start()
     except (ValueError, OSError, TimeoutError) as e:
         logger.error(f"IMU initialization failed: {e} — continuing without IMU")
+    # Start left LCD display
+    animation_path = configp[SystemEnums.CONFIG_HEAD_DEFAULT.value][SystemEnums.APERTURE_ANIMATION.value]
+    left_lcd = GladosLCD(broker=mqtt_broker, location=SystemEnums.LEFT_LCD.value,
+                         animation_path=animation_path)
+    left_lcd.start()
+
     gl = GladosLocal(configp, LLMConnector)
     gl.start()
     # Greeting in background thread — retries if TTS isn't ready yet
@@ -100,6 +106,7 @@ if __name__ == "__main__":
     health = HealthMonitor(broker=mqtt_broker, system_name="glados_main")
     if imu:
         health.register("IMU", imu)
+    health.register("left_lcd", left_lcd)
     health.register("GladosLocal", gl)
     health.register("STT", gstt)
     health.register("left_camera", left_camera)
