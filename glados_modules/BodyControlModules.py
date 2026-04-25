@@ -1,8 +1,8 @@
 import random
 from time import sleep, time
-from threading import Thread
+from threading import Thread, Event
 from json import loads, JSONDecodeError
-from typing import Dict, Callable, Tuple, NamedTuple, Any
+from typing import Dict, Callable, Tuple, NamedTuple, Any, Optional
 from os import path
 from glob import glob
 from collections import namedtuple
@@ -34,7 +34,7 @@ from glados_modules.PipelineDebug import PipelineDebug
 
 class GladosLCD(Thread, MQTTClient):
     def __init__(self, broker, location, animation_path="./aperture_logo", cs=board.CE0, dc=board.D25, rst=board.D24,
-                 sck=board.SCK, mosi=board.MOSI, flip=False):
+                 sck=board.SCK, mosi=board.MOSI, flip=False, sync_leader=False):
         # Configuration for CS and DC pins (these are PiTFT defaults):
         from adafruit_rgb_display import st7789
         Thread.__init__(self)
@@ -45,7 +45,15 @@ class GladosLCD(Thread, MQTTClient):
         self.location: str = location
         self.animation_path: str = animation_path
         self.cmd_topic: str = MQTTEnums.LCD_CONTROL_MQTT_TOPIC.value
-        self.topic_handler: Dict[str, Callable] = {self.cmd_topic: self.handle_cmd}
+        self.sync_topic: str = MQTTEnums.LCD_SYNC_MQTT_TOPIC.value
+        self.sync_leader: bool = sync_leader
+        self._sync_counter: Optional[int] = None
+        self._startup_go: Event = Event()
+        self._peer_ready: bool = False
+        self.topic_handler: Dict[str, Callable] = {
+            self.cmd_topic: self.handle_cmd,
+            self.sync_topic: self._handle_sync,
+        }
         self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
                                   y_offset=122, cs=DigitalInOut(cs), dc=DigitalInOut(dc),
                                   rst=DigitalInOut(rst), baudrate=25000000)
@@ -82,6 +90,28 @@ class GladosLCD(Thread, MQTTClient):
                 # so it can't run in the MQTT callback thread
                 self.stop_breath()
                 Thread(target=self.__startup, daemon=True).start()
+    def _handle_sync(self, msg) -> None:
+        """Handle sync messages: ready/go handshake and breathing counter."""
+        try:
+            data = loads(msg.payload.decode())
+        except Exception:
+            return
+
+        msg_type = data.get("type")
+
+        if msg_type == "ready":
+            # A peer announced it's ready — leader notes this
+            if self.sync_leader:
+                self._peer_ready = True
+        elif msg_type == "go":
+            # Leader says go — follower starts
+            if not self.sync_leader:
+                self._startup_go.set()
+        elif msg_type == "counter":
+            # Breathing sync — followers only
+            if not self.sync_leader:
+                self._sync_counter = data.get("value")
+
     def set_breath_options(self, breath_dict: dict) -> None:
         self.breath_fast = breath_dict['fast']
         self.breath_animation = breath_dict['animation']
@@ -177,7 +207,9 @@ class GladosLCD(Thread, MQTTClient):
     def breathe(self) -> None:
         """
         A looping animation for the LCD screens where the circle grid pulses up and down like breathing
-        Can be set to fast or slow. Circle colors are changed else ware, blocking call
+        Can be set to fast or slow. Circle colors are changed else ware, blocking call.
+        If sync_leader is True, publishes counter via MQTT so followers stay in sync.
+        If sync_leader is False, follows the counter from the leader when available.
         """
         self.breathe_loop = True
         up = True
@@ -187,6 +219,12 @@ class GladosLCD(Thread, MQTTClient):
         tb = 0
         mid = 0
         while self.breathe_loop is True:
+            # Follower: snap to leader's counter when available
+            if not self.sync_leader and self._sync_counter is not None:
+                self.counter = self._sync_counter
+                up = self.counter < 7  # infer direction from position
+                self._sync_counter = None
+
             if self.breath_fast is False:
                 slpm = 0.12
                 slptb = 0.18
@@ -215,19 +253,48 @@ class GladosLCD(Thread, MQTTClient):
                     self.counter += 1
                 else:
                     self.counter -= 1
+                # Leader: publish counter for followers
+                if self.sync_leader:
+                    self.send_command({"type": "counter", "value": self.counter},
+                                      MQTTEnums.LCD_SYNC_MQTT_TOPIC.value)
             else:
                 self.counter = 12
                 sleep(.2)
 
+    def _wait_for_sync_start(self, timeout: float = 30.0) -> None:
+        """Coordinate startup so both LCDs begin the aperture animation together.
+
+        Leader: waits for a 'ready' message from the follower (or timeout),
+                then sends 'go'.
+        Follower: sends 'ready', then waits for 'go' from the leader (or timeout).
+        """
+        if self.sync_leader:
+            self.logger.info("LCD sync: leader waiting for follower ready...")
+            deadline = time() + timeout
+            while not self._peer_ready and time() < deadline:
+                sleep(0.2)
+            if self._peer_ready:
+                self.logger.info("LCD sync: follower ready — sending go")
+            else:
+                self.logger.warning("LCD sync: timeout waiting for follower — starting alone")
+            self.send_command({"type": "go"}, MQTTEnums.LCD_SYNC_MQTT_TOPIC.value)
+        else:
+            self.logger.info("LCD sync: follower sending ready, waiting for go...")
+            self.send_command({"type": "ready"}, MQTTEnums.LCD_SYNC_MQTT_TOPIC.value)
+            if not self._startup_go.wait(timeout=timeout):
+                self.logger.warning("LCD sync: timeout waiting for leader go — starting alone")
+            else:
+                self.logger.info("LCD sync: received go from leader")
+
     def __startup(self):
-        # startup animation
+        # wait for both LCDs to be ready, then start together
+        self._wait_for_sync_start()
         self.stop_breath()
         self.aperture_animation()
         self.breathe()
 
     def run(self):
         self.__startup()
-        # note does this need to be a running thread?
         while self.stop_loop is False:
             sleep(1)
 

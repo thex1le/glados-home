@@ -181,6 +181,7 @@ class MQTTEnums(Enum):
     BODY_LED_CONTROL_MQTT_TOPIC = "body/led"
     LCD_CONTROL_MQTT_TOPIC = "body/lcd"
     LCD_STATUS_MQTT_TOPIC = "status"
+    LCD_SYNC_MQTT_TOPIC = "body/lcd/sync"
     IMU_STATUS_TOPIC = "body/imu/status"
     TOF_STATUS_TOPIC = "body/tof/status"
     MOX_STATUS_TOPIC = "body/mox/status"

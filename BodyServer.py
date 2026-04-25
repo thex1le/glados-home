@@ -99,7 +99,7 @@ if __name__ == "__main__":
     head_LR.start()
     led_shoulders = LedShoulders(broker=mqtt_connect)
     glados_right_lcd = GladosLCD(broker=mqtt_connect, location=SystemEnums.RIGHT_LCD.value,
-                                 animation_path=animation_path)
+                                 animation_path=animation_path, sync_leader=True)
     glados_right_lcd.start()
     led_head.startup()
     cefh = config_p[CameraEnum.CONFIG_HEAD.value]
