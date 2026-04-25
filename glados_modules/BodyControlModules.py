@@ -54,8 +54,15 @@ class GladosLCD(Thread, MQTTClient):
             self.cmd_topic: self.handle_cmd,
             self.sync_topic: self._handle_sync,
         }
+        # On Pi 5 the SPI kernel driver owns CE0, so DigitalInOut(CE0) fails
+        # with 'GPIO busy'. Fall back to cs=None (hardware-managed CS).
+        try:
+            cs_pin = DigitalInOut(cs)
+        except Exception:
+            self.logger.warning("Could not claim CS pin as GPIO (Pi 5 SPI driver owns it) — using hardware CS")
+            cs_pin = None
         self.disp = st7789.ST7789(spi=busio.SPI(clock=sck, MOSI=mosi), rotation=0, width=240, height=198, x_offset=0,
-                                  y_offset=122, cs=DigitalInOut(cs), dc=DigitalInOut(dc),
+                                  y_offset=122, cs=cs_pin, dc=DigitalInOut(dc),
                                   rst=DigitalInOut(rst), baudrate=25000000)
         self.dot_on_positions: tuple = ((1, 1), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4),
                                         (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (4, 4),
