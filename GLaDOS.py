@@ -145,8 +145,22 @@ if __name__ == "__main__":
 
     def shutdown_handler(signum, frame):
         print("\nShutting down GLaDOS...")
-        cam_watchdog.shutdown()
-        os._exit(0)
+        # Restore default handlers so a second Ctrl+C kills us instead
+        # of re-entering this function while it's still running.
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        try:
+            cam_watchdog.shutdown()
+        except Exception as e:
+            print(f"cam_watchdog shutdown error: {e}")
+        # SIGKILL the whole process group. Catches the LCD/SPI thread,
+        # GStreamer/x264enc helpers spawned by the camera RTSP pipelines,
+        # the fuser/modprobe shells from kernel-module reset, the TTS/STT
+        # subprocesses, and any other descendants os._exit can't reach.
+        try:
+            os.killpg(os.getpgrp(), signal.SIGKILL)
+        except Exception:
+            os._exit(0)
 
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
