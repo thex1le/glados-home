@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Quick LCD debug tool for the Pi5 ST7789 (spidev) display.
+"""Quick LCD debug tool for the ST7789 display (works on Pi4 and Pi5).
 
 Pushes a single static image to the LCD so you can verify wiring,
 SPI access, and orientation without bringing up the full BodyServer
 or GLaDOS stacks.
+
+Driver selection mirrors GladosLCD: tries the Adafruit blinka driver
+first (Pi4), falls back to the spidev/gpiod st7789 driver (Pi5 RP1).
+Force a specific backend with --driver {auto,adafruit,spidev}.
 
 Usage:
     python Tools/test_lcd.py                       # solid color test pattern
@@ -11,6 +15,8 @@ Usage:
     python Tools/test_lcd.py --color 255,0,0       # solid red
     python Tools/test_lcd.py --bars                # color bars
     python Tools/test_lcd.py --flip                # rotate 180
+    python Tools/test_lcd.py --driver spidev       # force Pi5 backend
+    python Tools/test_lcd.py --driver adafruit     # force Pi4 backend
 """
 import argparse
 import sys
@@ -28,14 +34,72 @@ SPI_HZ = 25_000_000
 OFFSET_TOP = 122
 
 
-def open_display():
-    import st7789
-    return st7789.ST7789(
-        port=SPI_PORT, cs=SPI_CS, dc=DC_BCM, rst=RST_BCM,
-        width=WIDTH, height=HEIGHT, rotation=0,
-        spi_speed_hz=SPI_HZ,
-        offset_left=0, offset_top=OFFSET_TOP,
+class _SpidevWrapper:
+    """Wraps the spidev-based st7789 driver to expose .image(pil_img),
+    matching the Adafruit blinka driver's API."""
+
+    def __init__(self):
+        import st7789
+        self._disp = st7789.ST7789(
+            port=SPI_PORT, cs=SPI_CS, dc=DC_BCM, rst=RST_BCM,
+            width=WIDTH, height=HEIGHT, rotation=0,
+            spi_speed_hz=SPI_HZ,
+            offset_left=0, offset_top=OFFSET_TOP,
+        )
+
+    def image(self, pil_image):
+        self._disp.display(pil_image)
+
+
+def _open_adafruit():
+    """Pi4 backend: adafruit-circuitpython-rgb-display via blinka."""
+    import board
+    import busio
+    from digitalio import DigitalInOut
+    from adafruit_rgb_display import st7789 as ada_st7789
+    try:
+        cs_pin = DigitalInOut(board.CE0)
+    except Exception:
+        cs_pin = None
+    disp = ada_st7789.ST7789(
+        spi=busio.SPI(clock=board.SCK, MOSI=board.MOSI),
+        rotation=0,
+        width=WIDTH, height=HEIGHT,
+        x_offset=0, y_offset=OFFSET_TOP,
+        cs=cs_pin,
+        dc=DigitalInOut(board.D25),
+        rst=DigitalInOut(board.D24),
+        baudrate=SPI_HZ,
     )
+    disp.spi_device.cs_active_value = False
+    return disp
+
+
+def open_display(driver="auto"):
+    """Return an object with a .image(pil_image) method.
+
+    driver: "auto" (Adafruit then spidev), "adafruit" (Pi4), "spidev" (Pi5).
+    """
+    errors = []
+    if driver in ("auto", "adafruit"):
+        try:
+            d = _open_adafruit()
+            print("Using Adafruit blinka driver (Pi4)")
+            return d
+        except Exception as e:
+            errors.append(f"adafruit: {e}")
+            if driver == "adafruit":
+                raise
+    if driver in ("auto", "spidev"):
+        try:
+            d = _SpidevWrapper()
+            print("Using spidev/st7789 driver (Pi5)")
+            return d
+        except Exception as e:
+            errors.append(f"spidev: {e}")
+            if driver == "spidev":
+                raise
+    raise RuntimeError("No LCD driver worked: " + " | ".join(errors))
 
 
 def parse_color(s):
@@ -103,6 +167,9 @@ def main():
     g.add_argument("--color", help="solid R,G,B color (e.g. 255,0,0)")
     g.add_argument("--bars", action="store_true", help="show color bars")
     parser.add_argument("--flip", action="store_true", help="rotate 180")
+    parser.add_argument("--driver", choices=["auto", "adafruit", "spidev"],
+                        default="auto",
+                        help="LCD backend (auto = Pi4 then Pi5)")
     args = parser.parse_args()
 
     if args.image:
@@ -120,8 +187,8 @@ def main():
     if args.flip:
         img = img.rotate(180)
 
-    disp = open_display()
-    disp.display(img)
+    disp = open_display(args.driver)
+    disp.image(img)
     print(f"Pushed {img.size} image to LCD (port={SPI_PORT} cs={SPI_CS} "
           f"dc={DC_BCM} rst={RST_BCM})")
 
