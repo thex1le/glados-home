@@ -16,6 +16,7 @@ from glados_modules.BodyControlModules import Gservo, LedHead, LedShoulders, Gla
 from glados_modules.CameraModule import GLaDOSServerException, Camera, CameraWatchdog
 from glados_modules.GladosEnums import CameraEnum, ServoEnum, SystemEnums, DashboardEnums, SocTempEnums, MQTTEnums
 from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.LatencyResponder import LatencyResponder
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
 
@@ -113,6 +114,10 @@ if __name__ == "__main__":
         {"system": "body_server", "cameras": [cefh[CameraEnum.CAMERA_HEAD_FACTORY.value]]},
         MQTTEnums.CAMERA_READY_TOPIC.value)
     print(f"Published camera ready signal for head camera")
+    # Latency responder — echoes brain probes for speech-eye sync calibration.
+    # Always-on: ~50 lines, zero state, only fires when a probe arrives.
+    latency_responder = LatencyResponder(config_p)
+    latency_responder.start()
     # Start health monitoring
     health = HealthMonitor(broker=mqtt_connect, system_name="body_server")
     health.register("body_LR", body_LR)
@@ -121,6 +126,7 @@ if __name__ == "__main__":
     health.register("head_UD", head_UD)
     health.register("lcd", glados_right_lcd)
     health.register("camera", head_camera)
+    health.register("latency_responder", latency_responder)
     soc_poll = float(config_p.get(SocTempEnums.CONFIG_HEAD.value,
                                    SocTempEnums.POLL_INTERVAL.value,
                                    fallback=SocTempEnums.DEFAULT_POLL_INTERVAL.value))

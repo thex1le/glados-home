@@ -22,7 +22,7 @@ import regex as re
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.HomeAssistantConnector import HomeAssistantLink
 from glados_modules.EggTimer import EggTimer
-from glados_modules.MqttConnector import MQTTClient, LEDMessageBuilder
+from glados_modules.MqttConnector import MQTTClient, LEDMessageBuilder, MoodMessageBuilder
 from glados_modules.GladosEnums import (SystemEnums, MQTTEnums, LoggingEnums, LEDHead, STTEnums,
                                         VisionResultsEnum, FaceEnums, FeatureToggles,
                                         PersonalityEnums, RoomStateEnums,
@@ -802,12 +802,17 @@ class GladosLocal(Thread, MQTTClient):
             # Unknown person — slight irritation
             self.mood.escalate(PersonalityEnums.ANGER_UNKNOWN_ARRIVAL.value,
                                f"unknown_arrival_{person_id}")
+            self._publish_mood_event(
+                "vision",
+                f"An unknown person ({person_id}) entered the room.")
             self.logger.debug(f"ROOM_EVENT arrival: {person_id} greeting=False (unknown)")
         else:
             # Known person — named greeting
             self.logger.debug(f"ROOM_EVENT arrival: {person_id} greeting=True")
             greeting = f"Oh, {person_id}. You again."
             Thread(target=self.speak, args=(greeting,), daemon=True).start()
+            self._publish_mood_event(
+                "vision", f"{person_id} entered the room.")
 
     def _on_person_departed(self, person_id: str, now: float) -> None:
         """Handle a person leaving the room.
@@ -820,6 +825,7 @@ class GladosLocal(Thread, MQTTClient):
         """
         self.mood.calm(PersonalityEnums.CALM_PERSON_LEFT.value,
                         f"person_left_{person_id}")
+        self._publish_mood_event("vision", f"{person_id} left the room.")
         self.logger.debug(
             f"ROOM_EVENT departure: {person_id} calm={PersonalityEnums.CALM_PERSON_LEFT.value}")
 
@@ -1053,6 +1059,21 @@ class GladosLocal(Thread, MQTTClient):
 
         return False
 
+    def _publish_mood_event(self, source: str, description: str) -> None:
+        """Publish a hardware-detected event to system/mood/event.
+
+        Step 7c-4: bridges hardware-side detectors (pestering, compliments,
+        room arrivals/departures, gestures) into the brain's EmotionAgent so
+        the LLM mood reacts to physical world events. Safe to call regardless
+        of mood_source — when the brain isn't subscribing, the message is
+        harmless broker traffic.
+        """
+        try:
+            msg = MoodMessageBuilder.event(source, description)
+            self.send_command(msg, MQTTEnums.MOOD_EVENT_TOPIC.value)
+        except Exception as e:
+            self.logger.error(f"Failed to publish mood event: {e}")
+
     def detect_compliment(self, user_prompt: str) -> bool:
         """Check if the user said something nice and calm GLaDOS slightly.
 
@@ -1071,6 +1092,7 @@ class GladosLocal(Thread, MQTTClient):
             re.IGNORECASE)
         if compliment_pattern.search(user_prompt):
             self.mood.calm(PersonalityEnums.CALM_COMPLIMENT.value, "compliment")
+            self._publish_mood_event("user", "User complimented you.")
             return True
         return False
 
@@ -1145,8 +1167,14 @@ class GladosLocal(Thread, MQTTClient):
 
         Call this from the main loop before sending to GPT.
         """
-        if self.mood.register_question():
+        is_pestering = self.mood.register_question()
+        if is_pestering:
             self.mood.escalate(PersonalityEnums.ANGER_PESTERING.value, "pestering")
+            self._publish_mood_event(
+                "user",
+                "User is pestering — multiple rapid questions in a short window.")
+        else:
+            self._publish_mood_event("user", "User asked a question.")
 
         # Also check for compliments in the prompt (calms mood)
         # This is called separately in the main loop

@@ -9,11 +9,13 @@ from json import dumps, loads
 from collections import namedtuple
 
 from glados_modules.GladosEnums import (
-    ServoEnum, CameraEnum, VisionResultsEnum, IMUEnums, TOFEnums, THEnums, MOXEnums
+    ServoEnum, CameraEnum, VisionResultsEnum, IMUEnums, TOFEnums, THEnums, MOXEnums,
+    SceneEnums,
 )
 from glados_modules.MqttConnector import (
     ServoMessageBuilder, CameraMessageBuilder, IMUMessageBuilder,
-    TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder
+    TOFMessageBuilder, THMessageBuilder, MoxGasMessageBuilder,
+    BrainMessageBuilder, SceneMessageBuilder, MoodMessageBuilder,
 )
 
 
@@ -189,3 +191,117 @@ class TestSensorTrackerParsing:
         st = self._make_tracker()
         result = st.get_sensor_status("nonexistent")
         assert result is None
+
+
+class TestBrainMessageRoundtrip:
+    """Brain emits utterance / tool_call / ready messages; verify wire format."""
+
+    def test_utterance_roundtrip(self):
+        msg = BrainMessageBuilder.utterance("test the cake", source="llm")
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed["text"] == "test the cake"
+        assert parsed["source"] == "llm"
+
+    def test_utterance_default_source(self):
+        msg = BrainMessageBuilder.utterance("hello")
+        assert msg["source"] == "llm"
+
+    def test_tool_call_roundtrip(self):
+        msg = BrainMessageBuilder.tool_call(
+            "look_at", {"yaw": 45, "pitch": 90}, lane="priority")
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed["tool"] == "look_at"
+        assert parsed["args"]["yaw"] == 45
+        assert parsed["args"]["pitch"] == 90
+        assert parsed["lane"] == "priority"
+
+    def test_tool_call_default_lane(self):
+        msg = BrainMessageBuilder.tool_call("speak", {"text": "hi"})
+        assert msg["lane"] == "priority"
+
+    def test_ready_roundtrip(self):
+        msg = BrainMessageBuilder.ready("GladosBrain", "qwen2.5:14b-instruct-q4_K_M")
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed["system"] == "GladosBrain"
+        assert parsed["model"] == "qwen2.5:14b-instruct-q4_K_M"
+
+
+class TestSceneMessageRoundtrip:
+    """SceneDescriber publishes background descriptions and answers tool requests."""
+
+    def test_description_roundtrip(self):
+        msg = SceneMessageBuilder.description("head", "a person at a desk", 1234.5)
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed[SceneEnums.CAMERA_KEY.value] == "head"
+        assert parsed[SceneEnums.DESCRIPTION_KEY.value] == "a person at a desk"
+        assert parsed[SceneEnums.TS_KEY.value] == 1234.5
+
+    def test_describe_request_roundtrip(self):
+        msg = SceneMessageBuilder.describe_request(
+            "req-123", "what do you see?", max_tokens=200)
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed[SceneEnums.REQUEST_ID_KEY.value] == "req-123"
+        assert parsed[SceneEnums.PROMPT_KEY.value] == "what do you see?"
+        assert parsed[SceneEnums.MAX_TOKENS_KEY.value] == 200
+
+    def test_describe_request_default_max_tokens(self):
+        msg = SceneMessageBuilder.describe_request("r1", "look")
+        assert msg[SceneEnums.MAX_TOKENS_KEY.value] == 256
+
+    def test_describe_response_roundtrip(self):
+        msg = SceneMessageBuilder.describe_response("req-123", "a chair")
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed[SceneEnums.REQUEST_ID_KEY.value] == "req-123"
+        assert parsed[SceneEnums.DESCRIPTION_KEY.value] == "a chair"
+
+    def test_request_response_id_pairs(self):
+        # The request_id field name must match between request and response so
+        # GladosBrain can correlate replies.
+        request = SceneMessageBuilder.describe_request("abc", "look")
+        response = SceneMessageBuilder.describe_response("abc", "result")
+        assert request[SceneEnums.REQUEST_ID_KEY.value] == \
+               response[SceneEnums.REQUEST_ID_KEY.value]
+
+
+class TestMoodMessageRoundtrip:
+    """Brain publishes PAD vectors and receives hardware mood events."""
+
+    def test_pad_roundtrip(self):
+        msg = MoodMessageBuilder.pad(0.3, -0.5, 0.7, 1234.5)
+        msg["uuid"] = "test-uuid"
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed["pleasure"] == pytest.approx(0.3)
+        assert parsed["arousal"] == pytest.approx(-0.5)
+        assert parsed["dominance"] == pytest.approx(0.7)
+        assert parsed["ts"] == pytest.approx(1234.5)
+
+    def test_pad_coerces_to_floats(self):
+        # Even if the EmotionAgent hands us numpy floats or ints, the wire
+        # format must be plain float-compatible JSON
+        msg = MoodMessageBuilder.pad(1, 0, -1, 100)
+        wire = dumps(msg)  # would raise if numpy types leaked through
+        parsed = loads(wire)
+        assert isinstance(parsed["pleasure"], float)
+
+    def test_event_roundtrip(self):
+        msg = MoodMessageBuilder.event(
+            source="user",
+            description="User asked another question (#3 in 30s)")
+        wire = dumps(msg)
+        parsed = loads(wire)
+        assert parsed["source"] == "user"
+        assert "pestering" not in parsed["description"]  # sanity
+        assert "#3" in parsed["description"]

@@ -84,6 +84,13 @@ except ImportError:
     _mock_module("PIL.Image")
     _mock_module("PIL.ImageDraw")
 
+# OpenCV (cv2) -- prefer the real library so SceneDescriber tests can exercise
+# the actual cv2.absdiff scene-change logic. Mock if not installed.
+try:
+    import cv2
+except ImportError:
+    _mock_module("cv2")
+
 # Speech recognition
 _mock_module("speech_recognition")
 
@@ -126,3 +133,70 @@ _mock_module("hsemotion.facial_emotions")
 # gladosTTS (external, not in repo)
 _mock_module("gladosTTS")
 _mock_module("gladosTTS.engine")
+
+# soundfile (used by RemoteGladosTTS to decode WAV bytes from the GPU TTS server)
+# Tests that need real WAV decoding inject the real soundfile via fixture.
+_mock_module("soundfile")
+
+# dnhkng/GLaDOS engine package (vendored on the Pi 5 via pip install -e ../GLaDOS).
+# Tests for GladosBrain construct it via __new__() to bypass _build_engine, so
+# these mocks only need to satisfy import-time references.
+_mock_module("glados")
+_mock_module("glados.audio_io",
+             attrs={"get_audio_system": lambda backend_type: MagicMock()})
+_mock_module("glados.autonomy",
+             attrs={"AutonomyConfig": lambda **kw: MagicMock(**kw)})
+_mock_module("glados.autonomy.config",
+             attrs={"EmotionConfig": lambda **kw: MagicMock(**kw),
+                    "HEXACOConfig": lambda **kw: MagicMock(**kw),
+                    "TokenConfig": lambda **kw: MagicMock(**kw),
+                    "AutonomyJobsConfig": lambda **kw: MagicMock(**kw),
+                    "HackerNewsJobConfig": lambda **kw: MagicMock(**kw),
+                    "WeatherJobConfig": lambda **kw: MagicMock(**kw)})
+_mock_module("glados.autonomy.emotion_state",
+             attrs={"EmotionEvent": lambda **kw: MagicMock(**kw)})
+_mock_module("glados.core")
+_mock_module("glados.core.engine", attrs={"Glados": MagicMock})
+_mock_module("glados.mcp")
+_mock_module("glados.mcp.config",
+             attrs={"MCPServerConfig": lambda **kw: MagicMock(**kw)})
+_mock_module("glados.vision")
+_mock_module("glados.vision.fastvlm", attrs={"FastVLM": MagicMock})
+_mock_module("glados.vision.constants",
+             attrs={"VISION_DEFAULT_PROMPT": "Describe the scene briefly.",
+                    "VISION_DETAIL_PROMPT": "Describe the scene in detail."})
+
+# dnhkng/GLaDOS engine TTS (used by TTSServer when tts_engine = glados|kokoro).
+# Returns a stub SpeechSynthesizerProtocol — sample_rate + generate_speech_audio.
+def _mock_synth_factory(voice="glados"):
+    synth = MagicMock()
+    synth.sample_rate = 22050
+    # Default to a one-second silent buffer; tests override per-call.
+    import numpy as _np
+    synth.generate_speech_audio.return_value = _np.zeros(22050, dtype=_np.float32)
+    return synth
+
+_mock_module("glados.TTS",
+             attrs={"get_speech_synthesizer": _mock_synth_factory})
+
+# dnhkng/GLaDOS engine ASR (used by ParakeetSTT when asr_engine = parakeet).
+# Returns a stub TranscriberProtocol — transcribe(audio) → str.
+def _mock_transcriber_factory(engine_type="tdt"):
+    t = MagicMock()
+    t.transcribe.return_value = ""
+    t.transcribe_file.return_value = ""
+    return t
+
+_mock_module("glados.ASR",
+             attrs={"get_audio_transcriber": _mock_transcriber_factory})
+
+# MCP package (used by BodyMCPServer for FastMCP).
+_mock_module("mcp")
+_mock_module("mcp.server")
+# FastMCP() is called at module import time to create the `mcp = FastMCP(...)`
+# instance; the @mcp.tool() decorator must be a passthrough so test code can
+# import the tool functions and call them directly.
+_fake_fastmcp = MagicMock()
+_fake_fastmcp.tool = MagicMock(return_value=lambda fn: fn)
+_mock_module("mcp.server.fastmcp",
+             attrs={"FastMCP": MagicMock(return_value=_fake_fastmcp)})

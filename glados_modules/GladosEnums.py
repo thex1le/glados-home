@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, unique
 from logging import DEBUG, INFO
 
 
@@ -194,6 +194,23 @@ class MQTTEnums(Enum):
     PIPELINE_DEBUG_TOPIC = "system/debug"
     PIPELINE_DEBUG_CONTROL_TOPIC = "system/debug/control"
     CAMERA_READY_TOPIC = "system/camera_ready"
+    SCENE_DESCRIPTION_TOPIC = "vision/scene_description"
+    SCENE_DESCRIBE_REQUEST_TOPIC = "vision/describe_request"
+    SCENE_DESCRIBE_RESPONSE_TOPIC = "vision/describe_response"
+    BRAIN_READY_TOPIC = "system/brain_ready"
+    BRAIN_UTTERANCE_TOPIC = "system/brain/utterance"
+    BRAIN_TOOL_CALL_TOPIC = "system/brain/tool_call"
+    # Step 7c PAD bus: brain publishes EmotionAgent state on MOOD_PAD; hardware
+    # consumers (LedHead, GladosLCD, etc.) and other systems subscribe in 7c-3.
+    # MOOD_EVENT carries hardware-detected events (pestering, compliment, room
+    # arrivals) into the brain's EmotionAgent in 7c-4.
+    MOOD_PAD_TOPIC = "system/mood/pad"
+    MOOD_EVENT_TOPIC = "system/mood/event"
+    # Latency probe: brain publishes probes; the body machine echoes them so
+    # the brain can measure one-way MQTT latency for speech-eye calibration.
+    LATENCY_PROBE_TOPIC = "system/latency/probe"
+    LATENCY_ECHO_TOPIC = "system/latency/echo"
+    LATENCY_STATS_TOPIC = "system/latency/stats"
 
 
 class DashboardEnums(Enum):
@@ -675,6 +692,61 @@ class FeatureToggles(Enum):
     PERIPHERAL_CONFIRMATION = "peripheral_confirmation"
     HANDOFF_BLENDING = "handoff_blending"
     MEMORY_GLANCES = "memory_glances"
+    # Step 7c-3: switches the source-of-truth for hardware mood between the
+    # legacy GladosMood (anger scalar, in-process) and the new PAD-driven
+    # MoodDriver (PAD vector over MQTT). 'legacy' is the safe default; flip
+    # to 'pad' once the brain is up and you trust the EmotionAgent.
+    MOOD_SOURCE = "mood_source"
+    MOOD_SOURCE_PAD = "pad"
+    MOOD_SOURCE_LEGACY = "legacy"
+    DEFAULT_MOOD_SOURCE = "legacy"
+    # Step 8a-1: TTS engine toggle. 'tacotron' is the legacy Mike Klingbeil
+    # path (default for safe rollback). 'glados' is the dnhkng/GLaDOS-ONNX
+    # trained voice. 'kokoro' uses the multi-voice Kokoro engine with the
+    # voice selected by [TTS] kokoro_voice.
+    TTS_ENGINE = "tts_engine"
+    TTS_ENGINE_TACOTRON = "tacotron"
+    TTS_ENGINE_GLADOS = "glados"
+    TTS_ENGINE_KOKORO = "kokoro"
+    DEFAULT_TTS_ENGINE = "tacotron"
+    # Step 8a-2: ASR engine toggle. 'whisperx' is the legacy WhisperX path
+    # (default for safe rollback). 'parakeet' is NVIDIA's Parakeet-TDT via
+    # the dnhkng/GLaDOS engine — faster, better punctuation, less hallucination.
+    ASR_ENGINE = "asr_engine"
+    ASR_ENGINE_WHISPERX = "whisperx"
+    ASR_ENGINE_PARAKEET = "parakeet"
+    DEFAULT_ASR_ENGINE = "whisperx"
+
+
+@unique
+class ASREnums(Enum):
+    """Configuration keys for the [ASR] section of glog.conf.
+
+    The Parakeet backend reads these for engine type (TDT vs CTC) and
+    optional model directory override. Empty model_dir uses the engine's
+    default (downloads on first run).
+    """
+    CONFIG_HEAD = "ASR"
+    ENGINE_TYPE = "engine_type"
+    MODEL_DIR = "model_dir"
+    DEFAULT_ENGINE_TYPE = "tdt"
+    DEFAULT_MODEL_DIR = ""
+
+
+@unique
+class TTSEnums(Enum):
+    """Configuration keys for the [TTS] section of glog.conf.
+
+    The TTSServer reads these to size the listener port, choose a Kokoro
+    voice when applicable, and pick a per-engine cache directory.
+    """
+    CONFIG_HEAD = "TTS"
+    PORT = "port"
+    CACHE_DIR_ROOT = "cache_dir_root"
+    KOKORO_VOICE = "kokoro_voice"
+    DEFAULT_PORT = 8124
+    DEFAULT_CACHE_DIR_ROOT = "./audio"
+    DEFAULT_KOKORO_VOICE = "af_bella"
     GESTURE_RECOGNITION = "gesture_recognition"
     ROOM_STATE_ENABLED = "room_state_enabled"
     ATTENTION_MODEL_ENABLED = "attention_model_enabled"
@@ -870,3 +942,184 @@ class TrackingEnums(Enum):
     KEY_CONFIDENCE = "confidence"
     KEY_POSE = "pose"
     KEY_BOX = "box"
+
+
+@unique
+class BrainEnums(Enum):
+    """Configuration keys for the [BRAIN] section of glog.conf.
+
+    The brain wraps the dnhkng/GLaDOS engine. Endpoints (LLM, TTS, ASR) live
+    on the GPU box; the brain calls them over HTTP/MQTT.
+
+    Default values live in BrainDefaults below — kept out of the Enum because
+    Enum silently aliases members with equal values (8.0 == 8 hashes equal),
+    which produced confusing aliases pre-R-1.2.
+    """
+    CONFIG_HEAD = "BRAIN"
+    LLM_ENDPOINT = "llm_endpoint"
+    LLM_MODEL = "llm_model"
+    LLM_API_KEY = "llm_api_key"
+    INPUT_MODE = "input_mode"
+    AUDIO_IO = "audio_io"
+    INTERRUPTIBLE = "interruptible"
+    AUTONOMY_ENABLED = "autonomy_enabled"
+    AUTONOMY_TICK_INTERVAL = "autonomy_tick_interval_s"
+    AUTONOMY_PARALLEL_CALLS = "autonomy_parallel_calls"
+    AUTONOMY_COOLDOWN = "autonomy_cooldown_s"
+    AUTONOMY_COALESCE_TICKS = "autonomy_coalesce_ticks"
+    EMOTION_ENABLED = "emotion_enabled"
+    COMPACTION_ENABLED = "compaction_enabled"
+    OBSERVER_ENABLED = "observer_enabled"
+    SCENE_PRIORITY = "scene_context_priority"
+    ROOM_PRIORITY = "room_context_priority"
+    PERSONALITY_FILE = "personality_file"
+    SCENE_TIMEOUT = "scene_request_timeout_s"
+    # PAD publish throttling (Option C, see Step 7c-2)
+    MOOD_PUBLISH_DELTA = "mood_publish_delta"
+    MOOD_PUBLISH_MAX_INTERVAL = "mood_publish_max_interval_s"
+    MOOD_STALENESS_MAX_AGE = "mood_staleness_max_age_s"
+    # Step 8a-0: how long LedHead waits after receiving a speech_eye command
+    # before starting the pulse, so the LED lines up with audio playback.
+    # Calibrate via Tools/measure_latency.py.
+    SPEECH_LED_DELAY = "speech_led_delay_s"
+    # Step 8a-1: tells RemoteGladosTTS the rate the GPU box's TTS server
+    # actually emits. Tacotron = 22050, Kokoro = 24000, GLaDOS-ONNX = 22050.
+    # Sample-rate mismatch makes audio play at the wrong pitch.
+    TTS_SAMPLE_RATE = "tts_sample_rate"
+
+
+class BrainDefaults:
+    """Default values for [BRAIN] config keys.
+
+    Kept separate from BrainEnums because some defaults coincidentally share
+    values (e.g., SCENE_TIMEOUT = 8.0 hashes equal to SCENE_PRIORITY = 8),
+    which Python's Enum silently collapses into aliases. Plain class
+    attributes avoid the trap and keep .name useful.
+    """
+    SCENE_TIMEOUT = 8.0
+    TICK_INTERVAL = 10.0
+    PARALLEL_CALLS = 1
+    COOLDOWN = 20.0
+    SCENE_PRIORITY = 8
+    ROOM_PRIORITY = 7
+    MOOD_PUBLISH_DELTA = 0.1
+    MOOD_PUBLISH_MAX_INTERVAL = 30.0
+    MOOD_STALENESS_MAX_AGE = 60.0
+    SPEECH_LED_DELAY = 0.3
+    TTS_SAMPLE_RATE = 22050
+
+
+@unique
+class HEXACOEnums(Enum):
+    """Configuration keys for the [HEXACO] section of glog.conf.
+
+    Six personality trait values on a 0.0-1.0 scale; biases the EmotionAgent's
+    PAD baseline. Engine defaults are already GLaDOS-flavored — surfaced in
+    HEXACODefaults below so glog.conf tweaks don't touch code.
+    """
+    CONFIG_HEAD = "HEXACO"
+    HONESTY_HUMILITY = "honesty_humility"
+    EMOTIONALITY = "emotionality"
+    EXTRAVERSION = "extraversion"
+    AGREEABLENESS = "agreeableness"
+    CONSCIENTIOUSNESS = "conscientiousness"
+    OPENNESS = "openness"
+
+
+class HEXACODefaults:
+    """Default HEXACO trait values (0.0..1.0). Mirrors engine HEXACOConfig."""
+    HONESTY_HUMILITY = 0.3
+    EMOTIONALITY = 0.7
+    EXTRAVERSION = 0.4
+    AGREEABLENESS = 0.2
+    CONSCIENTIOUSNESS = 0.9
+    OPENNESS = 0.95
+
+
+@unique
+class EmotionEnums(Enum):
+    """Configuration keys for the [EMOTION] section of glog.conf.
+
+    Drives the engine's EmotionAgent: tick rate, drift speeds, PAD baseline
+    (what mood drifts toward when idle). Defaults in EmotionDefaults below.
+    """
+    CONFIG_HEAD = "EMOTION"
+    TICK_INTERVAL = "tick_interval_s"
+    MAX_EVENTS = "max_events"
+    BASELINE_PLEASURE = "baseline_pleasure"
+    BASELINE_AROUSAL = "baseline_arousal"
+    BASELINE_DOMINANCE = "baseline_dominance"
+    MOOD_DRIFT_RATE = "mood_drift_rate"
+    BASELINE_DRIFT_RATE = "baseline_drift_rate"
+
+
+class EmotionDefaults:
+    """Default values for [EMOTION] config keys.
+
+    Kept out of EmotionEnums because BASELINE_PLEASURE = MOOD_DRIFT_RATE = 0.1
+    coincide and Enum silently aliases them.
+    """
+    TICK_INTERVAL = 30.0
+    MAX_EVENTS = 20
+    BASELINE_PLEASURE = 0.1
+    BASELINE_AROUSAL = -0.1
+    BASELINE_DOMINANCE = 0.6
+    MOOD_DRIFT_RATE = 0.1
+    BASELINE_DRIFT_RATE = 0.02
+
+
+@unique
+class SceneEnums(Enum):
+    """Configuration + message keys for the SceneDescriber (FastVLM on the GPU box)."""
+    CONFIG_HEAD = "SCENE"
+    DESCRIPTION_KEY = "description"
+    CAMERA_KEY = "camera"
+    TS_KEY = "ts"
+    PROMPT_KEY = "prompt"
+    MAX_TOKENS_KEY = "max_tokens"
+    REQUEST_ID_KEY = "request_id"
+    MODEL_DIR_KEY = "fastvlm_model_dir"
+    CAMERA_URI_KEY = "rtsp_uri"
+    POLL_INTERVAL_KEY = "poll_interval_s"
+    SCENE_CHANGE_THRESHOLD_KEY = "scene_change_threshold"
+    DEFAULT_POLL_INTERVAL = 5.0
+    DEFAULT_SCENE_CHANGE_THRESHOLD = 0.05
+
+
+@unique
+class LatencyEnums(Enum):
+    """Configuration + message keys for the speech-eye sync latency probe.
+
+    The probe measures two pipelines:
+        * MQTT one-way from brain (Pi 5) to body (Pi 4), via probe/echo.
+        * Audio output latency from sounddevice submit to speaker emit,
+          via tone playback + mic capture cross-correlation.
+
+    Difference between the two is the recommended speech_led_delay_s value.
+    """
+    CONFIG_HEAD = "LATENCY"
+    PING_ID_KEY = "ping_id"
+    ORIGIN_TS_KEY = "origin_ts"
+    RESPONDER_RECV_TS_KEY = "responder_recv_ts"
+    MEAN_MS_KEY = "mean_ms"
+    MEDIAN_MS_KEY = "median_ms"
+    P95_MS_KEY = "p95_ms"
+    P99_MS_KEY = "p99_ms"
+    SAMPLE_COUNT_KEY = "samples"
+    PIPELINE_KEY = "pipeline"
+    DEFAULT_PING_COUNT = 100
+    DEFAULT_PING_INTERVAL_S = 0.05
+    DEFAULT_PING_TIMEOUT_S = 2.0
+    DEFAULT_TONE_FREQ_HZ = 1000.0
+    DEFAULT_TONE_DURATION_S = 0.2
+    DEFAULT_MIC_CAPTURE_DELAY_MS = 30.0
+
+
+@unique
+class MCPEnums(Enum):
+    """Configuration keys for the body MCP server subprocess."""
+    CONFIG_HEAD = "MCP_BODY"
+    DEFAULT_HEAD_YAW = "default_head_yaw"
+    DEFAULT_HEAD_PITCH = "default_head_pitch"
+    DEFAULT_BODY_YAW = "default_body_yaw"
+    EYE_COLOR_DEFAULT = "eye_color_default"

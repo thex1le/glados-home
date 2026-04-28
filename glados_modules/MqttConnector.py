@@ -15,7 +15,7 @@ from cachetools import TTLCache
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.GladosEnums import (ServoEnum, CameraEnum, TrackingEnums, LoggingEnums,
                                         STTEnums, IMUEnums, TOFEnums, THEnums, MOXEnums, LEDHead,
-                                        MQTTEnums, SocTempEnums)
+                                        MQTTEnums, SocTempEnums, SceneEnums, LatencyEnums)
 
 
 class MQTTClient:
@@ -209,3 +209,85 @@ class ServoMessageBuilder:
         return {ServoEnum.MSG_LOCATION_KEY.value: location,
                 ServoEnum.MSG_COMMAND_KEY.value: ServoEnum.MSG_COMMAND_STATUS.value,
                 ServoEnum.MSG_RESULTS.value: results}
+
+
+class BrainMessageBuilder:
+    """Build messages emitted by the GLaDOS brain (utterances, tool-call telemetry, ready)."""
+
+    @staticmethod
+    def utterance(text: str, source: str = "llm") -> dict:
+        return {"text": text, "source": source}
+
+    @staticmethod
+    def tool_call(tool: str, args: dict, lane: str = "priority") -> dict:
+        return {"tool": tool, "args": args, "lane": lane}
+
+    @staticmethod
+    def ready(system_name: str, llm_model: str) -> dict:
+        return {"system": system_name, "model": llm_model}
+
+
+class MoodMessageBuilder:
+    """Build messages for the PAD mood bus (system/mood/pad + system/mood/event).
+
+    Step 7c-2 publishes PAD vectors from the engine's EmotionAgent.
+    Step 7c-4 publishes hardware-detected events back into the agent.
+    """
+
+    @staticmethod
+    def pad(pleasure: float, arousal: float, dominance: float,
+            ts: float) -> dict:
+        return {"pleasure": float(pleasure),
+                "arousal": float(arousal),
+                "dominance": float(dominance),
+                "ts": float(ts)}
+
+    @staticmethod
+    def event(source: str, description: str) -> dict:
+        return {"source": source, "description": description}
+
+
+class LatencyMessageBuilder:
+    """Build messages for the speech-eye sync latency probe."""
+
+    @staticmethod
+    def probe(ping_id: str, origin_ts: float) -> dict:
+        return {LatencyEnums.PING_ID_KEY.value: ping_id,
+                LatencyEnums.ORIGIN_TS_KEY.value: float(origin_ts)}
+
+    @staticmethod
+    def echo(ping_id: str, origin_ts: float, responder_recv_ts: float) -> dict:
+        return {LatencyEnums.PING_ID_KEY.value: ping_id,
+                LatencyEnums.ORIGIN_TS_KEY.value: float(origin_ts),
+                LatencyEnums.RESPONDER_RECV_TS_KEY.value: float(responder_recv_ts)}
+
+    @staticmethod
+    def stats(pipeline: str, samples: int, mean_ms: float, median_ms: float,
+              p95_ms: float, p99_ms: float) -> dict:
+        return {LatencyEnums.PIPELINE_KEY.value: pipeline,
+                LatencyEnums.SAMPLE_COUNT_KEY.value: int(samples),
+                LatencyEnums.MEAN_MS_KEY.value: float(mean_ms),
+                LatencyEnums.MEDIAN_MS_KEY.value: float(median_ms),
+                LatencyEnums.P95_MS_KEY.value: float(p95_ms),
+                LatencyEnums.P99_MS_KEY.value: float(p99_ms)}
+
+
+class SceneMessageBuilder:
+    """Build messages for the SceneDescriber (background descriptions + on-demand requests)."""
+
+    @staticmethod
+    def description(camera: str, description: str, ts: float) -> dict:
+        return {SceneEnums.CAMERA_KEY.value: camera,
+                SceneEnums.DESCRIPTION_KEY.value: description,
+                SceneEnums.TS_KEY.value: ts}
+
+    @staticmethod
+    def describe_request(request_id: str, prompt: str, max_tokens: int = 256) -> dict:
+        return {SceneEnums.REQUEST_ID_KEY.value: request_id,
+                SceneEnums.PROMPT_KEY.value: prompt,
+                SceneEnums.MAX_TOKENS_KEY.value: max_tokens}
+
+    @staticmethod
+    def describe_response(request_id: str, description: str) -> dict:
+        return {SceneEnums.REQUEST_ID_KEY.value: request_id,
+                SceneEnums.DESCRIPTION_KEY.value: description}

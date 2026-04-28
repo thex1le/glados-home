@@ -10,15 +10,13 @@ from os import path
 # glados imports
 from glados_modules.MachineVision import MLDetect, GLaDOSServerException
 from glados_modules.WhisperXSpeech2Text import AudioServerRX, LocalSTTtx
-from glados_modules.GladosEnums import STTEnums, SystemEnums, DashboardEnums, CameraEnum
+from glados_modules.GladosEnums import (STTEnums, SystemEnums, DashboardEnums,
+                                        CameraEnum, FeatureToggles)
 from glados_modules.HealthMonitor import HealthMonitor
 from glados_modules.MqttConsumerModules import SensorTracker
+from glados_modules.SceneDescriber import SceneDescriber
+from glados_modules.TTSServer import TTSServer
 from glados_modules.WebDashboard import WebDashboard
-
-# gladosTTS is an external repo cloned into the project -- its internal imports
-# use bare "from utils.tools import ..." so it needs its own dir on sys.path
-sys.path.insert(0, path.join(path.dirname(path.abspath(__file__)), 'gladosTTS'))
-from glados_tts import engine as glados_voice
 
 if __name__ == "__main__":
     # Handle Ctrl+C cleanly -- set up early so it works during model loading
@@ -44,44 +42,14 @@ if __name__ == "__main__":
         config_p.read(args.conf[0], encoding=('utf-8'))
     else:
         raise GLaDOSServerException("Unable to load file {}".format(args.conf[0]))
-    # Start the TTS HTTP server early — it doesn't depend on cameras.
-    from threading import Thread as _TtsThread
-    from flask import Flask as TtsFlask, request as tts_request, send_file as tts_send_file
-    import urllib.parse
-    import base64
-    import shutil
-    import logging as _tts_logging
-
-    tts_app = TtsFlask("glados_tts_server")
-    TTS_PORT = 8124
-
-    @tts_app.route('/synthesize/', defaults={'text': ''})
-    @tts_app.route('/synthesize/<path:text>')
-    def tts_synthesize(text):
-        if not text:
-            return 'No input'
-        line = urllib.parse.unquote(tts_request.url[tts_request.url.find('synthesize/') + 11:])
-        line = base64.b64decode(line).decode('utf8')
-        filename = f"GLaDOS-tts-{line.replace(' ', '-').replace('!', '').replace(',', '')}.wav"
-        filename = filename.replace("°c", "degrees celcius")
-        cached = os.path.join(os.getcwd(), 'audio', filename)
-        if os.path.isfile(cached):
-            os.utime(cached, None)
-            return tts_send_file(cached)
-        key = str(time.time())[7:]
-        if glados_voice.glados_tts(line, key):
-            tempfile = os.path.join(os.getcwd(), 'audio', f'GLaDOS-tts-temp-output-{key}.wav')
-            if len(line) < 200:
-                shutil.move(tempfile, cached)
-                return tts_send_file(cached)
-            else:
-                return tts_send_file(tempfile)
-        return 'TTS Engine Failed'
-
-    _tts_logging.getLogger('werkzeug').setLevel(_tts_logging.WARNING)
-    _tts_thread = _TtsThread(target=lambda: tts_app.run(host="0.0.0.0", port=TTS_PORT), daemon=True)
-    _tts_thread.start()
-    print(f"\033[92m  TTS server started on 0.0.0.0:{TTS_PORT}\033[0m")
+    # Step 8a-1: TTSServer is the pluggable Flask TTS at :8124. Backend
+    # selection lives in [FEATURES] tts_engine; legacy 'tacotron' default
+    # preserves existing behavior, 'glados' / 'kokoro' opt into the engine
+    # package's better voices.
+    tts_server = TTSServer(config_p)
+    tts_server.start()
+    print(f"\033[92m  TTS server started on 0.0.0.0:{tts_server.port} "
+           f"(engine={tts_server.engine_kind})\033[0m")
 
     # start up machine vision
     mv = MLDetect(config_p)
@@ -137,19 +105,45 @@ if __name__ == "__main__":
         print(f"\033[93m  Timeout after {_timeout}s — starting without: {missing}\033[0m")
 
     mv.start()
+    # SceneDescriber (FastVLM) — periodic + on-demand scene descriptions over
+    # MQTT for the Pi 5 brain's ContextBuilder. Fail-soft: if FastVLM or RTSP
+    # init blows up, the rest of the AI server keeps running (matches the IMU
+    # pattern in GLaDOS.py).
+    scene_describer = None
+    try:
+        scene_describer = SceneDescriber(config_p, camera_name="head")
+        scene_describer.start()
+    except Exception as e:
+        print(f"\033[93m  SceneDescriber init failed: {e} — continuing without it\033[0m")
     # start the audio receive server
     broker = AudioServerRX.broker_tuple
     stt_conf = config_p[STTEnums.CONFIG_HEAD_STT.value]
     audio_b = broker(stt_conf[STTEnums.STT_SERVER_IP.value], int(stt_conf[STTEnums.STT_SERVER_PORT.value]))
     # reuse ip port broker tuple
     mqtt_b = broker(_wait_ip, _wait_port)
-    lstt_tx = LocalSTTtx(mqtt_b)
+    # Step 8a-2: pluggable ASR backend. Both implementations expose a
+    # process_audio(bytes) callback and publish on STT_RESULTS_MQTT_TOPIC,
+    # so downstream consumers (Pi 5 brain, dashboard) see no difference.
+    asr_engine = config_p.get(FeatureToggles.CONFIG_HEAD.value,
+                               FeatureToggles.ASR_ENGINE.value,
+                               fallback=FeatureToggles.DEFAULT_ASR_ENGINE.value
+                               ).strip().lower()
+    if asr_engine == FeatureToggles.ASR_ENGINE_PARAKEET.value:
+        from glados_modules.ParakeetSTT import ParakeetSTT
+        lstt_tx = ParakeetSTT(mqtt_b, config_p)
+        print(f"\033[92m  ASR engine: Parakeet\033[0m")
+    else:
+        lstt_tx = LocalSTTtx(mqtt_b)
+        print(f"\033[92m  ASR engine: WhisperX\033[0m")
     stt_audio_rx = AudioServerRX(audio_b, callback=lstt_tx.process_audio)
     stt_audio_rx.start()
     # Start health monitoring
     health = HealthMonitor(broker=mqtt_b, system_name="ai_server")
     health.register("MLDetect", mv)
     health.register("AudioRX", stt_audio_rx)
+    health.register("TTSServer", tts_server)
+    if scene_describer is not None:
+        health.register("SceneDescriber", scene_describer)
     health.start()
     # Start web dashboard (GPU: direct buffer for annotated + RTSP consumer for raw)
     # Build annotated feeds from direct frame buffer

@@ -1,5 +1,4 @@
 # builtin
-import random
 import time
 import signal
 import os
@@ -12,10 +11,14 @@ import configparser
 from glados_modules.GlogConfig import setup_logger
 from glados_modules.Speech2Text import GladosSTT
 from glados_modules.GLaDOSLocal import GladosLocal
+from glados_modules.GladosBrain import GladosBrain
 from glados_modules.CameraModule import Camera, CameraWatchdog
-from glados_modules.GladosEnums import CameraEnum, SystemEnums, DashboardEnums, SocTempEnums
+from glados_modules.GladosEnums import (CameraEnum, SystemEnums, DashboardEnums,
+                                        SocTempEnums, FeatureToggles)
 from glados_modules.BodyControlModules import IMU, SocTemp, GladosLCD
 from glados_modules.HealthMonitor import HealthMonitor
+from glados_modules.MoodConsumer import MoodConsumer
+from glados_modules.MoodDriver import MoodDriver
 from glados_modules.MqttConsumerModules import SensorTracker
 from glados_modules.WebDashboard import WebDashboard
 
@@ -42,13 +45,6 @@ if __name__ == "__main__":
         raise GladosException("Unable to load file {}".format(args.conf[0]))
 
     logger = setup_logger(name="GLaDOS_main")
-    # Select LLM provider from config (default: openai for backward compatibility)
-    llm_provider = configp.get(SystemEnums.CONFIG_HEAD_DEFAULT.value,
-                                SystemEnums.LLM_PROVIDER.value, fallback="openai").strip().lower()
-    if llm_provider == "claude":
-        from glados_modules.ClaudeConnector import GladosClaude as LLMConnector
-    else:
-        from glados_modules.ChatGPTConnector import GladosGPT as LLMConnector
 
     # start the IMU to track movement
     mqtt_c = configp[SystemEnums.CONFIG_HEAD_MQTT.value]
@@ -67,13 +63,42 @@ if __name__ == "__main__":
                          animation_path=animation_path)
     left_lcd.start()
 
-    gl = GladosLocal(configp, LLMConnector)
+    # GladosLocal stays as a passive sensor/MQTT consumer (mood, attention, room
+    # state, face recognition, local-command pre-filter). The LLM call path now
+    # goes through GladosBrain → dnhkng/GLaDOS engine → GPU box.
+    gl = GladosLocal(configp, None)
     gl.start()
-    # Greeting in background thread — retries if TTS isn't ready yet
+    # Step 7c-3: when [FEATURES] mood_source = pad, the brain's EmotionAgent
+    # drives the eye + LCD via MoodConsumer + MoodDriver. Otherwise GladosMood
+    # keeps driving them exactly as before. Default is legacy for safety.
+    mood_source = configp.get(FeatureToggles.CONFIG_HEAD.value,
+                               FeatureToggles.MOOD_SOURCE.value,
+                               fallback=FeatureToggles.DEFAULT_MOOD_SOURCE.value
+                               ).strip().lower()
+    mood_consumer = None
+    mood_driver = None
+    if mood_source == FeatureToggles.MOOD_SOURCE_PAD.value:
+        mood_consumer = MoodConsumer(configp)
+        mood_consumer.start()
+        mood_driver = MoodDriver(configp, mood_consumer)
+        mood_driver.start()
+        print("\033[92m  PAD-driven mood enabled (MoodDriver active)\033[0m")
+    # Brain accepts mood_consumer so SpeechLedSync (8a-0) can pick a
+    # PAD-driven color for each speech pulse. Pass None when in legacy mood
+    # mode — SpeechLedSync falls back to GLaDOS amber.
+    brain = GladosBrain(configp, mood_consumer=mood_consumer)
+    brain.start()
+    gstt = GladosSTT(configp, gl)
+    gstt.start()
+    local_commands = gl.get_local_commands()
+    # Greeting in background thread — waits for the engine to come up first
     def _startup_greeting():
+        if not brain.wait_until_ready(timeout=30.0):
+            print("Brain not ready in 30s — startup greeting skipped")
+            return
         for attempt in range(3):
             try:
-                gl.speak("Oh Its you! , , Its been a long time...")
+                brain.speak("Oh Its you! , , Its been a long time...")
                 return
             except Exception:
                 if attempt < 2:
@@ -81,9 +106,6 @@ if __name__ == "__main__":
         print("TTS unavailable — startup greeting skipped")
     from threading import Thread as _Thread
     _Thread(target=_startup_greeting, daemon=True).start()
-    gstt = GladosSTT(configp, gl)
-    gstt.start()
-    local_commands = gl.get_local_commands()
     left_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_FACTORY.value]
     right_camera_location = configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_RIGHT_FACTORY.value]
     port = int(configp[CameraEnum.CONFIG_HEAD.value][CameraEnum.CAMERA_LEFT_PORT.value])
@@ -108,6 +130,11 @@ if __name__ == "__main__":
         health.register("IMU", imu)
     health.register("left_lcd", left_lcd)
     health.register("GladosLocal", gl)
+    health.register("GladosBrain", brain)
+    if mood_consumer is not None:
+        health.register("MoodConsumer", mood_consumer)
+    if mood_driver is not None:
+        health.register("MoodDriver", mood_driver)
     health.register("STT", gstt)
     health.register("left_camera", left_camera)
     health.register("right_camera", right_camera)
@@ -165,32 +192,23 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
+    # Main loop: STT prompts go through the local-commands pre-filter, fire
+    # the existing mood/interaction hooks, then forward to the brain. The
+    # brain (and the dnhkng/GLaDOS engine it owns) handles LLM + TTS + audio
+    # playback — we no longer need the random_processing filler that the old
+    # blocking LLM call required.
     while True:
         prompt = gstt.get_text()
-        if prompt is not None:
-            cmd_bool = False
-            # check for local commands (registered in GLaDOSLocal.get_local_commands)
-            for cmd in local_commands:
-                cmd_bool = cmd(user_prompt=prompt)
-                if cmd_bool is True:
-                    # break the for loop
-                    break
+        if prompt is None:
+            time.sleep(0.1)
+            continue
+        cmd_bool = False
+        for cmd in local_commands:
+            cmd_bool = cmd(user_prompt=prompt)
             if cmd_bool is True:
-                # skip the rest on the while loop
-                continue
-            # Track interaction frequency for pestering detection
-            gl.register_interaction()
-            # Check for compliments (calms mood)
-            gl.detect_compliment(prompt)
-            gladosgpt = LLMConnector(configp, prompt)
-            gladosgpt.add_prompt(gl.get_seen_prompt())
-            gladosgpt.start()
-            time.sleep(0.2)
-            while gladosgpt.real_response is None:
-                gl.random_processing()
-                time.sleep(0.3)
-                rfunc = random.choice((gl.random_processing,
-                                       gl.random_insult))
-                rfunc()
-            time.sleep(0.2)
-            gl.speak(gladosgpt.real_response)
+                break
+        if cmd_bool is True:
+            continue
+        gl.register_interaction()
+        gl.detect_compliment(prompt)
+        brain.submit_text_input(prompt)

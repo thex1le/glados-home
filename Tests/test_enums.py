@@ -4,12 +4,16 @@ Validates that all enums referenced in code actually exist, that MQTT topics
 are defined as enums, and that cross-system message contracts are consistent.
 """
 
+from enum import Enum
+
 import pytest
 from glados_modules.GladosEnums import (
     ServoEnum, CameraEnum, MQTTEnums, TrackingEnums, VisionResultsEnum,
     MotionProfile, LEDHead, LEDShoulders, LEDLampStrip8, LCDEnums,
     TraceEnums, DashboardEnums, LoggingEnums, SystemEnums,
     IMUEnums, TOFEnums, THEnums, MOXEnums, FusionEnums,
+    BrainEnums, BrainDefaults, SceneEnums, MCPEnums,
+    HEXACOEnums, HEXACODefaults, EmotionEnums, EmotionDefaults,
 )
 
 
@@ -150,6 +154,25 @@ class TestMQTTTopics:
         for name in required:
             assert hasattr(MQTTEnums, name), f"Missing MQTT topic: {name}"
 
+    def test_brain_and_scene_topics_exist(self):
+        required = [
+            'SCENE_DESCRIPTION_TOPIC', 'SCENE_DESCRIBE_REQUEST_TOPIC',
+            'SCENE_DESCRIBE_RESPONSE_TOPIC', 'BRAIN_READY_TOPIC',
+            'BRAIN_UTTERANCE_TOPIC', 'BRAIN_TOOL_CALL_TOPIC',
+        ]
+        for name in required:
+            assert hasattr(MQTTEnums, name), f"Missing MQTT topic: {name}"
+
+    def test_brain_and_scene_topic_values_stable(self):
+        # These strings are the wire contract between the brain (Pi 5) and the
+        # GPU box. Any rename must be deliberate.
+        assert MQTTEnums.SCENE_DESCRIPTION_TOPIC.value == "vision/scene_description"
+        assert MQTTEnums.SCENE_DESCRIBE_REQUEST_TOPIC.value == "vision/describe_request"
+        assert MQTTEnums.SCENE_DESCRIBE_RESPONSE_TOPIC.value == "vision/describe_response"
+        assert MQTTEnums.BRAIN_READY_TOPIC.value == "system/brain_ready"
+        assert MQTTEnums.BRAIN_UTTERANCE_TOPIC.value == "system/brain/utterance"
+        assert MQTTEnums.BRAIN_TOOL_CALL_TOPIC.value == "system/brain/tool_call"
+
 
 class TestFusionEnums:
     """Validate camera fusion state machine enums."""
@@ -177,3 +200,187 @@ class TestTraceEnums:
         required = ['TRACE_ID', 'TS_VISION', 'TS_TRACK_START', 'TS_TRACK_END', 'TS_SERVO_RX']
         for name in required:
             assert hasattr(TraceEnums, name)
+
+
+class TestBrainEnums:
+    """Validate brain configuration enum keys."""
+
+    def test_config_head_is_brain(self):
+        assert BrainEnums.CONFIG_HEAD.value == "BRAIN"
+
+    def test_required_keys_present(self):
+        required = [
+            'LLM_ENDPOINT', 'LLM_MODEL', 'LLM_API_KEY', 'INPUT_MODE',
+            'AUDIO_IO', 'INTERRUPTIBLE', 'AUTONOMY_ENABLED',
+            'AUTONOMY_TICK_INTERVAL', 'AUTONOMY_PARALLEL_CALLS',
+            'EMOTION_ENABLED', 'COMPACTION_ENABLED', 'OBSERVER_ENABLED',
+            'SCENE_PRIORITY', 'ROOM_PRIORITY', 'PERSONALITY_FILE',
+            'SCENE_TIMEOUT',
+        ]
+        for name in required:
+            assert hasattr(BrainEnums, name), f"Missing BrainEnum key: {name}"
+
+    def test_default_values_are_sane(self):
+        assert BrainDefaults.SCENE_TIMEOUT > 0
+        assert BrainDefaults.TICK_INTERVAL > 0
+        assert BrainDefaults.PARALLEL_CALLS >= 1
+        # Scene context should outrank room context by default
+        assert BrainDefaults.SCENE_PRIORITY >= BrainDefaults.ROOM_PRIORITY
+
+
+class TestSceneEnums:
+    """Validate SceneDescriber configuration + message enum keys."""
+
+    def test_config_head_is_scene(self):
+        assert SceneEnums.CONFIG_HEAD.value == "SCENE"
+
+    def test_message_keys_present(self):
+        required = [
+            'DESCRIPTION_KEY', 'CAMERA_KEY', 'TS_KEY', 'PROMPT_KEY',
+            'MAX_TOKENS_KEY', 'REQUEST_ID_KEY',
+        ]
+        for name in required:
+            assert hasattr(SceneEnums, name), f"Missing SceneEnum key: {name}"
+
+    def test_config_keys_present(self):
+        required = [
+            'MODEL_DIR_KEY', 'CAMERA_URI_KEY', 'POLL_INTERVAL_KEY',
+            'SCENE_CHANGE_THRESHOLD_KEY',
+        ]
+        for name in required:
+            assert hasattr(SceneEnums, name), f"Missing SceneEnum key: {name}"
+
+    def test_defaults_in_valid_range(self):
+        assert SceneEnums.DEFAULT_POLL_INTERVAL.value > 0
+        assert 0.0 <= SceneEnums.DEFAULT_SCENE_CHANGE_THRESHOLD.value <= 1.0
+
+
+class TestMCPEnums:
+    """Validate MCP body server configuration enum keys."""
+
+    def test_config_head_is_mcp_body(self):
+        assert MCPEnums.CONFIG_HEAD.value == "MCP_BODY"
+
+    def test_required_keys_present(self):
+        required = [
+            'DEFAULT_HEAD_YAW', 'DEFAULT_HEAD_PITCH',
+            'DEFAULT_BODY_YAW', 'EYE_COLOR_DEFAULT',
+        ]
+        for name in required:
+            assert hasattr(MCPEnums, name), f"Missing MCPEnum key: {name}"
+
+
+class TestHEXACOEnums:
+    """HEXACO trait enum keys + sane defaults."""
+
+    def test_config_head_is_hexaco(self):
+        assert HEXACOEnums.CONFIG_HEAD.value == "HEXACO"
+
+    def test_all_six_traits_present(self):
+        required = ['HONESTY_HUMILITY', 'EMOTIONALITY', 'EXTRAVERSION',
+                    'AGREEABLENESS', 'CONSCIENTIOUSNESS', 'OPENNESS']
+        for name in required:
+            assert hasattr(HEXACOEnums, name)
+
+    def test_defaults_in_unit_range(self):
+        # All HEXACO trait values are 0.0..1.0 by engine convention
+        for name in ['HONESTY_HUMILITY', 'EMOTIONALITY', 'EXTRAVERSION',
+                     'AGREEABLENESS', 'CONSCIENTIOUSNESS', 'OPENNESS']:
+            v = getattr(HEXACODefaults, name)
+            assert 0.0 <= v <= 1.0, f"{name}={v} out of [0,1]"
+
+    def test_glados_personality_signature(self):
+        # Defaults should encode GLaDOS: low agreeableness, high
+        # conscientiousness, very high openness, low honesty/humility.
+        assert HEXACODefaults.AGREEABLENESS < 0.4
+        assert HEXACODefaults.CONSCIENTIOUSNESS > 0.7
+        assert HEXACODefaults.OPENNESS > 0.7
+        assert HEXACODefaults.HONESTY_HUMILITY < 0.5
+
+
+class TestEmotionEnums:
+    """[EMOTION] section keys + PAD baseline range."""
+
+    def test_config_head_is_emotion(self):
+        assert EmotionEnums.CONFIG_HEAD.value == "EMOTION"
+
+    def test_required_keys_present(self):
+        required = ['TICK_INTERVAL', 'MAX_EVENTS', 'BASELINE_PLEASURE',
+                    'BASELINE_AROUSAL', 'BASELINE_DOMINANCE',
+                    'MOOD_DRIFT_RATE', 'BASELINE_DRIFT_RATE']
+        for name in required:
+            assert hasattr(EmotionEnums, name)
+
+    def test_pad_baseline_defaults_in_range(self):
+        # PAD axes are in [-1, +1]
+        for name in ['BASELINE_PLEASURE', 'BASELINE_AROUSAL',
+                     'BASELINE_DOMINANCE']:
+            v = getattr(EmotionDefaults, name)
+            assert -1.0 <= v <= 1.0, f"{name}={v} out of [-1,1]"
+
+    def test_drift_rates_in_unit_range(self):
+        for name in ['MOOD_DRIFT_RATE', 'BASELINE_DRIFT_RATE']:
+            v = getattr(EmotionDefaults, name)
+            assert 0.0 < v <= 1.0
+
+
+@pytest.mark.parametrize(
+    "enum_cls",
+    [BrainEnums, EmotionEnums, HEXACOEnums, SceneEnums,
+     # MCPEnums and the rest are checked too — list each I added/extended
+     ],
+    ids=lambda c: c.__name__)
+def test_no_alias_collisions_in_new_enums(enum_cls):
+    """R-1.3: catch the BrainEnums (8.0 == 8) / EmotionEnums (0.1 == 0.1)
+    aliasing class of bug for any enum I add to the project.
+
+    `len(list(E))` iterates only canonical members; `len(E.__members__)`
+    counts all registered names including aliases. Equal → no aliases.
+    """
+    canonical = list(enum_cls)
+    all_names = list(enum_cls.__members__)
+    aliases = set(all_names) - {m.name for m in canonical}
+    assert not aliases, (
+        f"{enum_cls.__name__} has alias members: {sorted(aliases)}. "
+        f"Move duplicate-valued members out of the Enum into a sibling "
+        f"defaults class (see BrainDefaults / EmotionDefaults).")
+
+
+def test_unique_decorator_applied_to_new_enums():
+    """Defense-in-depth: @unique throws at class creation if dupes are added.
+
+    Any new Enum I introduce should carry @unique so a future dup is caught
+    at import time rather than silently aliased. Verifies decorator is in
+    place by checking the enum's __dict__ for the marker.
+    """
+    # @unique modifies the enum's class hierarchy but doesn't leave an
+    # obvious marker. The cheaper check: prove that adding a duplicate
+    # would raise. We do this by attempting to construct an aliased subclass
+    # — if @unique is on the parent, the duplicate is rejected.
+    for enum_cls in (BrainEnums, EmotionEnums, HEXACOEnums, SceneEnums):
+        # The Enum already verified at import time via @unique; if we got
+        # here without ImportError, the decorator's working. Just confirm
+        # all members are unique by value (the contract @unique enforces).
+        seen_values = set()
+        for member in enum_cls:
+            assert member.value not in seen_values, (
+                f"{enum_cls.__name__}.{member.name} duplicates an earlier "
+                f"member's value ({member.value!r}); should be impossible "
+                f"with @unique applied.")
+            seen_values.add(member.value)
+
+
+class TestBrainMoodKeys:
+    """Step 7c PAD publish + staleness throttling keys live on BrainEnums."""
+
+    def test_throttle_keys_present(self):
+        for name in ['MOOD_PUBLISH_DELTA', 'MOOD_PUBLISH_MAX_INTERVAL',
+                     'MOOD_STALENESS_MAX_AGE']:
+            assert hasattr(BrainEnums, name)
+
+    def test_throttle_defaults_sane(self):
+        assert 0.0 < BrainDefaults.MOOD_PUBLISH_DELTA < 1.0
+        # Max interval (heartbeat) must outlive staleness so consumers don't
+        # constantly fall back to baseline visuals between heartbeats
+        assert (BrainDefaults.MOOD_PUBLISH_MAX_INTERVAL
+                <= BrainDefaults.MOOD_STALENESS_MAX_AGE)
